@@ -21,6 +21,21 @@ Do not commit or expose:
 - `public/data/dashboard-data.json`.
 - `public/assets/cache/`.
 - backend storage imports, generated private JSON, database dumps, or private SQLite files.
+- provider URLs, stream URLs, provider credentials, or global provider caches.
+
+## Player Provider Rule
+
+The Player is available only when a user attaches their own provider/source. Users without a provider still use the dashboard and manual library normally as a watch-history tracker.
+
+Rules:
+
+- provider sources are private per user
+- User A's provider source or source items must never be visible or playable by User B
+- provider items, links, sessions, and progress must validate the same-user ownership graph
+- provider items can link only to that same user's canonical movies, shows, or episodes
+- admin screens may inspect source metadata and status, but not raw provider URLs or stream URLs
+- there is no global/shared stream catalog and provider content is not cached globally
+- deleting a provider deletes provider/player rows only; canonical watch history remains
 
 ## Frontend Setup
 
@@ -101,6 +116,12 @@ The React app expects the backend on the same origin. Private routes use Laravel
 - `GET /api/v1/dashboard`
 - `POST /api/v1/alerts/{alert}/read`
 - `POST /api/v1/alerts/read-all`
+- `POST /api/v1/library/movies/{movie}/watch`
+- `GET /api/v1/player/sources`
+- `DELETE /api/v1/player/sources/{source}`
+- `POST /api/v1/player/items/{item}/play`
+- `POST /api/v1/player/items/{item}/link`
+- `PATCH /api/v1/player/sessions/{session}`
 
 Filament admin is available at `/admin` for active `owner` and `admin` users.
 

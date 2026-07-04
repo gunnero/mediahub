@@ -92,6 +92,33 @@ Tables are scoped by `user_id` from day one:
 
 The first backend release can return an empty but complete dashboard payload for new users. Existing static/importer logic can later be ported into import jobs that populate these tables per user.
 
+### Player And User-Owned Providers
+
+The Player is available only for users who attach their own provider/source. Users without a provider still use the dashboard and manual library normally as a watch-history tracker.
+
+Rules:
+
+- Provider sources are private per user.
+- A provider added by User A must never be visible or playable by User B.
+- Provider source items, media links, sessions, and progress must validate the same-user ownership graph, not only their own row-level `user_id`.
+- If a user has no provider, Player playback features are hidden or disabled and the UI shows: "Attach your own source to enable playback and automatic tracking."
+- If a user has a provider, the Player can show that user's own source items, linked/unlinked items, and continue-watching rows.
+- Provider items can link only to the same user's canonical movies, shows, or episodes.
+- Admins may inspect provider metadata/status, but must not see raw provider URLs or stream URLs.
+- Do not create a global/shared stream catalog.
+- Do not cache or expose provider content globally.
+- Disabling or deleting a provider must not delete canonical watch history.
+
+Tables are scoped by `user_id`:
+
+- `playback_sources`: user-owned provider/source record, status, metadata, encrypted settings.
+- `playback_source_items`: user-owned source items, encrypted stream URL, stream hash, source metadata.
+- `media_links`: user-owned link from source item to that same user's canonical movie/show/episode.
+- `playback_sessions`: user-owned playback session rows.
+- `playback_progress`: user-owned continue-watching/progress rows.
+
+Provider deletion may cascade provider rows, source items, links, sessions, and progress. It must not cascade to `movies`, `shows`, `episodes`, `movie_watches`, or `episode_watches`.
+
 ### Alerts
 
 Tables:
@@ -191,6 +218,18 @@ Dashboard:
 
 - `GET /api/v1/dashboard`
 
+Manual library:
+
+- `POST /api/v1/library/movies/{movie}/watch`
+
+Player:
+
+- `GET /api/v1/player/sources`
+- `DELETE /api/v1/player/sources/{source}`
+- `POST /api/v1/player/items/{item}/play`
+- `POST /api/v1/player/items/{item}/link`
+- `PATCH /api/v1/player/sessions/{session}`
+
 Alerts:
 
 - `POST /api/v1/alerts/{alert}/read`
@@ -224,8 +263,16 @@ The first authenticated empty-user payload should preserve the existing dashboar
 - `moviesToCheckOut`
 - `topShows`
 - `activity`
+- `player`
 
 For a new user, lists are empty, stats are zero, and the UI shows onboarding-oriented empty states.
+
+Player UI behavior:
+
+- Dashboard is always available.
+- Manual Library is always available.
+- Player without provider shows: "Attach your own source to enable playback and automatic tracking."
+- Player with provider shows the user's own source items, linked/unlinked items, and continue watching.
 
 ## Deployment
 
@@ -256,8 +303,12 @@ Use Laravel feature and unit tests for:
 - Login/logout/me.
 - Role permissions.
 - User isolation for dashboard, alerts, imports, and library data.
+- User isolation for playback sources, source items, media links, sessions, and progress.
 - Empty dashboard payload for fresh users.
 - Alert read and read-all persistence.
+- Provider users cannot access another user's provider, item, links, or sessions.
+- Users without providers can still manually track history.
+- Deleting a provider preserves canonical watch history.
 - Admin invite creation.
 - Analytics event capture.
 - Audit log creation.
@@ -314,3 +365,4 @@ Phase 4: Metadata and live alerts
 - Analytics events are captured for login, dashboard view, and alert reads.
 - Health endpoint returns application, database, and queue readiness.
 - Raw GDPR exports and generated private databases remain ignored and outside public web roots.
+- Provider/player data is user-owned only; no global stream catalog exists.

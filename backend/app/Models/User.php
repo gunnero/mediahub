@@ -83,6 +83,31 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(MovieWatch::class);
     }
 
+    public function playbackSources(): HasMany
+    {
+        return $this->hasMany(PlaybackSource::class);
+    }
+
+    public function playbackSourceItems(): HasMany
+    {
+        return $this->hasMany(PlaybackSourceItem::class);
+    }
+
+    public function mediaLinks(): HasMany
+    {
+        return $this->hasMany(MediaLink::class);
+    }
+
+    public function playbackSessions(): HasMany
+    {
+        return $this->hasMany(PlaybackSession::class);
+    }
+
+    public function playbackProgress(): HasMany
+    {
+        return $this->hasMany(PlaybackProgress::class);
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', UserStatus::Active);

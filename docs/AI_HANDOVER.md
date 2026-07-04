@@ -24,15 +24,17 @@ Completed:
 - Dashboard payload service that returns the JSON shape the React app expects.
 - React login screen, API loading, logout, loading/error/empty/session-expired states.
 - Persistent alert read/read-all API actions.
+- User-owned provider/player architecture with private playback sources and no global stream catalog.
 - Filament admin panel at `/admin`.
-- Filament resources for Users, Invites, Alerts, Shows, Movies, Episode Watches, Movie Watches, Analytics Events, Audit Logs.
-- Feature tests for auth, invite-only flow, dashboard, import, analytics, audit, alert persistence, and cross-user isolation.
+- Filament resources for Users, Invites, Alerts, Shows, Movies, Episode Watches, Movie Watches, Playback Sources, Playback Source Items, Analytics Events, Audit Logs.
+- Feature tests for auth, invite-only flow, dashboard, import, analytics, audit, alert persistence, provider ownership, manual tracking, provider deletion behavior, and cross-user isolation.
 
 Still planned:
 
 - Production deployment wiring for Laravel routes on `ccc.razbudise.mk`.
 - Create the first owner/admin production user and import the real private SQLite for that user.
 - User-facing import upload flow.
+- User-facing provider attach/manage flow.
 - Background jobs/scheduler for future alert checks.
 - TMDB/TVMaze or similar metadata integration later.
 - Richer analytics dashboard and admin metrics.
@@ -130,8 +132,13 @@ Tables:
 - `episode_watches`: `id`, `user_id`, `show_id`, `episode_id`, `watched_at`, `runtime`, `source`, timestamps. Indexes: `watched_at`, `user_id/watched_at`, `user_id/show_id`. FKs: `user_id` cascade delete, `show_id` and `episode_id` null on delete.
 - `movies`: `id`, `user_id`, `external_source`, `external_id`, `title`, `poster_url`, `runtime`, `is_to_watch`, timestamps. Indexes: `is_to_watch`, `user_id/title`, unique `user_id/external_source/external_id`. FK `user_id` cascade delete.
 - `movie_watches`: `id`, `user_id`, `movie_id`, `watched_at`, `runtime`, `watch_count`, `source`, timestamps. Indexes: `watched_at`, `user_id/watched_at`, `user_id/movie_id`. FKs: `user_id` cascade delete, `movie_id` null on delete.
+- `playback_sources`: `id`, `user_id`, `name`, `provider_type`, `status`, `metadata`, encrypted `settings`, `last_synced_at`, timestamps. Indexes: `provider_type`, `status`, `last_synced_at`, `user_id/status`, `user_id/provider_type`. FK `user_id` cascade delete.
+- `playback_source_items`: `id`, `user_id`, `playback_source_id`, `external_id`, `kind`, `title`, `status`, encrypted `stream_url`, `stream_url_hash`, `metadata`, `last_seen_at`, timestamps. Unique `user_id/playback_source_id/external_id`; indexes `kind`, `status`, `stream_url_hash`, `user_id/kind`, `user_id/status`. FKs: `user_id` cascade delete, `playback_source_id` cascade delete.
+- `media_links`: `id`, `user_id`, `playback_source_item_id`, `movie_id`, `show_id`, `episode_id`, `linked_at`, timestamps. Unique `user_id/playback_source_item_id`; indexes `user_id/movie_id`, `user_id/show_id`, `user_id/episode_id`. Provider item cascades; canonical media nulls on delete.
+- `playback_sessions`: `id`, `user_id`, `playback_source_id`, `playback_source_item_id`, `media_link_id`, `status`, `started_at`, `ended_at`, `last_position_seconds`, `duration_seconds`, timestamps. Indexes `status`, `started_at`, `ended_at`, `user_id/status`, `user_id/playback_source_item_id`.
+- `playback_progress`: `id`, `user_id`, `playback_session_id`, `playback_source_item_id`, `movie_id`, `episode_id`, `position_seconds`, `duration_seconds`, `completed`, timestamps. Unique `user_id/playback_source_item_id`; indexes `completed`, `user_id/completed`.
 
-Every media/library table is scoped by `user_id`.
+Every media/library/player table is scoped by `user_id`.
 
 ## 5. Models
 
@@ -146,6 +153,11 @@ Every media/library table is scoped by `user_id`.
 - `EpisodeWatch`: casts watched_at datetime and runtime int; belongs to user/show/episode; scopes `forUser`, `watched`.
 - `Movie`: casts runtime int and is_to_watch bool; belongs to user; has watches; scopes `forUser`, `toWatch`.
 - `MovieWatch`: casts watched_at datetime, runtime/watch_count ints; belongs to user/movie; scopes `forUser`, `watched`.
+- `PlaybackSource`: encrypted settings, metadata array, belongs to user, has source items/sessions, scopes `forUser`, `active`.
+- `PlaybackSourceItem`: encrypted hidden stream URL, metadata array, belongs to user/source, has media link/sessions/progress, scopes `forUser`, `available`.
+- `MediaLink`: belongs to user/source item and optional same-user canonical movie/show/episode, scope `forUser`.
+- `PlaybackSession`: belongs to user/source/source item/media link, has progress, scope `forUser`.
+- `PlaybackProgress`: belongs to user/session/source item/movie/episode, scope `forUser`.
 
 ## 6. Controllers And Endpoints
 
@@ -157,11 +169,18 @@ Every media/library table is scoped by `user_id`.
 - `DashboardController`: `GET /api/v1/dashboard`; returns user-scoped dashboard JSON.
 - `AlertController@read`: `POST /api/v1/alerts/{alert}/read`; marks one owned alert read.
 - `AlertController@readAll`: `POST /api/v1/alerts/read-all`; marks all owned alerts read.
+- `ManualLibraryController@watchMovie`: `POST /api/v1/library/movies/{movie}/watch`; manually tracks a user-owned movie watch.
+- `PlayerController@sources`: `GET /api/v1/player/sources`; lists only the user's provider sources.
+- `PlayerController@destroySource`: `DELETE /api/v1/player/sources/{source}`; deletes one owned provider without deleting canonical watch history.
+- `PlayerController@play`: `POST /api/v1/player/items/{item}/play`; starts playback for an owned provider item only.
+- `PlayerController@link`: `POST /api/v1/player/items/{item}/link`; links an owned provider item to one same-user movie/show/episode.
+- `PlayerController@updateSession`: `PATCH /api/v1/player/sessions/{session}`; updates owned playback progress and auto-records completed canonical watches.
 
 ## 7. Services
 
 - `InviteService`: creates hashed invite tokens and accepts valid pending invites.
 - `DashboardPayloadService`: builds the React-compatible payload from Laravel tables.
+- `PlaybackLibraryService`: enforces user-owned provider/player access, media links, playback sessions, progress, manual tracking, and provider deletion rules.
 - `AlertService`: marks alerts read/read-all with user ownership checks and analytics.
 - `AnalyticsService`: records sanitized analytics events.
 - `AuditLogService`: writes sanitized audit logs.
@@ -179,6 +198,7 @@ API:
 
 - Public under `web` middleware: `GET /api/v1/status`, `POST /api/v1/auth/login`, `POST /api/v1/invites/accept`
 - Authenticated under `auth`: `GET /api/v1/me`, `POST /api/v1/auth/logout`, `GET /api/v1/dashboard`, `POST /api/v1/alerts/{alert}/read`, `POST /api/v1/alerts/read-all`
+- Authenticated player/library: `POST /api/v1/library/movies/{movie}/watch`, `GET /api/v1/player/sources`, `DELETE /api/v1/player/sources/{source}`, `POST /api/v1/player/items/{item}/play`, `POST /api/v1/player/items/{item}/link`, `PATCH /api/v1/player/sessions/{session}`
 
 Admin:
 
@@ -189,6 +209,8 @@ Admin:
 - `/admin/movies`
 - `/admin/episode-watches`
 - `/admin/movie-watches`
+- `/admin/playback-sources`
+- `/admin/playback-source-items`
 - `/admin/analytics-events`
 - `/admin/audit-logs`
 
@@ -201,6 +223,7 @@ Admin:
 - User-specific dashboard payload.
 - SQLite/JSON import command for existing private dashboard data.
 - Persistent site alerts.
+- Player section is provider-gated: users without a provider can manually track; users with a provider can play only their own source items and completion auto-tracks watch history.
 - Analytics and audit log creation.
 - Filament admin for users, invites, alerts, media inspection, analytics, and audit logs.
 - Frontend loading, login, API error, empty library, session expired, logout, search/filter, details modal, poster shelves, stats, and activity chart.
@@ -231,6 +254,10 @@ Priority 3:
 - Public registration is absent; users enter through invites.
 - Imported media rows are always scoped by `user_id`.
 - Filament media resources are read-only by default to reduce accidental private library edits.
+- Provider/player sources are private per user; do not introduce a global/shared stream catalog or global provider cache.
+- Provider/player access validates the same-user ownership graph across sources, source items, media links, sessions, progress, and canonical media.
+- Admin may inspect provider status/metadata and stream hashes, but raw provider URLs and stream URLs are encrypted/hidden.
+- Deleting a provider must not delete canonical watch history.
 - Dashboard API returns the existing static JSON shape so frontend changes stay small.
 - Do not replace Apache Basic Auth on staging yet.
 
@@ -258,6 +285,7 @@ Screens:
 - Home dashboard: hero, recently watched, movie shelf, alerts panel, followed shows, stats, activity chart.
 - Shows view: top watched shows and followed shows with available episodes.
 - Movies view: movies to check out.
+- Player view: shows the attach-source empty state for users without providers; shows continue watching, source items, and linked/unlinked counts when provider data exists.
 - Alerts view: wide alert list; opening an alert persists read state.
 - Stats view: stats strip and activity chart.
 - Lists/settings placeholders: preserved from original design.
@@ -272,12 +300,14 @@ Known issues:
 - Not deployed yet as a Laravel-backed site.
 - No production owner/admin seed workflow documented beyond using Laravel/Filament.
 - No user-facing import upload flow yet.
+- No user-facing provider attach/manage UI yet; the backend architecture and owner-enforced APIs are in place.
 - No metadata provider integration, so future episode/movie alert automation is not live.
 
 Technical debt:
 
 - `DashboardPayloadService` is intentionally pragmatic and may need extraction once provider integrations arrive.
 - Filament media resources are basic inspection tables.
+- Player UI is a first-pass section and does not yet wire frontend play buttons to `POST /api/v1/player/items/{item}/play`.
 - Queue tables exist but no queue worker contract is installed on staging.
 - No browser E2E login smoke test yet.
 
@@ -319,4 +349,4 @@ See section 3 for the source tree. Full local checkouts also contain ignored/gen
 
 ## 20. Five-Minute Summary
 
-This is now an authenticated Laravel + React TV Time dashboard. The existing React poster UI remains, but it logs into Laravel and loads `/api/v1/dashboard` instead of static JSON. Laravel owns invite-only users, sessions, alerts, analytics, audit logs, media tables, Filament admin, and a private import command for the existing SQLite/JSON output. All media rows are user-scoped. The next engineer should deploy the Laravel-backed app behind the existing Apache Basic Auth, create the first admin user, import the real private SQLite for that user, and smoke test login, dashboard data, alerts, and `/admin`.
+This is now an authenticated Laravel + React TV Time dashboard. The existing React poster UI remains, but it logs into Laravel and loads `/api/v1/dashboard` instead of static JSON. Laravel owns invite-only users, sessions, alerts, analytics, audit logs, media tables, provider/player tables, Filament admin, and a private import command for the existing SQLite/JSON output. All media and player rows are user-scoped. Player playback exists only for users who attach their own provider/source; there is no global stream catalog. The next engineer should deploy the Laravel-backed app behind the existing Apache Basic Auth, create the first admin user, import the real private SQLite for that user, and smoke test login, dashboard data, alerts, provider-gated Player state, and `/admin`.

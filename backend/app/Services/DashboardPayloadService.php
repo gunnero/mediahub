@@ -17,6 +17,7 @@ class DashboardPayloadService
     public function __construct(
         private readonly AnalyticsService $analytics,
         private readonly MediaLibraryService $mediaLibrary,
+        private readonly PlaybackLibraryService $playbackLibrary,
     ) {}
 
     /**
@@ -61,6 +62,7 @@ class DashboardPayloadService
             'moviesToCheckOut' => $this->moviesToCheckOut($user),
             'topShows' => $this->topShows($user),
             'activity' => $this->activity($user),
+            'player' => $this->playbackLibrary->playerPayloadFor($user),
         ];
     }
 

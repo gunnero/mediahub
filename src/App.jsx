@@ -31,6 +31,7 @@ const navItems = [
   { id: "home", label: "Home", icon: House },
   { id: "shows", label: "Shows", icon: TelevisionSimple },
   { id: "movies", label: "Movies", icon: FilmSlate },
+  { id: "player", label: "Player", icon: Play },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "stats", label: "Stats", icon: ChartBar },
   { id: "lists", label: "Lists", icon: ListBullets },
@@ -69,6 +70,14 @@ const fallbackData = {
   moviesToCheckOut: [],
   topShows: [],
   activity: [],
+  player: {
+    enabled: false,
+    emptyState: "Attach your own source to enable playback and automatic tracking.",
+    sourceItems: [],
+    linkedItems: [],
+    unlinkedItems: [],
+    continueWatching: [],
+  },
 };
 
 function formatNumber(value) {
@@ -465,7 +474,79 @@ function DetailModal({ item, onClose }) {
   );
 }
 
-function FocusSection({ activeSection, activity, collections, stats, alerts, onOpen }) {
+function PlayerSection({ player }) {
+  const safePlayer = player || fallbackData.player;
+
+  if (!safePlayer.enabled) {
+    return (
+      <div className="focus-block quiet-note">
+        <Play size={34} weight="duotone" />
+        <h2>Player</h2>
+        <p>{safePlayer.emptyState}</p>
+      </div>
+    );
+  }
+
+  const continueWatching = safePlayer.continueWatching || [];
+  const sourceItems = safePlayer.sourceItems || [];
+  const linkedItems = safePlayer.linkedItems || [];
+  const unlinkedItems = safePlayer.unlinkedItems || [];
+
+  return (
+    <div className="focus-block player-board">
+      <section className="player-panel">
+        <div className="section-heading">
+          <h2>Continue watching</h2>
+          <span>{continueWatching.length} active</span>
+        </div>
+        <div className="player-list">
+          {continueWatching.length ? (
+            continueWatching.map((item) => (
+              <button className="player-row" key={item.id} type="button">
+                <Play size={22} weight="fill" />
+                <span>
+                  <strong>{item.title || "Untitled item"}</strong>
+                  <small>{item.kind || "source"} · {item.positionSeconds || 0}s</small>
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="empty-strip compact">Nothing in progress</div>
+          )}
+        </div>
+      </section>
+      <section className="player-panel">
+        <div className="section-heading">
+          <h2>Source items</h2>
+          <span>{sourceItems.length} available</span>
+        </div>
+        <div className="player-list">
+          {sourceItems.slice(0, 8).map((item) => (
+            <button className="player-row" key={item.id} type="button">
+              <FilmSlate size={22} />
+              <span>
+                <strong>{item.title}</strong>
+                <small>{item.linked ? "linked" : "unlinked"} · {item.sourceName}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="player-summary-grid">
+        <div>
+          <strong>{linkedItems.length}</strong>
+          <span>Linked</span>
+        </div>
+        <div>
+          <strong>{unlinkedItems.length}</strong>
+          <span>Unlinked</span>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FocusSection({ activeSection, activity, collections, stats, alerts, player, onOpen }) {
   if (activeSection === "shows") {
     return (
       <div className="focus-block">
@@ -503,6 +584,10 @@ function FocusSection({ activeSection, activity, collections, stats, alerts, onO
         ))}
       </div>
     );
+  }
+
+  if (activeSection === "player") {
+    return <PlayerSection player={player} />;
   }
 
   if (activeSection === "stats") {
@@ -766,6 +851,7 @@ export function App() {
                 activity={dashboard.activity}
                 collections={collections}
                 onOpen={openItem}
+                player={dashboard.player}
                 stats={stats}
               />
             )}
