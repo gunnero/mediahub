@@ -1,0 +1,9 @@
+node_modules/
+.npm-cache/
+dist/
+var/
+public/data/*.json
+public/assets/cache/
+qa/
+design-qa.md
+.DS_Store
