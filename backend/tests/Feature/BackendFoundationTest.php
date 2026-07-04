@@ -217,4 +217,16 @@ class BackendFoundationTest extends TestCase
             ->assertJsonPath('stats.showsFollowed', 0)
             ->assertJsonPath('stats.alertsUnread', 0);
     }
+
+    public function test_members_cannot_access_filament_admin(): void
+    {
+        $user = User::factory()->create([
+            'role' => UserRole::Member,
+            'status' => UserStatus::Active,
+        ]);
+
+        $this->actingAs($user)
+            ->get('/admin')
+            ->assertForbidden();
+    }
 }

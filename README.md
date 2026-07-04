@@ -1,12 +1,12 @@
-# TV Time Dashboard
+# MediaHub
 
-Private TV Time archive dashboard with a React/Vite frontend and a Laravel backend.
+Provider-independent personal media operating system with a React/Vite dashboard and a Laravel backend.
 
 ## Current Shape
 
-- `src/`: React dashboard UI. It now logs in through Laravel and loads `/api/v1/dashboard`.
+- `src/`: React dashboard UI. It logs in through Laravel and loads `/api/v1/dashboard`.
 - `scripts/import_tvtime.py`: imports the preserved TV Time GDPR export into ignored private outputs.
-- `backend/`: Laravel 13 backend for invite-only users, Filament admin, analytics, audit logs, alerts, and per-user libraries.
+- `backend/`: Laravel 13 backend for invite-only users, Filament admin, analytics, audit logs, alerts, per-user libraries, provider-owned player state, ratings, notes, and safe backups.
 
 The deployed staging site at `https://ccc.razbudise.mk` remains protected by Apache Basic Auth. Do not remove that protection until Laravel auth and deployment hardening are finished.
 
@@ -22,6 +22,18 @@ Do not commit or expose:
 - `public/assets/cache/`.
 - backend storage imports, generated private JSON, database dumps, or private SQLite files.
 - provider URLs, stream URLs, provider credentials, or global provider caches.
+
+## Canonical Media Rule
+
+Canonical media and watch history are permanent. Provider items are temporary.
+
+- Canonical media: `movies`, `shows`, `episodes`.
+- User activity: `movie_watches`, `episode_watches`, `ratings`, `notes`, `playback_sessions`.
+- Provider layer: `playback_sources`, `playback_source_items`, `media_links`, `playback_progress`.
+
+Every record is scoped by `user_id`. Deleting or disabling a provider may remove provider rows, links, sessions, and source progress, but it must not delete canonical movies, shows, episodes, watch history, ratings, or notes.
+
+See `docs/mediahub/CANONICAL_MEDIA_CONTRACT.md`.
 
 ## Player Provider Rule
 
@@ -88,6 +100,18 @@ php artisan tvtime:import-user {user_id} ../var/private/tvtime.sqlite
 
 The command only accepts files from ignored private/generated paths and prints summary counts only.
 
+## MediaHub Backup And Restore
+
+Create or restore a provider-safe user backup:
+
+```bash
+cd backend
+php artisan mediahub:backup-user {user_id}
+php artisan mediahub:restore-user {user_id} storage/app/private/mediahub-backups/user-{user_id}-YYYYMMDD-HHMMSS.json
+```
+
+Backups are written under ignored private Laravel storage and include canonical library data, watch history, ratings, notes, safe media links, and safe progress. They intentionally exclude raw stream URLs, playlist URLs, provider settings, provider credentials, API keys, and secrets.
+
 ## Backend Setup
 
 ```bash
@@ -117,6 +141,12 @@ The React app expects the backend on the same origin. Private routes use Laravel
 - `POST /api/v1/alerts/{alert}/read`
 - `POST /api/v1/alerts/read-all`
 - `POST /api/v1/library/movies/{movie}/watch`
+- `POST /api/v1/library/movies/{movie}/rating`
+- `POST /api/v1/library/shows/{show}/rating`
+- `POST /api/v1/library/episodes/{episode}/rating`
+- `POST /api/v1/library/movies/{movie}/notes`
+- `POST /api/v1/library/shows/{show}/notes`
+- `POST /api/v1/library/episodes/{episode}/notes`
 - `GET /api/v1/player/sources`
 - `DELETE /api/v1/player/sources/{source}`
 - `POST /api/v1/player/items/{item}/play`

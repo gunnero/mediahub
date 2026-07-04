@@ -21,6 +21,12 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::post('/alerts/{alert}/read', [AlertController::class, 'read']);
         Route::post('/alerts/read-all', [AlertController::class, 'readAll']);
         Route::post('/library/movies/{movie}/watch', [ManualLibraryController::class, 'watchMovie']);
+        Route::post('/library/movies/{movie}/rating', [ManualLibraryController::class, 'rateMovie']);
+        Route::post('/library/shows/{show}/rating', [ManualLibraryController::class, 'rateShow']);
+        Route::post('/library/episodes/{episode}/rating', [ManualLibraryController::class, 'rateEpisode']);
+        Route::post('/library/movies/{movie}/notes', [ManualLibraryController::class, 'noteMovie']);
+        Route::post('/library/shows/{show}/notes', [ManualLibraryController::class, 'noteShow']);
+        Route::post('/library/episodes/{episode}/notes', [ManualLibraryController::class, 'noteEpisode']);
         Route::get('/player/sources', [PlayerController::class, 'sources']);
         Route::delete('/player/sources/{source}', [PlayerController::class, 'destroySource']);
         Route::post('/player/items/{item}/play', [PlayerController::class, 'play']);

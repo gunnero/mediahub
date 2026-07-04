@@ -108,6 +108,16 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(PlaybackProgress::class);
     }
 
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(Rating::class);
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class);
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', UserStatus::Active);

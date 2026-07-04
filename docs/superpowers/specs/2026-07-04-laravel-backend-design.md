@@ -1,8 +1,8 @@
-# TV Time Laravel Backend Design
+# MediaHub Laravel Backend Design
 
 ## Purpose
 
-Build a proper product backend for the TV Time replacement dashboard. The current React app is a static private prototype. The backend will turn it into an invite-only multi-user product where each user starts with an empty personal media library and later imports or adds their own data.
+Build a proper product backend for MediaHub. The current React app began as a TV Time archive dashboard, but the product is now a provider-independent personal media operating system where each user starts with an empty personal media library and later imports or adds their own data.
 
 The backend must be safe for private viewing histories. No raw GDPR exports, access tokens, IP addresses, device identifiers, passwords, or generated private database files are committed to Git or served directly from the web root.
 
@@ -23,7 +23,7 @@ The first backend release should establish the product foundation:
 - Private storage conventions for future imports.
 - Health/status endpoints for deployment checks.
 
-The first release does not need live episode-release integrations, email/push notifications, payment, social features, or public discovery. Those become later modules.
+The first release does not need live episode-release integrations, email/push notifications, payment, social features, recommendations, AI UI, mobile apps, or public discovery. Those become later modules.
 
 ## Architecture
 
@@ -88,6 +88,8 @@ Tables are scoped by `user_id` from day one:
 - `episode_watches`: user watch history rows.
 - `movies`: per-user movie records.
 - `movie_watches`: user movie watch history.
+- `ratings`: private user ratings for movies, shows, and episodes.
+- `notes`: private user notes for movies, shows, and episodes.
 - `library_items`: deferred unifying layer for cross-media browsing after the first release.
 
 The first backend release can return an empty but complete dashboard payload for new users. Existing static/importer logic can later be ported into import jobs that populate these tables per user.
@@ -118,6 +120,37 @@ Tables are scoped by `user_id`:
 - `playback_progress`: user-owned continue-watching/progress rows.
 
 Provider deletion may cascade provider rows, source items, links, sessions, and progress. It must not cascade to `movies`, `shows`, `episodes`, `movie_watches`, or `episode_watches`.
+
+Canonical media and permanent activity outlive providers. Provider deletion must also preserve ratings and notes.
+
+### Canonical Media Contract
+
+Provider items are temporary. Canonical media and watch history are permanent.
+
+Canonical media:
+
+- `movies`
+- `shows`
+- `episodes`
+
+User activity:
+
+- `movie_watches`
+- `episode_watches`
+- `ratings`
+- `notes`
+- `playback_sessions`
+
+Provider layer:
+
+- `playback_sources`
+- `playback_source_items`
+- `media_links`
+- `playback_progress`
+
+Unlinked provider playback may save source-only progress. Linked provider playback may create/update canonical watch history. Dashboard payloads must not expose stream URLs, playlist URLs, provider credentials, API keys, provider secrets, or raw provider settings.
+
+The canonical contract is documented in `docs/mediahub/CANONICAL_MEDIA_CONTRACT.md`.
 
 ### Alerts
 
@@ -221,6 +254,12 @@ Dashboard:
 Manual library:
 
 - `POST /api/v1/library/movies/{movie}/watch`
+- `POST /api/v1/library/movies/{movie}/rating`
+- `POST /api/v1/library/shows/{show}/rating`
+- `POST /api/v1/library/episodes/{episode}/rating`
+- `POST /api/v1/library/movies/{movie}/notes`
+- `POST /api/v1/library/shows/{show}/notes`
+- `POST /api/v1/library/episodes/{episode}/notes`
 
 Player:
 
@@ -238,6 +277,12 @@ Alerts:
 Health:
 
 - `GET /api/v1/status`
+
+Support commands:
+
+- `php artisan tvtime:import-user {user_id} {path_to_sqlite_or_json}`
+- `php artisan mediahub:backup-user {user_id}`
+- `php artisan mediahub:restore-user {user_id} {backup_file}`
 
 Admin operations should primarily live in the admin panel. JSON admin APIs can be added only when the frontend needs them.
 
@@ -267,6 +312,16 @@ The first authenticated empty-user payload should preserve the existing dashboar
 
 For a new user, lists are empty, stats are zero, and the UI shows onboarding-oriented empty states.
 
+Dashboard stats may add:
+
+- `manualWatchesCount`
+- `autoTrackedWatchesCount`
+- `linkedProviderItemsCount`
+- `unlinkedProviderItemsCount`
+- `unsyncedSourceOnlyProgressCount`
+- `ratingsCount`
+- `notesCount`
+
 Player UI behavior:
 
 - Dashboard is always available.
@@ -295,6 +350,8 @@ Backups must include:
 - Private import storage if retained.
 - `.env` handled separately as a secret, not committed.
 
+MediaHub user backups must exclude raw stream URLs, playlist URLs, provider credentials, API keys, provider settings, secrets, and raw GDPR files by default.
+
 ## Testing
 
 Use Laravel feature and unit tests for:
@@ -309,6 +366,12 @@ Use Laravel feature and unit tests for:
 - Provider users cannot access another user's provider, item, links, or sessions.
 - Users without providers can still manually track history.
 - Deleting a provider preserves canonical watch history.
+- Ratings and notes are private, same-user only, and survive provider deletion.
+- Unlinked provider playback saves source-only progress without creating canonical watches.
+- Linked provider playback creates canonical watches without duplicate rows for repeated completion updates.
+- Dashboard payloads never expose stream/provider URLs.
+- Backup files exclude stream/provider URLs and provider secrets.
+- Restore validates private backup paths and preserves user isolation.
 - Admin invite creation.
 - Analytics event capture.
 - Audit log creation.

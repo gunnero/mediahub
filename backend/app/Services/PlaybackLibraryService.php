@@ -20,6 +20,10 @@ use Illuminate\Validation\ValidationException;
 
 class PlaybackLibraryService
 {
+    public function __construct(
+        private readonly AuditLogService $auditLogs,
+    ) {}
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -55,7 +59,10 @@ class PlaybackLibraryService
     public function startPlayback(User $user, PlaybackSourceItem $item): PlaybackSession
     {
         $this->assertOwnedItem($user, $item);
-        $item->loadMissing(['source', 'mediaLink']);
+        $item->loadMissing([
+            'source',
+            'mediaLink' => fn ($query) => $query->forUser($user),
+        ]);
 
         if ($item->source?->status !== 'active' || $item->status !== 'available') {
             throw ValidationException::withMessages([
@@ -128,7 +135,7 @@ class PlaybackLibraryService
                 'last_position_seconds' => (int) ($data['position_seconds'] ?? $session->last_position_seconds),
                 'duration_seconds' => $data['duration_seconds'] ?? $session->duration_seconds,
                 'status' => $completed ? 'completed' : ($data['status'] ?? $session->status),
-                'ended_at' => $completed ? now() : $session->ended_at,
+                'ended_at' => $completed ? ($session->ended_at ?? now()) : $session->ended_at,
             ])->save();
 
             $progress = PlaybackProgress::updateOrCreate([
@@ -156,6 +163,12 @@ class PlaybackLibraryService
         if ($source->user_id !== $user->id) {
             throw new ModelNotFoundException;
         }
+
+        $this->auditLogs->record('playback_source.deleted', $user, $source, $user, [
+            'provider_type' => $source->provider_type,
+            'status' => $source->status,
+            'items_count' => $source->items()->count(),
+        ]);
 
         $source->delete();
     }
@@ -200,7 +213,10 @@ class PlaybackLibraryService
     private function sourceItemsFor(User $user): array
     {
         return PlaybackSourceItem::forUser($user)
-            ->with(['source', 'mediaLink'])
+            ->with([
+                'source',
+                'mediaLink' => fn ($query) => $query->forUser($user),
+            ])
             ->whereHas('source', fn (Builder $query) => $query->forUser($user)->active())
             ->latest('updated_at')
             ->limit(20)
@@ -217,10 +233,10 @@ class PlaybackLibraryService
     {
         return MediaLink::forUser($user)
             ->with([
-                'sourceItem' => fn (Builder $query) => $query->forUser($user),
-                'movie' => fn (Builder $query) => $query->forUser($user),
-                'show' => fn (Builder $query) => $query->forUser($user),
-                'episode' => fn (Builder $query) => $query->forUser($user),
+                'sourceItem' => fn ($query) => $query->forUser($user),
+                'movie' => fn ($query) => $query->forUser($user),
+                'show' => fn ($query) => $query->forUser($user),
+                'episode' => fn ($query) => $query->forUser($user),
             ])
             ->whereHas('sourceItem', fn (Builder $query) => $query
                 ->forUser($user)
@@ -249,7 +265,7 @@ class PlaybackLibraryService
     {
         return PlaybackSourceItem::forUser($user)
             ->whereHas('source', fn (Builder $query) => $query->forUser($user)->active())
-            ->whereDoesntHave('mediaLink')
+            ->whereDoesntHave('mediaLink', fn (Builder $query) => $query->forUser($user))
             ->latest('updated_at')
             ->limit(20)
             ->get()
@@ -264,7 +280,7 @@ class PlaybackLibraryService
     private function continueWatchingFor(User $user): array
     {
         return PlaybackProgress::forUser($user)
-            ->with(['sourceItem' => fn (Builder $query) => $query->forUser($user)])
+            ->with(['sourceItem' => fn ($query) => $query->forUser($user)])
             ->whereHas('sourceItem', fn (Builder $query) => $query
                 ->forUser($user)
                 ->whereHas('source', fn (Builder $sourceQuery) => $sourceQuery->forUser($user)->active()))

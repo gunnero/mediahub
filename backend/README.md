@@ -1,6 +1,6 @@
-# TV Time Dashboard Backend
+# MediaHub Backend
 
-Laravel backend for the TV Time Dashboard project.
+Laravel backend for MediaHub, a provider-independent personal media operating system.
 
 ## Stack
 
@@ -34,6 +34,12 @@ Current routes:
 - `POST /api/v1/alerts/{alert}/read`
 - `POST /api/v1/alerts/read-all`
 - `POST /api/v1/library/movies/{movie}/watch`
+- `POST /api/v1/library/movies/{movie}/rating`
+- `POST /api/v1/library/shows/{show}/rating`
+- `POST /api/v1/library/episodes/{episode}/rating`
+- `POST /api/v1/library/movies/{movie}/notes`
+- `POST /api/v1/library/shows/{show}/notes`
+- `POST /api/v1/library/episodes/{episode}/notes`
 - `GET /api/v1/player/sources`
 - `DELETE /api/v1/player/sources/{source}`
 - `POST /api/v1/player/items/{item}/play`
@@ -43,6 +49,18 @@ Current routes:
 The API uses session-backed same-origin authentication. Public registration is intentionally absent; users are created through invites or admin management.
 
 `GET /api/v1/dashboard` returns the dashboard-compatible JSON shape consumed by the React app.
+
+## Canonical Media Contract
+
+Provider items are temporary. Canonical media and user activity are permanent.
+
+- Canonical media: `movies`, `shows`, `episodes`
+- User activity: `movie_watches`, `episode_watches`, `ratings`, `notes`, `playback_sessions`
+- Provider layer: `playback_sources`, `playback_source_items`, `media_links`, `playback_progress`
+
+All of these tables are scoped by `user_id`. Provider deletion cascades provider rows only and must not delete canonical media, watch history, ratings, or notes.
+
+See `../docs/mediahub/CANONICAL_MEDIA_CONTRACT.md`.
 
 ## Player And Providers
 
@@ -59,6 +77,26 @@ All player tables are scoped by `user_id`:
 Provider settings and item stream URLs are encrypted/hidden. API list/dashboard payloads never include stream URLs; the play endpoint returns a playback URL only to the owner of that specific source item. Admin resources expose source metadata/status and item hashes, not raw URLs. Do not add a global/shared stream catalog.
 
 The player service validates the whole ownership graph for source items, media links, playback sessions, and progress. A row with the current `user_id` is not enough if it points at another user's provider source or canonical media.
+
+## Ratings And Notes
+
+Users can rate movies, shows, and episodes from 1 to 10. Users can add private notes to movies, shows, and episodes. Ratings and notes are always user-scoped and survive provider changes or provider deletion.
+
+Tables:
+
+- `ratings`
+- `notes`
+
+## Backup And Restore
+
+Provider-safe private backup commands:
+
+```bash
+php artisan mediahub:backup-user {user_id}
+php artisan mediahub:restore-user {user_id} storage/app/private/mediahub-backups/user-{user_id}-YYYYMMDD-HHMMSS.json
+```
+
+Backups include canonical library data, watches, ratings, notes, safe media links, and safe progress. Backups exclude stream URLs, playlist URLs, provider credentials, API keys, provider settings, and secrets by default. Restore paths are accepted only from `storage/app/private/mediahub-backups`.
 
 ## Import Existing Data
 
@@ -103,7 +141,7 @@ Only active `owner` and `admin` users can access the Filament panel. Imported me
 php artisan test
 ```
 
-The feature tests cover status readiness, invite acceptance, login/logout, `/me`, unauthenticated private API access, empty and imported dashboard payloads, alert read persistence, analytics events, audit logs, import validation, player/provider ownership, manual tracking without a provider, provider auto-tracking, provider deletion preserving watch history, and cross-user isolation.
+The feature tests cover status readiness, invite acceptance, login/logout, `/me`, unauthenticated private API access, empty and imported dashboard payloads, alert read persistence, analytics events, audit logs, import validation, player/provider ownership, manual tracking without a provider, provider auto-tracking, provider deletion preserving watch history/ratings/notes, backup/restore, dashboard URL safety, and cross-user isolation.
 
 ## Deployment Checklist
 
