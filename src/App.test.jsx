@@ -27,6 +27,15 @@ const movieDetail = {
   rating: { id: 7, rating: 9 },
   notes: [{ id: 5, body: "Watch the diner scene again." }],
   watchHistory: [{ id: 11, watchedAt: "2026-07-01T12:00:00Z", runtime: 170, source: "manual" }],
+  timeline: [
+    {
+      id: 21,
+      title: "Watched Heat",
+      subtitle: "Movie night",
+      source: "manual",
+      occurredAt: "2026-07-01T12:00:00Z",
+    },
+  ],
   provider: { linked: true, linkedItemsCount: 1 },
 };
 
@@ -62,10 +71,12 @@ describe("DetailModal", () => {
     renderDetail();
 
     expect(screen.getByRole("dialog", { name: /heat details/i })).toBeInTheDocument();
-    expect(screen.getByText("Private note")).toBeInTheDocument();
+    expect(screen.getByText("Private memory")).toBeInTheDocument();
+    expect(screen.getByText("Entertainment diary")).toBeInTheDocument();
+    expect(screen.getByText("Watched Heat")).toBeInTheDocument();
     expect(screen.getByText("9/10")).toBeInTheDocument();
-    expect(screen.getByText("Linked to 1 provider item")).toBeInTheDocument();
-    expect(screen.getByText(/manual/i)).toBeInTheDocument();
+    expect(screen.getByText("Linked to your source")).toBeInTheDocument();
+    expect(screen.getByText(/manual entry/i)).toBeInTheDocument();
   });
 
   it("renders enriched metadata without breaking poster fallback", () => {
@@ -124,13 +135,13 @@ describe("DetailModal", () => {
     const unwatchedDetail = { ...movieDetail, watched: false, watchHistory: [] };
     const unwatchedProps = renderDetail({ detail: unwatchedDetail });
 
-    fireEvent.click(screen.getByRole("button", { name: /mark watched/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to watch history/i }));
     expect(unwatchedProps.onMarkWatched).toHaveBeenCalledWith(unwatchedDetail);
 
     unwatchedProps.unmount();
 
     const watchedProps = renderDetail();
-    fireEvent.click(screen.getByRole("button", { name: /mark unwatched/i }));
+    fireEvent.click(screen.getByRole("button", { name: /remove manual watch/i }));
     expect(watchedProps.onMarkUnwatched).toHaveBeenCalledWith(movieDetail);
   });
 
@@ -163,8 +174,19 @@ const playerPayload = {
       linked: false,
       link: null,
     },
+    {
+      id: 12,
+      sourceId: 3,
+      sourceName: "NAS",
+      sourceStatus: "active",
+      kind: "movie",
+      title: "Linked Heat Source",
+      status: "available",
+      linked: true,
+      link: { id: 22, movieId: 42, canonicalTitle: "Heat" },
+    },
   ],
-  linkedItems: [],
+  linkedItems: [{ id: 12 }],
   unlinkedItems: [{ id: 10 }],
   continueWatching: [],
 };
@@ -193,7 +215,7 @@ describe("PlayerSection", () => {
     renderPlayer({ apiClient, player: { ...playerPayload, enabled: false, sourceItems: [] } });
 
     fireEvent.change(screen.getByLabelText(/source name/i), { target: { value: "My NAS" } });
-    fireEvent.click(screen.getByLabelText(/i own or am allowed/i));
+    fireEvent.click(screen.getByLabelText(/this is my private source/i));
     fireEvent.click(screen.getByRole("button", { name: /attach source/i }));
 
     await waitFor(() => {
@@ -219,6 +241,9 @@ describe("PlayerSection", () => {
     renderPlayer({ apiClient });
 
     expect(await screen.findByText("Heat Source")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /linked to library/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /needs linking/i })).toBeInTheDocument();
+    expect(screen.getByText(/linking connects playback to permanent watch history/i)).toBeInTheDocument();
     expect(screen.queryByText(/private.example.test/i)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/item title/i), { target: { value: "Private File" } });
@@ -290,7 +315,7 @@ describe("PlayerSection", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /play heat source/i }));
 
-    expect(await screen.findByText(/progress is saved only to this source until linked/i)).toBeInTheDocument();
+    expect(await screen.findByText(/progress is saved only to this private source until linked/i)).toBeInTheDocument();
     expect(screen.getByTestId("provider-video")).toHaveAttribute("src", "https://private.example.test/movie.m3u8");
 
     fireEvent.change(screen.getByLabelText(/position seconds/i), { target: { value: "120" } });
@@ -354,12 +379,39 @@ describe("TimelinePanel", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: /timeline/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /entertainment diary/i })).toBeInTheDocument();
     expect(screen.getByText("Today")).toBeInTheDocument();
     expect(screen.getByText("Yesterday")).toBeInTheDocument();
     expect(screen.getByText("Watched Heat")).toBeInTheDocument();
     expect(screen.getByText("Rated Severance 10/10")).toBeInTheDocument();
-    expect(screen.getAllByText("manual")).toHaveLength(2);
+    expect(screen.getAllByText("Manual entry")).toHaveLength(2);
+  });
+
+  it("keeps this-week memories visible instead of dropping them into raw technical data", () => {
+    render(
+      <TimelinePanel
+        timeline={{
+          recent: [
+            {
+              id: 3,
+              eventType: "note.created",
+              title: "Added a private note",
+              subtitle: "Movie",
+              source: "player",
+              occurredAt: new Date(Date.now() - 172800000).toISOString(),
+              group: "This week",
+            },
+          ],
+          todaySummary: { total: 0 },
+          thisWeekSummary: { total: 1 },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("This week")).toBeInTheDocument();
+    expect(screen.getByText("Added a private note")).toBeInTheDocument();
+    expect(screen.getByText("Player")).toBeInTheDocument();
+    expect(screen.queryByText("note.created")).not.toBeInTheDocument();
   });
 
   it("renders a quiet empty state when there are no events", () => {
@@ -373,6 +425,6 @@ describe("TimelinePanel", () => {
       />,
     );
 
-    expect(screen.getByText(/activity will appear here/i)).toBeInTheDocument();
+    expect(screen.getByText(/your entertainment diary is quiet/i)).toBeInTheDocument();
   });
 });

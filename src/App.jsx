@@ -121,6 +121,23 @@ function shortTime(value) {
   }).format(date);
 }
 
+function sourceLabel(source) {
+  const labels = {
+    import: "Import",
+    manual: "Manual entry",
+    metadata: "Metadata",
+    player: "Player",
+    provider: "Provider",
+    system: "System",
+  };
+
+  if (!source) {
+    return "MediaHub";
+  }
+
+  return labels[source] || source.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function imageFor(item) {
   return item?.poster || item?.backdrop || fallbackPoster;
 }
@@ -302,10 +319,10 @@ function Hero({ item, onOpen }) {
         <div className="hero-actions">
           <button className="primary-action" onClick={() => onOpen(item)} type="button">
             <Play size={18} weight="fill" />
-            Open details
+            Open memory
           </button>
           <button className="secondary-action" onClick={() => onOpen(item)} type="button">
-            Details
+            View details
           </button>
         </div>
       </div>
@@ -465,13 +482,20 @@ export function TimelinePanel({ timeline }) {
       [group]: [...(groups[group] || []), event],
     };
   }, {});
-  const orderedGroups = ["Today", "Yesterday", "Earlier"].filter((group) => grouped[group]?.length);
+  const defaultGroups = ["Today", "Yesterday", "This week", "Earlier"];
+  const orderedGroups = [
+    ...defaultGroups.filter((group) => grouped[group]?.length),
+    ...Object.keys(grouped).filter((group) => !defaultGroups.includes(group)),
+  ];
 
   return (
     <section className="timeline-panel">
       <div className="section-heading">
-        <h2>Timeline</h2>
-        <span>{formatNumber(timeline?.thisWeekSummary?.total || 0)} this week</span>
+        <div>
+          <h2>Entertainment diary</h2>
+          <p>A private memory of what you watch, rate, and save.</p>
+        </div>
+        <span>{formatNumber(timeline?.thisWeekSummary?.total || 0)} memories this week</span>
       </div>
       {events.length ? (
         <div className="timeline-list">
@@ -479,21 +503,21 @@ export function TimelinePanel({ timeline }) {
             <div className="timeline-group" key={group}>
               <span>{group}</span>
               {grouped[group].map((event) => (
-                <article className="timeline-row" key={event.id}>
+                <article className="timeline-row" key={event.id} aria-label={event.title}>
                   <i />
                   <div>
                     <strong>{event.title}</strong>
                     <small>{event.subtitle}</small>
                   </div>
                   <em>{shortTime(event.occurredAt)}</em>
-                  <b>{event.source}</b>
+                  <b>{sourceLabel(event.source)}</b>
                 </article>
               ))}
             </div>
           ))}
         </div>
       ) : (
-        <div className="timeline-empty">Activity will appear here as you watch, rate, note, and link media.</div>
+        <div className="timeline-empty">Your entertainment diary is quiet for now. Watch, rate, note, or link media and the meaningful moments will appear here.</div>
       )}
     </section>
   );
@@ -515,10 +539,29 @@ export function DetailModal({
   onMarkUnwatched,
 }) {
   const [noteBody, setNoteBody] = useState("");
+  const closeButtonRef = useRef(null);
 
   useEffect(() => {
     setNoteBody(detail?.notes?.[0]?.body || "");
   }, [detail?.id, detail?.kind, detail?.notes]);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, [item?.id]);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        onClose?.();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
 
   if (!item) {
     return null;
@@ -541,10 +584,9 @@ export function DetailModal({
     metadata.metadataStatus,
   ].filter(Boolean);
   const providerLabel = detail?.provider?.linked
-    ? `Linked to ${detail.provider.linkedItemsCount} provider ${
-        detail.provider.linkedItemsCount === 1 ? "item" : "items"
-      }`
-    : "No provider link";
+    ? "Linked to your source"
+    : "Manual tracking only";
+  const detailTimeline = detail?.timeline || [];
 
   function submitNote(event) {
     event.preventDefault();
@@ -560,7 +602,7 @@ export function DetailModal({
         aria-label={`${view.title} details`}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button className="modal-close" onClick={onClose} type="button" aria-label="Close">
+        <button ref={closeButtonRef} className="modal-close" onClick={onClose} type="button" aria-label="Close">
           <X size={20} />
         </button>
         {!isAlert ? (
@@ -607,10 +649,10 @@ export function DetailModal({
                 <div className="manual-library-panel">
                   <section className="detail-section">
                     <div className="detail-section-heading">
-                      <strong>Rating</strong>
+                      <strong>Your rating</strong>
                       <span>{rating ? `${rating}/10` : "Not rated"}</span>
                     </div>
-                    <div className="rating-control" aria-label="Rating">
+                    <div className="rating-control" aria-label="Your rating">
                       {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
                         <button
                           aria-pressed={rating === value}
@@ -636,7 +678,7 @@ export function DetailModal({
 
                   <section className="detail-section">
                     <div className="detail-section-heading">
-                      <strong>Private note</strong>
+                      <strong>Private memory</strong>
                       <span>{primaryNote ? "Saved" : "Only you can see this"}</span>
                     </div>
                     <form className="note-form" onSubmit={submitNote}>
@@ -688,7 +730,7 @@ export function DetailModal({
                         type="button"
                       >
                         <CheckCircle size={18} weight="fill" />
-                        {hasManualWatch ? "Mark unwatched" : "Mark watched"}
+                        {hasManualWatch ? "Remove manual watch" : "Add to watch history"}
                       </button>
                     ) : null}
                     <div className="watch-history">
@@ -696,11 +738,33 @@ export function DetailModal({
                         detail.watchHistory.map((watch) => (
                           <div key={watch.id}>
                             <span>{shortDate(watch.watchedAt) || "Unknown date"}</span>
-                            <strong>{watch.source || "archive"}</strong>
+                            <strong>{sourceLabel(watch.source)}</strong>
                           </div>
                         ))
                       ) : (
                         <em>No watch history yet</em>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="detail-section">
+                    <div className="detail-section-heading">
+                      <strong>Entertainment diary</strong>
+                      <span>{detailTimeline.length ? `${detailTimeline.length} moments` : "No moments yet"}</span>
+                    </div>
+                    <div className="detail-timeline">
+                      {detailTimeline.length ? (
+                        detailTimeline.slice(0, 3).map((event) => (
+                          <div key={event.id}>
+                            <span>
+                              <strong>{event.title}</strong>
+                              <small>{event.subtitle || sourceLabel(event.source)}</small>
+                            </span>
+                            <em>{shortDate(event.occurredAt) || sourceLabel(event.source)}</em>
+                          </div>
+                        ))
+                      ) : (
+                        <em>Meaningful moments for this title will appear here.</em>
                       )}
                     </div>
                   </section>
@@ -1062,6 +1126,36 @@ export function PlayerSection({
     }, completed ? "Completing" : "Saving");
   }
 
+  function renderSourceItem(item) {
+    return (
+      <div className="player-row player-item-row" key={item.id}>
+        <FilmSlate size={22} />
+        <span>
+          <strong>{item.title}</strong>
+          <small>
+            {item.linked
+              ? `linked to ${item.link?.canonicalTitle || "library item"}`
+              : "needs linking"} · {item.sourceName}
+          </small>
+        </span>
+        <div className="player-row-actions">
+          <button className="text-action" onClick={() => handlePlayItem(item)} type="button">
+            Play {item.title}
+          </button>
+          {item.linked ? (
+            <button className="text-action danger" onClick={() => handleUnlinkItem(item)} type="button">
+              Unlink {item.title}
+            </button>
+          ) : (
+            <button className="text-action" onClick={() => openLinkModal(item)} type="button">
+              Link {item.title}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="focus-block player-board">
       {!safePlayer.enabled && (
@@ -1076,7 +1170,10 @@ export function PlayerSection({
 
       <section className="player-panel provider-panel">
         <div className="section-heading">
-          <h2>Provider sources</h2>
+          <div>
+            <h2>Your private sources</h2>
+            <p>Playback is available only from sources attached to this account.</p>
+          </div>
           <span>{sources.length} attached</span>
         </div>
         <form className="player-form" onSubmit={handleCreateSource}>
@@ -1112,7 +1209,7 @@ export function PlayerSection({
               required
               type="checkbox"
             />
-            <span>I own or am allowed to use this source.</span>
+            <span>This is my private source, and I am allowed to use it.</span>
           </label>
           <button className="primary-action" disabled={busy === "Attaching"} type="submit">
             Attach source
@@ -1148,7 +1245,10 @@ export function PlayerSection({
 
       <section className="player-panel">
         <div className="section-heading">
-          <h2>Add source item</h2>
+          <div>
+            <h2>Add source item</h2>
+            <p>URLs stay private and are never shown in library lists.</p>
+          </div>
           <span>Manual first</span>
         </div>
         <form className="player-form source-item-form" onSubmit={handleCreateItem}>
@@ -1229,7 +1329,10 @@ export function PlayerSection({
       </section>
       <section className="player-panel">
         <div className="section-heading">
-          <h2>Source items</h2>
+          <div>
+            <h2>Source items</h2>
+            <p>Linking connects playback to permanent watch history.</p>
+          </div>
           <span>{sourceItems.length} available</span>
         </div>
         <form className="player-search" onSubmit={handleSearchItems}>
@@ -1244,32 +1347,26 @@ export function PlayerSection({
           </label>
           <button className="secondary-action" type="submit">Search</button>
         </form>
-        <div className="player-list">
-          {sourceItems.slice(0, 20).map((item) => (
-            <div className="player-row player-item-row" key={item.id}>
-              <FilmSlate size={22} />
-              <span>
-                <strong>{item.title}</strong>
-                <small>
-                  {item.linked ? `linked to ${item.link?.canonicalTitle || "library item"}` : "needs linking"} · {item.sourceName}
-                </small>
-              </span>
-              <div className="player-row-actions">
-                <button className="text-action" onClick={() => handlePlayItem(item)} type="button">
-                  Play {item.title}
-                </button>
-                {item.linked ? (
-                  <button className="text-action danger" onClick={() => handleUnlinkItem(item)} type="button">
-                    Unlink {item.title}
-                  </button>
-                ) : (
-                  <button className="text-action" onClick={() => openLinkModal(item)} type="button">
-                    Link {item.title}
-                  </button>
-                )}
+        <div className="player-list source-item-groups">
+          {linkedItems.length ? (
+            <section className="source-item-group">
+              <div className="source-item-group-heading">
+                <h3>Linked to library</h3>
+                <span>{linkedItems.length}</span>
               </div>
-            </div>
-          ))}
+              {linkedItems.slice(0, 20).map(renderSourceItem)}
+            </section>
+          ) : null}
+          {unlinkedItems.length ? (
+            <section className="source-item-group">
+              <div className="source-item-group-heading">
+                <h3>Needs linking</h3>
+                <span>{unlinkedItems.length}</span>
+              </div>
+              <p className="source-item-hint">Unlinked playback keeps progress on the source item only until you connect it to your library.</p>
+              {unlinkedItems.slice(0, 20).map(renderSourceItem)}
+            </section>
+          ) : null}
           {!sourceItems.length ? <div className="empty-strip compact">No source items yet</div> : null}
         </div>
       </section>
@@ -1282,7 +1379,7 @@ export function PlayerSection({
           </div>
           <strong>{playback.item.title}</strong>
           {!playback.item.linked ? (
-            <div className="data-warning">Progress is saved only to this source until linked.</div>
+            <div className="data-warning">Progress is saved only to this private source until linked.</div>
           ) : null}
           <video
             className="provider-video"

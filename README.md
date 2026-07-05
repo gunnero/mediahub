@@ -154,7 +154,7 @@ GET /api/v1/media-events/recent
 
 Filters for `/api/v1/media-events`: `event_type`, `source`, `subject_type`, `date_from`, `date_to`.
 
-The dashboard payload includes an additive `timeline` object with recent safe events plus today/this-week counts. The React dashboard renders this as a compact Timeline panel.
+The dashboard payload includes an additive `timeline` object with recent safe events plus today/this-week counts. The React dashboard renders this as an "Entertainment diary" so normal users see meaningful memories instead of raw event data.
 
 See `docs/mediahub/MEDIA_EVENT_SYSTEM.md`.
 
@@ -220,9 +220,22 @@ The React app expects the backend on the same origin. Private routes use Laravel
 
 Filament admin is available at `/admin` for active `owner` and `admin` users.
 
-The React detail modal uses the library endpoints for user-owned movies, shows, and episodes. Users can rate 1-10, clear ratings, save/delete private notes, and add/remove manual watch rows for movies and episodes. The remove action only deletes manual watch rows; imported/provider watch history remains permanent.
+The React detail modal uses the library endpoints for user-owned movies, shows, and episodes. Users can rate 1-10, clear ratings, save/delete private notes, inspect a short entertainment-diary snippet, and add/remove manual watch rows for movies and episodes. The remove action only deletes manual watch rows; imported/provider watch history remains permanent.
 
-The React Player tab lets a user attach their own source, add manual source items, search/filter source items, link/unlink items to same-user canonical library records with explicit confirmation, start HTML5/HLS playback, save progress, and mark playback complete. Source/provider URLs are not shown in dashboard or list payloads; playback URLs are requested only from the owner-only play endpoint.
+The React Player tab lets a user attach their own private source, add manual source items, search/filter source items, see linked and unlinked groups, link/unlink items to same-user canonical library records with explicit confirmation, start HTML5/HLS playback, save progress, and mark playback complete. Source/provider URLs are not shown in dashboard or list payloads; playback URLs are requested only from the owner-only play endpoint.
+
+## Product UX
+
+Product Design Sprint 001 keeps the current backend APIs and architecture but improves the existing React experience so MediaHub feels more like a personal entertainment memory:
+
+- the activity feed is labeled as an Entertainment diary
+- raw event sources are shown as user-readable labels
+- detail modals emphasize Your rating, Private memory, watch history, and title-specific moments
+- Player copy emphasizes private user-owned sources
+- source items are separated into linked and needs-linking groups
+- motion and hover states stay subtle and respect reduced-motion preferences
+
+See `docs/mediahub/PRODUCT_UX_AUDIT.md`.
 
 ## Verification
 

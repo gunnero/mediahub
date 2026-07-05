@@ -165,7 +165,7 @@ Timeline items contain safe display fields:
 - group: Today, Yesterday, Earlier
 - sanitized metadata
 
-The React dashboard renders a compact Timeline panel. Empty users receive a valid empty timeline.
+The React dashboard renders a compact "Entertainment diary" panel. Empty users receive a valid empty timeline payload and a quiet user-facing empty state.
 
 ## OFF AI Future Use
 

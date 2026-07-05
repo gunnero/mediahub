@@ -146,7 +146,7 @@ Current stable event types include imports, manual watched/unwatched events, rat
 
 Event metadata is sanitized through the shared metadata sanitizer before storage. Forbidden keys include stream URLs, playback URLs, provider URLs, playlist URLs, passwords, API keys, tokens, secrets, and credentials. Event recording catches failures and logs only a safe summary so user flows do not crash if an event cannot be written.
 
-The dashboard payload includes a `timeline` object with recent events plus today and this-week counts. The frontend renders it as a compact Timeline panel.
+The dashboard payload includes a `timeline` object with recent events plus today and this-week counts. The frontend renders it as an "Entertainment diary" with user-readable source labels instead of raw event/source names.
 
 ## Backup And Restore
 

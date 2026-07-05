@@ -412,14 +412,14 @@ Screens:
 
 - Login screen: email/password form with API errors.
 - Home dashboard: hero, recently watched, movie shelf, alerts panel, followed shows, stats, activity chart.
-- Timeline panel: compact recent activity grouped by Today, Yesterday, and Earlier. Empty users get a quiet empty state.
+- Entertainment diary: compact recent activity grouped by Today, Yesterday, This week, and Earlier with user-readable source labels. Empty users get a quiet personal-memory empty state.
 - Shows view: top watched shows and followed shows with available episodes.
 - Movies view: movies to check out.
-- Player view: shows the attach-source empty state plus attach form for users without providers; shows provider management, manual source-item creation, source item search, link/unlink modal, HTML5/HLS playback, progress controls, continue watching, and linked/unlinked counts.
+- Player view: shows the attach-source empty state plus attach form for users without providers; emphasizes private user-owned sources; shows provider management, manual source-item creation, source item search, linked and needs-linking source groups, link/unlink modal, HTML5/HLS playback, progress controls, continue watching, and linked/unlinked counts.
 - Alerts view: wide alert list; opening an alert persists read state.
 - Stats view: stats strip and activity chart.
 - Lists/settings placeholders: preserved from original design.
-- Detail modal: alert detail plus movie/show/episode detail; media details show watched state, rating controls, private note editor, safe watch history, provider link status, and manual watched/unwatched controls for movies and episodes.
+- Detail modal: alert detail plus movie/show/episode detail; media details show watched state, public metadata, "Your rating", "Private memory", safe watch history, provider link status, title-specific diary moments, and manual add/remove watch-history controls for movies and episodes.
 
 Screenshots are not embedded in this handover. Generate with Playwright after starting the app if needed.
 
@@ -427,7 +427,7 @@ Screenshots are not embedded in this handover. Generate with Playwright after st
 
 Known issues:
 
-- Sprint 006 is implemented locally but not committed or deployed yet.
+- Product Design Sprint 001 is local/uncommitted until reviewed; it changes React UX/copy/motion and docs only.
 - TMDB API key is still pending on staging, so Sprint 005 enrichment remains optional until private `.env` configuration is completed.
 - TMDB matching is title/year based and needs manual conflict review before bulk production use on ambiguous titles.
 - No production owner/admin seed workflow documented beyond using Laravel/Filament.
@@ -446,9 +446,9 @@ Technical debt:
 
 ## 16. Next Sprint
 
-1. Review and commit Sprint 006 if the full verification gate stays green.
-2. Deploy Sprint 006 to `ccc.razbudise.mk` without removing Apache Basic Auth.
-3. Smoke test media event APIs, dashboard timeline, Filament Media Events, and event creation from manual watch/rating/note/provider/playback flows.
+1. Review Product Design Sprint 001 in the browser on desktop and mobile, then commit if the verification gate stays green.
+2. Deploy committed Sprint 006 plus Product Design Sprint 001 to `ccc.razbudise.mk` without removing Apache Basic Auth.
+3. Smoke test media event APIs, Entertainment diary, Filament Media Events, and event creation from manual watch/rating/note/provider/playback flows.
 4. Configure a private server-side `TMDB_API_KEY`, run `php artisan mediahub:metadata-status 1`, then test one movie and one show enrichment before any full-user enrichment.
 
 ## 17. Git
