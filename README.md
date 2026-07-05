@@ -191,3 +191,23 @@ git diff --check
 7. Build the React frontend with `npm run build`.
 8. Point the web server so `/api` and `/admin` hit Laravel and the SPA assets are served from the built frontend.
 9. Smoke test Basic Auth, Laravel login, `/api/v1/status`, `/api/v1/dashboard`, and `/admin`.
+
+## Staging Deployment 2026-07-05
+
+Live staging URL: `https://ccc.razbudise.mk`, still behind Apache Basic Auth.
+
+Server layout on `web01`:
+
+- app checkout: `/home/razbudise/ccc.razbudise.mk/app`
+- Laravel public root: `/home/razbudise/ccc.razbudise.mk/app/backend/public`
+- deployment backup: `/home/razbudise/ccc.razbudise.mk/backups/20260705004417`
+- private import source: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/imports/tvtime.sqlite`
+- MediaHub backup output: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/private/mediahub-backups`
+
+Apache routes `/api`, `/admin`, Livewire, Filament assets, and Laravel public assets through Laravel/PHP-FPM. SPA routes fall back to React `index.html`. Basic Auth and `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` remain enabled.
+
+Imported staging counts for owner user `1`: 92 shows, 7,291 episodes, 7,292 episode watches, 533 movies, 512 movie watches, and 8 alerts. The safe user backup was created and verified to exclude sensitive provider field keys.
+
+Smoke results: Basic Auth 401 without credentials, Laravel login/logout, `/api/v1/status`, `/api/v1/me`, `/api/v1/dashboard`, Player empty state, manual movie detail, rating save/clear, note save/update/delete, mark watched/unwatched, alert read persistence, `/admin`, dashboard sensitive-key scan, and authenticated browser asset/console checks all passed.
+
+Rollback: restore `/etc/apache2/sites-available/ccc.razbudise.mk.conf` from the deployment backup, switch `DocumentRoot` back to the backed-up `public_html` deployment if needed, run `apachectl configtest`, then `systemctl reload apache2`.

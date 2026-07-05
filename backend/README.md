@@ -159,3 +159,35 @@ The feature tests cover status readiness, invite acceptance, login/logout, `/me`
 ## Deployment Checklist
 
 Do not deploy private files. Keep Apache Basic Auth enabled on staging. After code is reviewed on the server, configure `.env`, run migrations with `php artisan migrate --force`, run `php artisan filament:assets` if Composer did not publish Filament assets, build frontend assets from the repo root, and smoke test `/api/v1/status`, login, `/api/v1/dashboard`, alert read actions, and `/admin`.
+
+## Staging Deployment 2026-07-05
+
+`web01` now serves `https://ccc.razbudise.mk` from `/home/razbudise/ccc.razbudise.mk/app/backend/public`, with Apache Basic Auth still enabled for the whole site except ACME challenges.
+
+Runtime notes:
+
+- backend `.env` and SQLite database are server-private and ignored
+- app checkout: `/home/razbudise/ccc.razbudise.mk/app`
+- current deployed commit: `77d5563`
+- deployment backup: `/home/razbudise/ccc.razbudise.mk/backups/20260705004417`
+- private import file: `storage/app/imports/tvtime.sqlite`
+- safe backup directory: `storage/app/private/mediahub-backups`
+
+Server commands used:
+
+```bash
+composer install --no-dev --optimize-autoloader
+php artisan key:generate --force --no-interaction
+php artisan migrate --force --no-interaction
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+npm ci --cache /home/razbudise/.npm-cache --prefer-offline=false
+npm run build -- --emptyOutDir
+```
+
+The server required `php8.4-sqlite3` for the SQLite staging database. Installing it upgraded PHP 8.4 packages from `8.4.22` to `8.4.23` and PHP-FPM was restarted.
+
+Imported user `1` counts: 92 shows, 7,291 episodes, 7,292 episode watches, 533 movies, 512 movie watches, and 8 alerts. `mediahub:backup-user 1` produced a provider-safe backup under ignored private storage; field-key verification found no stream URL, playlist URL, provider credential, API key, secret, or password keys.
+
+Live smoke passed for Basic Auth, login/logout, `/api/v1/status`, `/api/v1/me`, `/api/v1/dashboard`, Player empty state, manual detail/rating/note/watch APIs, alert read persistence, `/admin`, sensitive dashboard scan, and authenticated browser console/asset checks.

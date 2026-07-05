@@ -35,20 +35,90 @@ Completed:
 - Filament admin panel at `/admin`.
 - Filament resources for Users, Invites, Alerts, Shows, Movies, Episode Watches, Movie Watches, Playback Sources, Playback Source Items, Analytics Events, Audit Logs.
 - Feature tests for auth, invite-only flow, dashboard, import, analytics, audit, alert persistence, provider ownership, manual tracking, provider deletion behavior, and cross-user isolation.
+- Staging deployment to `https://ccc.razbudise.mk` on `web01` behind existing Apache Basic Auth.
+- First owner user created on staging and full private SQLite imported for that user.
+- Safe staging backup created with sensitive provider fields excluded.
 
 Still planned:
 
-- Production deployment wiring for Laravel routes on `ccc.razbudise.mk`.
-- Create the first owner/admin production user and import the real private SQLite for that user.
+- Production hardening beyond the current Basic-Auth-protected staging deployment.
 - User-facing import upload flow.
 - User-facing provider attach/manage flow.
 - Background jobs/scheduler for future alert checks.
 - TMDB/TVMaze or similar metadata integration later.
 - Richer analytics dashboard and admin metrics.
 
+## Staging Deployment Snapshot 2026-07-05
+
+Live URL: `https://ccc.razbudise.mk`.
+
+Deployed commit: `77d5563`.
+
+Server: `web01`.
+
+Paths:
+
+- app checkout: `/home/razbudise/ccc.razbudise.mk/app`
+- Laravel public root: `/home/razbudise/ccc.razbudise.mk/app/backend/public`
+- deployment backup: `/home/razbudise/ccc.razbudise.mk/backups/20260705004417`
+- private import source: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/imports/tvtime.sqlite`
+- safe user backups: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/private/mediahub-backups`
+
+Apache:
+
+- Basic Auth remains enabled through `/etc/apache2/htpasswd/ccc.razbudise.mk`.
+- Only the existing `staging` Basic Auth user remains after smoke tests.
+- `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` remains enabled.
+- `/api`, `/admin`, Livewire, Filament assets, and Laravel public assets route to Laravel/PHP-FPM.
+- React SPA routes fall back to `index.html`.
+
+Server setup:
+
+- `composer install --no-dev --optimize-autoloader`
+- `php artisan key:generate --force --no-interaction`
+- `php artisan migrate --force --no-interaction`
+- `php artisan config:cache`
+- `php artisan route:cache`
+- `php artisan view:cache`
+- `npm ci --cache /home/razbudise/.npm-cache --prefer-offline=false`
+- `npm run build -- --emptyOutDir`
+
+Server dependency note: `php8.4-sqlite3` was installed so Laravel can use the private SQLite staging database. The install upgraded PHP 8.4 packages from `8.4.22` to `8.4.23` and PHP-FPM was restarted.
+
+Imported owner user `1` counts:
+
+- shows: 92
+- episodes: 7,291
+- episode watches: 7,292
+- movies: 533
+- movie watches: 512
+- alerts: 8
+
+Smoke tests passed:
+
+- Basic Auth returns 401 without credentials.
+- Laravel login/logout.
+- `/api/v1/status`, `/api/v1/me`, `/api/v1/dashboard`.
+- Dashboard payload sensitive-key scan found no stream/provider URL or token fields.
+- Player empty state renders for a user without providers.
+- Manual movie detail opens.
+- Rating save/clear.
+- Note save/update/delete.
+- Mark watched/unwatched.
+- Alert read persistence.
+- `/admin` loads for the owner user.
+- Authenticated browser dashboard smoke has zero console errors and zero broken script/style/image/font assets.
+
+Rollback:
+
+1. Restore the Apache vhost from `/home/razbudise/ccc.razbudise.mk/backups/20260705004417/ccc.razbudise.mk.conf`.
+2. Restore the backed-up static deployment from `/home/razbudise/ccc.razbudise.mk/backups/20260705004417/public_html.tar.gz` if needed.
+3. Run `apachectl configtest`.
+4. Reload Apache with `systemctl reload apache2`.
+
 ## 2. Tech Stack
 
-Backend: Laravel `13.x`, PHP `8.5`, Filament `5.6`, PHPUnit.
+Backend: Laravel `13.x`, PHP `^8.3` per Composer; staging currently runs PHP `8.4.23`, Filament `5.6`, PHPUnit.
 Frontend: React `19.2`, Vite `6.4`, Phosphor icons, plain CSS.
 Database: SQLite locally; Laravel migrations are source of truth. Production DB can be SQLite or MySQL/MariaDB, but not decided here.
 APIs: Laravel `/api/v1`; no TMDB/TVMaze yet.
