@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\MediaEventSource;
+use App\Enums\MediaEventType;
 use App\Models\Episode;
 use App\Models\Movie;
 use App\Models\Show;
@@ -15,6 +17,7 @@ class MediaMetadataService
 {
     public function __construct(
         private readonly TMDBClientService $tmdb,
+        private readonly MediaEventService $mediaEvents,
     ) {}
 
     /**
@@ -60,6 +63,12 @@ class MediaMetadataService
         }
 
         $this->applyMovieDetails($movie, $details, $match);
+        $this->mediaEvents->record($movie->user, MediaEventType::MetadataEnriched, $movie, [
+            'title' => $movie->title,
+            'media_type' => 'movie',
+            'tmdb_id' => $movie->tmdb_id,
+            'match' => $match,
+        ], MediaEventSource::Metadata);
 
         return $this->add($summary, $this->summary(matched: 1, enriched: 1));
     }
@@ -107,6 +116,12 @@ class MediaMetadataService
         }
 
         $this->applyShowDetails($show, $details, $match);
+        $this->mediaEvents->record($show->user, MediaEventType::MetadataEnriched, $show, [
+            'title' => $show->title,
+            'media_type' => 'show',
+            'tmdb_id' => $show->tmdb_id,
+            'match' => $match,
+        ], MediaEventSource::Metadata);
         $summary = $this->add($summary, $this->summary(matched: 1, enriched: 1));
 
         if ($enrichEpisodes) {
@@ -200,6 +215,12 @@ class MediaMetadataService
                     'confidence' => 1.0,
                     'method' => 'show_season_episode',
                 ]);
+                $this->mediaEvents->record($episode->user, MediaEventType::MetadataEnriched, $episode, [
+                    'title' => $episode->title,
+                    'media_type' => 'episode',
+                    'show_id' => $episode->show_id,
+                    'tmdb_id' => $episode->tmdb_id,
+                ], MediaEventSource::Metadata);
                 $summary = $this->add($summary, $this->summary(matched: 1, enriched: 1));
             });
 

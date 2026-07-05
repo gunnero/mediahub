@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\MediaEventSource;
+use App\Enums\MediaEventType;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
 use App\Models\MediaLink;
@@ -14,6 +16,7 @@ use App\Models\Rating;
 use App\Models\Show;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\MediaEventService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +30,7 @@ class RestoreMediaHubUserCommand extends Command
 
     protected $description = 'Restore a private provider-safe MediaHub backup into one user account.';
 
-    public function handle(AuditLogService $auditLogs): int
+    public function handle(AuditLogService $auditLogs, MediaEventService $mediaEvents): int
     {
         $user = User::find($this->argument('user_id'));
 
@@ -61,6 +64,7 @@ class RestoreMediaHubUserCommand extends Command
             ...$summary,
             'path_hash' => hash('sha256', $path),
         ]);
+        $mediaEvents->record($user, MediaEventType::RestoreCompleted, null, $summary, MediaEventSource::System);
 
         $this->line('MediaHub restore completed');
         $this->printSummary($summary);

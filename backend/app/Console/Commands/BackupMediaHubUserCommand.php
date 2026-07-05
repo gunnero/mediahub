@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\MediaEventSource;
+use App\Enums\MediaEventType;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
 use App\Models\MediaLink;
@@ -13,6 +15,7 @@ use App\Models\Rating;
 use App\Models\Show;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\MediaEventService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use JsonException;
@@ -23,7 +26,7 @@ class BackupMediaHubUserCommand extends Command
 
     protected $description = 'Create a private provider-safe MediaHub backup for one user.';
 
-    public function handle(AuditLogService $auditLogs): int
+    public function handle(AuditLogService $auditLogs, MediaEventService $mediaEvents): int
     {
         $user = User::find($this->argument('user_id'));
 
@@ -52,6 +55,7 @@ class BackupMediaHubUserCommand extends Command
             ...$summary,
             'path_hash' => hash('sha256', $path),
         ]);
+        $mediaEvents->record($user, MediaEventType::BackupCreated, null, $summary, MediaEventSource::System);
 
         $this->line('MediaHub backup created');
         $this->printSummary($summary);

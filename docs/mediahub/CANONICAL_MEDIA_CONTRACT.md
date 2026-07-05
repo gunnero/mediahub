@@ -20,6 +20,7 @@ Current user-owned surfaces:
 - watch history
 - ratings
 - notes
+- media events
 - alerts
 - playback sources
 - playback source items
@@ -95,6 +96,7 @@ Tables:
 - `ratings`
 - `notes`
 - `playback_sessions`
+- `media_events`
 
 Rules:
 
@@ -104,6 +106,7 @@ Rules:
 - Notes are private per user and per canonical media item.
 - Ratings and notes survive provider changes and provider deletion.
 - Duplicate provider completion updates for the same playback session must not create duplicate canonical watch rows.
+- Media events are permanent user-scoped activity records and must survive provider deletion unless the user account itself is deleted.
 
 ## Provider Layer
 
@@ -140,6 +143,7 @@ The payload may include additive stats such as:
 - `unsyncedSourceOnlyProgressCount`
 - `ratingsCount`
 - `notesCount`
+- `timeline`
 
 The dashboard payload must never expose:
 
@@ -203,6 +207,8 @@ Feature tests currently prove:
 - dashboard payloads do not expose provider/stream URL fields
 - backup files exclude raw streams, playlists, API keys, and provider secrets
 - restore keeps user isolation
+- media events are user-scoped and sanitize sensitive provider/stream/API keys
+- dashboard timeline payloads do not expose provider/stream URL fields
 
 ## Future Work
 

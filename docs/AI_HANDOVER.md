@@ -11,7 +11,7 @@ Project name: MediaHub.
 
 Purpose: provider-independent personal media operating system for movies and TV shows. The TV Time archive/importer is one data source, not the product identity.
 
-Current version: frontend `package.json` is `0.0.0`; UI footer says `v1.0.0`; backend includes Laravel foundation, authenticated dashboard, user-owned provider/player layer, Canonical Media Engine sprint 001, Manual Library UI sprint 002, local Provider Attach & Playback UI sprint 004, and optional TMDB Metadata Foundation sprint 005 work in progress. Sprint 005 is not deployed yet. No release tag yet.
+Current version: frontend `package.json` is `0.0.0`; UI footer says `v1.0.0`; backend includes Laravel foundation, authenticated dashboard, user-owned provider/player layer, Canonical Media Engine sprint 001, Manual Library UI sprint 002, Provider Attach & Playback UI sprint 004, optional TMDB Metadata Foundation sprint 005, and local Sprint 006 Media Event System work. Sprint 006 is not committed or deployed yet. No release tag yet.
 
 Completed:
 
@@ -32,10 +32,11 @@ Completed:
 - User-facing detail modal for movies, shows, and episodes with rating, private notes, safe watch history, provider link status, and manual watched/unwatched controls for movies/episodes.
 - User-facing Player tab for attaching own provider/source records, adding manual source items, linking/unlinking source items to same-user canonical media, starting HTML5/HLS playback, saving progress, and marking playback complete.
 - Optional TMDB metadata foundation: private `.env` config, TMDB client service, additive metadata enrichment service, summary-only Artisan commands, public poster/backdrop use in dashboard/detail payloads, and safe Filament metadata inspection/refresh actions.
+- User-scoped media event system for meaningful activity timeline, future statistics, OFF AI memory, recommendations, notifications, auditability, and achievements. Events sanitize forbidden metadata keys and never store stream/provider URLs or credentials.
 - Detail APIs for user-owned movies, shows, and episodes plus clear-rating, note update/delete, episode manual watch, and manual unwatch endpoints.
 - Feature tests for canonical watch invariants, ratings/notes, safe backup/restore, provider URL safety, and provider deletion preserving permanent history.
 - Filament admin panel at `/admin`.
-- Filament resources for Users, Invites, Alerts, Shows, Movies, Episode Watches, Movie Watches, Playback Sources, Playback Source Items, Analytics Events, Audit Logs.
+- Filament resources for Users, Invites, Alerts, Shows, Movies, Episode Watches, Movie Watches, Playback Sources, Playback Source Items, Media Events, Analytics Events, Audit Logs.
 - Feature tests for auth, invite-only flow, dashboard, import, analytics, audit, alert persistence, provider ownership, manual tracking, provider deletion behavior, and cross-user isolation.
 - Staging deployment to `https://ccc.razbudise.mk` on `web01` behind existing Apache Basic Auth.
 - First owner user created on staging and full private SQLite imported for that user.
@@ -43,6 +44,7 @@ Completed:
 
 Still planned:
 
+- Review, commit, and deploy Sprint 006 after the full verification gate stays green.
 - Production hardening beyond the current Basic-Auth-protected staging deployment.
 - User-facing import upload flow.
 - Background jobs/scheduler for future alert checks.
@@ -53,7 +55,7 @@ Still planned:
 
 Live URL: `https://ccc.razbudise.mk`.
 
-Deployed commit: `77d5563`.
+Deployed commit: `d436f3aeb9362414e0d335705f6176971ace9dee` for Sprint 005. Local Sprint 006 event-system changes are not deployed yet.
 
 Server: `web01`.
 
@@ -163,6 +165,7 @@ Source tree, excluding heavy/generated/private folders such as `.git`, `node_mod
 ├── docs/
 │   ├── AI_HANDOVER.md
 │   ├── mediahub/CANONICAL_MEDIA_CONTRACT.md
+│   ├── mediahub/MEDIA_EVENT_SYSTEM.md
 │   └── superpowers/specs/2026-07-04-laravel-backend-design.md
 ├── public/assets/generated/
 ├── scripts/import_tvtime.py
@@ -191,6 +194,8 @@ Enums/constants:
 - `InviteStatus`: `pending`, `accepted`, `expired`
 - `ImportStatus`: `pending`, `processing`, `completed`, `failed`
 - `MediaStatus`: `planned`, `watching`, `watched`, `archived`
+- `MediaEventSource`: `manual`, `player`, `import`, `provider`, `metadata`, `system`
+- `MediaEventType`: stable dotted event names such as `movie.watched`, `episode.watched`, `rating.created`, `note.updated`, `provider.item.linked`, `playback.completed`, `metadata.enriched`, `backup.created`, and `restore.completed`
 
 Tables:
 
@@ -219,12 +224,13 @@ Tables:
 - `media_links`: `id`, `user_id`, `playback_source_item_id`, `movie_id`, `show_id`, `episode_id`, `linked_at`, timestamps. Unique `user_id/playback_source_item_id`; indexes `user_id/movie_id`, `user_id/show_id`, `user_id/episode_id`. Provider item cascades; canonical media nulls on delete.
 - `playback_sessions`: `id`, `user_id`, `playback_source_id`, `playback_source_item_id`, `media_link_id`, `status`, `started_at`, `ended_at`, `last_position_seconds`, `duration_seconds`, timestamps. Indexes `status`, `started_at`, `ended_at`, `user_id/status`, `user_id/playback_source_item_id`.
 - `playback_progress`: `id`, `user_id`, `playback_session_id`, `playback_source_item_id`, `movie_id`, `episode_id`, `position_seconds`, `duration_seconds`, `completed`, timestamps. Unique `user_id/playback_source_item_id`; indexes `completed`, `user_id/completed`.
+- `media_events`: `id`, `user_id`, `event_type`, nullable `subject_type`, nullable `subject_id`, nullable `actor_type`, nullable `actor_id`, `occurred_at`, `source`, `metadata`, timestamps. Indexes: `user_id/occurred_at`, `user_id/event_type`, `subject_type/subject_id`. FK `user_id` cascade delete.
 
 Every media/library/player/annotation table is scoped by `user_id`.
 
 ## 5. Models
 
-- `User`: fillable identity/auth/role/status fields; hidden password/remember token; casts password hashed, dates, `UserRole`, `UserStatus`; relationships to invites, alerts, analytics events, audit logs, shows, episodes, episode watches, movies, movie watches; scopes `active`, `admins`, `members`; Filament panel access for active owner/admin.
+- `User`: fillable identity/auth/role/status fields; hidden password/remember token; casts password hashed, dates, `UserRole`, `UserStatus`; relationships to invites, alerts, analytics events, audit logs, shows, episodes, episode watches, movies, movie watches, and media events; scopes `active`, `admins`, `members`; Filament panel access for active owner/admin.
 - `Invite`: casts role/status/expires/accepted dates; relationships inviter and accepted user; scopes pending/forEmail.
 - `Alert`: casts payload array, unread bool, read_at datetime; belongs to user; scopes `forUser`, `unread`, `forCategory`.
 - `AnalyticsEvent`: casts metadata array, occurred_at datetime; belongs to actor; scopes `forActor`, `named`.
@@ -242,6 +248,7 @@ Every media/library/player/annotation table is scoped by `user_id`.
 - `MediaLink`: belongs to user/source item and optional same-user canonical movie/show/episode, scope `forUser`.
 - `PlaybackSession`: belongs to user/source/source item/media link, has progress, scope `forUser`.
 - `PlaybackProgress`: belongs to user/session/source item/movie/episode, scope `forUser`.
+- `MediaEvent`: casts metadata array and occurred_at datetime; belongs to user; optional morph subject and actor; scopes `forUser`, `ofType`, `fromSource`, and timeline-oriented filtering.
 
 ## 6. Controllers And Endpoints
 
@@ -271,14 +278,17 @@ Every media/library/player/annotation table is scoped by `user_id`.
 - `PlayerController@link`: `POST /api/v1/player/items/{item}/link`; links an owned provider item to one same-user movie/show/episode, requiring explicit confirmation.
 - `PlayerController@unlink`: `DELETE /api/v1/player/items/{item}/link`; removes the current user's link for an owned provider item.
 - `PlayerController@updateSession`: `PATCH /api/v1/player/sessions/{session}`; updates owned playback progress and auto-records completed canonical watches.
+- `MediaEventController@index`: `GET /api/v1/media-events`; returns current-user events with optional filters for event type, source, subject type, and date range.
+- `MediaEventController@recent`: `GET /api/v1/media-events/recent`; returns a compact current-user recent activity timeline.
 
 ## 7. Services
 
 - `InviteService`: creates hashed invite tokens and accepts valid pending invites.
-- `DashboardPayloadService`: builds the React-compatible payload from Laravel tables, preferring safe TMDB poster/backdrop image URLs when enriched and never exposing provider/stream URLs.
+- `DashboardPayloadService`: builds the React-compatible payload from Laravel tables, preferring safe TMDB poster/backdrop image URLs when enriched, adding a safe timeline object, and never exposing provider/stream URLs.
 - `MediaDetailService`: builds safe per-item detail payloads for the React modal with public metadata fields and without stream URLs or provider secrets.
 - `TMDBClientService`: optional TMDB API client with disabled mode, timeouts, response caching, and no API key logging.
 - `MediaMetadataService`: enriches movies, shows, episodes, and user libraries additively with public metadata while preserving user/import-owned fields.
+- `MediaEventService`: records sanitized user-scoped activity events, strips forbidden metadata keys, exposes recent/timeline payload helpers, and fails softly so event recording never breaks the main user action.
 - `PlaybackLibraryService`: enforces user-owned provider/player access, media links, playback sessions, progress, manual tracking, and provider deletion rules.
 - `MediaAnnotationService`: enforces same-user canonical media ownership for ratings and notes, records analytics, and writes audit logs.
 - `AlertService`: marks alerts read/read-all with user ownership checks and analytics.
@@ -300,6 +310,7 @@ API:
 - Authenticated under `auth`: `GET /api/v1/me`, `POST /api/v1/auth/logout`, `GET /api/v1/dashboard`, `POST /api/v1/alerts/{alert}/read`, `POST /api/v1/alerts/read-all`
 - Authenticated library: `GET /api/v1/library/movies/{movie}`, `GET /api/v1/library/shows/{show}`, `GET /api/v1/library/episodes/{episode}`, `POST|DELETE /api/v1/library/movies/{movie}/watch`, `POST|DELETE /api/v1/library/episodes/{episode}/watch`, `POST|DELETE /api/v1/library/{media}/{id}/rating`, `POST /api/v1/library/{media}/{id}/notes`, `PATCH|DELETE /api/v1/library/notes/{note}`
 - Authenticated player: `GET|POST /api/v1/player/sources`, `PATCH|DELETE /api/v1/player/sources/{source}`, `GET /api/v1/player/items`, `POST /api/v1/player/sources/{source}/items`, `GET /api/v1/player/link-targets`, `POST /api/v1/player/items/{item}/play`, `POST|DELETE /api/v1/player/items/{item}/link`, `PATCH /api/v1/player/sessions/{session}`
+- Authenticated media events: `GET /api/v1/media-events`, `GET /api/v1/media-events/recent`
 
 Admin:
 
@@ -312,6 +323,7 @@ Admin:
 - `/admin/movie-watches`
 - `/admin/playback-sources`
 - `/admin/playback-source-items`
+- `/admin/media-events`
 - `/admin/analytics-events`
 - `/admin/audit-logs`
 
@@ -329,6 +341,7 @@ Admin:
 - Movies, shows, and episodes have a safe user-facing detail modal. Movies and episodes can be manually marked watched/unwatched; unwatch removes manual rows only and keeps imported/provider history.
 - Provider-safe backup/restore exports canonical library data and permanent user activity while excluding stream URLs, provider credentials, and secrets.
 - Optional TMDB enrichment adds public canonical identity fields, poster/backdrop paths, genres, runtimes, release dates, overview, status, vote average, and external IDs without requiring TMDB for the app to run.
+- Media events record meaningful user-scoped activity from imports, manual watches, ratings, notes, provider actions, playback completion, metadata enrichment, backup, and restore. Timeline payloads are additive and sanitized.
 - Dashboard stats include manual watch count, auto-tracked watch count, linked/unlinked provider item counts, unsynced source-only progress count, ratings count, and notes count.
 - Analytics and audit log creation.
 - Filament admin for users, invites, alerts, media inspection, analytics, and audit logs.
@@ -338,9 +351,10 @@ Admin:
 
 Priority 1:
 
-- Review and commit Sprint 005 after the full verification gate stays green.
-- Deploy Sprint 005 without removing Apache Basic Auth.
-- Smoke test metadata status, one movie enrichment, one show enrichment, dashboard poster/metadata rendering, admin refresh action, and sensitive payload scans on staging.
+- Review and commit Sprint 006 after the full verification gate stays green.
+- Deploy Sprint 006 without removing Apache Basic Auth.
+- Smoke test `/api/v1/media-events`, dashboard timeline, manual watch/rating/note/provider/playback event creation, Filament Media Events, and sensitive payload scans on staging.
+- Configure the pending private TMDB API key on staging before any metadata smoke enrichment.
 
 Priority 2:
 
@@ -365,6 +379,8 @@ Priority 3:
 - Provider/player sources are private per user; do not introduce a global/shared stream catalog or global provider cache.
 - Canonical media and permanent activity outlive providers. Provider items are temporary.
 - Provider/player access validates the same-user ownership graph across sources, source items, media links, sessions, progress, and canonical media.
+- Media events are always user-scoped and sanitized. They must never store provider URLs, stream URLs, API keys, tokens, passwords, credentials, or secrets.
+- Playback progress events are intentionally not recorded for every small progress tick; the timeline should stay meaningful rather than noisy.
 - Admin may inspect provider status/metadata and stream hashes, but raw provider URLs and stream URLs are encrypted/hidden.
 - Deleting a provider must not delete canonical watch history.
 - Deleting a provider must not delete ratings or notes.
@@ -381,6 +397,7 @@ TVDB/TVMaze: not implemented yet.
 External APIs: TMDB only. Python importer can cache remote artwork into ignored `public/assets/cache`.
 Caching: TMDB responses are cached through Laravel cache with `TMDB_CACHE_TTL`; no other external product cache strategy yet.
 Rate limiting: no custom rate limits yet; add before public launch if Basic Auth is removed.
+Media event API: internal authenticated `/api/v1/media-events` routes expose only the current user's sanitized timeline data and support simple filters for future activity views.
 
 ## 13. Authentication
 
@@ -395,6 +412,7 @@ Screens:
 
 - Login screen: email/password form with API errors.
 - Home dashboard: hero, recently watched, movie shelf, alerts panel, followed shows, stats, activity chart.
+- Timeline panel: compact recent activity grouped by Today, Yesterday, and Earlier. Empty users get a quiet empty state.
 - Shows view: top watched shows and followed shows with available episodes.
 - Movies view: movies to check out.
 - Player view: shows the attach-source empty state plus attach form for users without providers; shows provider management, manual source-item creation, source item search, link/unlink modal, HTML5/HLS playback, progress controls, continue watching, and linked/unlinked counts.
@@ -409,7 +427,8 @@ Screenshots are not embedded in this handover. Generate with Playwright after st
 
 Known issues:
 
-- Sprint 005 is not committed or deployed yet.
+- Sprint 006 is implemented locally but not committed or deployed yet.
+- TMDB API key is still pending on staging, so Sprint 005 enrichment remains optional until private `.env` configuration is completed.
 - TMDB matching is title/year based and needs manual conflict review before bulk production use on ambiguous titles.
 - No production owner/admin seed workflow documented beyond using Laravel/Filament.
 - No user-facing import upload flow yet.
@@ -427,10 +446,10 @@ Technical debt:
 
 ## 16. Next Sprint
 
-1. Review and commit Sprint 005 if the full verification gate stays green.
-2. Deploy Sprint 005 to `ccc.razbudise.mk` without removing Apache Basic Auth.
-3. Configure a private server-side `TMDB_API_KEY`, run `php artisan mediahub:metadata-status 1`, then test one movie and one show enrichment before any full-user enrichment.
-4. Add manual metadata conflict review/correction before bulk enrichment on ambiguous imported libraries.
+1. Review and commit Sprint 006 if the full verification gate stays green.
+2. Deploy Sprint 006 to `ccc.razbudise.mk` without removing Apache Basic Auth.
+3. Smoke test media event APIs, dashboard timeline, Filament Media Events, and event creation from manual watch/rating/note/provider/playback flows.
+4. Configure a private server-side `TMDB_API_KEY`, run `php artisan mediahub:metadata-status 1`, then test one movie and one show enrichment before any full-user enrichment.
 
 ## 17. Git
 
@@ -438,11 +457,12 @@ Current branch: `main`.
 
 Run `git log --oneline -5` for the exact current commit chain before handoff or deployment.
 
-Expected uncommitted areas after Sprint 005:
+Expected uncommitted areas after Sprint 006:
 
 - `README.md`
 - `backend/`
 - `docs/AI_HANDOVER.md`
+- `docs/mediahub/MEDIA_EVENT_SYSTEM.md`
 - `src/`
 
 Run `git status --short --branch` before handoff or deployment.
@@ -457,4 +477,4 @@ See section 3 for the source tree. Full local checkouts also contain ignored/gen
 
 ## 20. Five-Minute Summary
 
-MediaHub is now an authenticated Laravel + React personal media operating system. The existing poster UI remains, but it logs into Laravel and loads `/api/v1/dashboard` instead of static JSON. Laravel owns invite-only users, sessions, alerts, analytics, audit logs, user-scoped canonical media, watch history, ratings, notes, provider/player tables, Filament admin, TV Time import, provider-safe backup/restore, and optional TMDB metadata enrichment. Provider items are temporary; canonical media, watch history, ratings, notes, and public metadata are permanent user-owned library data. The React detail modal lets users view safe movie/show/episode detail, save/clear ratings, save/delete private notes, inspect safe watch history, see provider link status, inspect public metadata, and manually mark movies/episodes watched or unwatched without deleting imported/provider history. There is no global stream catalog and dashboard/detail/list payloads do not expose stream/provider URLs; the play endpoint is owner-only and is the only place a playback URL is returned. Sprint 005 adds optional TMDB config, client, enrichment commands, admin metadata refresh, public poster/backdrop display, and tests for disabled/failure/enrichment safety. Next step is review/commit, then deploy Sprint 005 behind existing Apache Basic Auth and test metadata status plus a small enrichment sample before bulk enrichment.
+MediaHub is now an authenticated Laravel + React personal media operating system. The existing poster UI remains, but it logs into Laravel and loads `/api/v1/dashboard` instead of static JSON. Laravel owns invite-only users, sessions, alerts, analytics, audit logs, user-scoped canonical media, watch history, ratings, notes, provider/player tables, Filament admin, TV Time import, provider-safe backup/restore, optional TMDB metadata enrichment, and a local Sprint 006 media event system. Provider items are temporary; canonical media, watch history, ratings, notes, public metadata, and meaningful activity events are permanent user-owned library data. The React detail modal lets users view safe movie/show/episode detail, save/clear ratings, save/delete private notes, inspect safe watch history, see provider link status, inspect public metadata, and manually mark movies/episodes watched or unwatched without deleting imported/provider history. The dashboard now has an additive sanitized timeline panel. There is no global stream catalog and dashboard/detail/list/timeline payloads do not expose stream/provider URLs; the play endpoint is owner-only and is the only place a playback URL is returned. Sprint 006 adds `media_events`, `MediaEventService`, authenticated event APIs, a Filament Media Events resource, dashboard timeline payloads, and event hooks for imports, manual watches, ratings, notes, provider actions, playback completion, metadata enrichment, backup, and restore. Next step is review/commit, then deploy Sprint 006 behind existing Apache Basic Auth and smoke test event creation plus sensitive payload scans.

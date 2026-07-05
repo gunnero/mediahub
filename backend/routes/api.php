@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\InviteAcceptanceController;
 use App\Http\Controllers\Api\V1\ManualLibraryController;
+use App\Http\Controllers\Api\V1\MediaEventController;
 use App\Http\Controllers\Api\V1\PlayerController;
 use App\Http\Controllers\Api\V1\StatusController;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +21,8 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::get('/dashboard', DashboardController::class);
         Route::post('/alerts/{alert}/read', [AlertController::class, 'read']);
         Route::post('/alerts/read-all', [AlertController::class, 'readAll']);
+        Route::get('/media-events', [MediaEventController::class, 'index']);
+        Route::get('/media-events/recent', [MediaEventController::class, 'recent']);
         Route::get('/library/movies/{movie}', [ManualLibraryController::class, 'showMovie']);
         Route::get('/library/shows/{show}', [ManualLibraryController::class, 'showShow']);
         Route::get('/library/episodes/{episode}', [ManualLibraryController::class, 'showEpisode']);

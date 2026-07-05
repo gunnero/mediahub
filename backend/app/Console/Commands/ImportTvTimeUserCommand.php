@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\MediaEventSource;
+use App\Enums\MediaEventType;
 use App\Models\Alert;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
@@ -11,6 +13,7 @@ use App\Models\Show;
 use App\Models\User;
 use App\Services\AnalyticsService;
 use App\Services\AuditLogService;
+use App\Services\MediaEventService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +26,7 @@ class ImportTvTimeUserCommand extends Command
 
     protected $description = 'Import a private TV Time dashboard SQLite or JSON snapshot for one user.';
 
-    public function handle(AnalyticsService $analytics, AuditLogService $auditLogs): int
+    public function handle(AnalyticsService $analytics, AuditLogService $auditLogs, MediaEventService $mediaEvents): int
     {
         $user = User::find($this->argument('user_id'));
 
@@ -74,6 +77,18 @@ class ImportTvTimeUserCommand extends Command
 
         $analytics->record('tvtime.import.completed', $user, $summary);
         $auditLogs->record('tvtime.import.completed', $user, null, $user, $summary);
+        $mediaEvents->record($user, MediaEventType::ShowImported, null, [
+            'count' => $summary['shows_imported'],
+            'episodes_imported' => $summary['episodes_imported'],
+        ], MediaEventSource::Import);
+        $mediaEvents->record($user, MediaEventType::EpisodeImported, null, [
+            'count' => $summary['episodes_imported'],
+            'watches_imported' => $summary['watches_imported'],
+        ], MediaEventSource::Import);
+        $mediaEvents->record($user, MediaEventType::MovieImported, null, [
+            'count' => $summary['movies_imported'],
+            'watches_imported' => $summary['watches_imported'],
+        ], MediaEventSource::Import);
 
         $this->line('shows imported: '.$summary['shows_imported']);
         $this->line('episodes imported: '.$summary['episodes_imported']);

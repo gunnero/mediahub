@@ -33,6 +33,8 @@ Current routes:
 - `GET /api/v1/dashboard`
 - `POST /api/v1/alerts/{alert}/read`
 - `POST /api/v1/alerts/read-all`
+- `GET /api/v1/media-events`
+- `GET /api/v1/media-events/recent`
 - `GET /api/v1/library/movies/{movie}`
 - `GET /api/v1/library/shows/{show}`
 - `GET /api/v1/library/episodes/{episode}`
@@ -67,12 +69,14 @@ The API uses session-backed same-origin authentication. Public registration is i
 
 `GET /api/v1/dashboard` returns the dashboard-compatible JSON shape consumed by the React app. Detail endpoints return safe canonical item payloads with watch history, rating, private notes, and provider link status, but never raw stream URLs or provider settings.
 
+`GET /api/v1/media-events` and `/recent` return only the authenticated user's sanitized media events. Supported filters are `event_type`, `source`, `subject_type`, `date_from`, and `date_to`.
+
 ## Canonical Media Contract
 
 Provider items are temporary. Canonical media and user activity are permanent.
 
 - Canonical media: `movies`, `shows`, `episodes`
-- User activity: `movie_watches`, `episode_watches`, `ratings`, `notes`, `playback_sessions`
+- User activity: `movie_watches`, `episode_watches`, `ratings`, `notes`, `playback_sessions`, `media_events`
 - Provider layer: `playback_sources`, `playback_source_items`, `media_links`, `playback_progress`
 
 All of these tables are scoped by `user_id`. Provider deletion cascades provider rows only and must not delete canonical media, watch history, ratings, or notes.
@@ -134,6 +138,16 @@ Tables:
 - `ratings`
 - `notes`
 
+## Media Events
+
+`MediaEventService` records meaningful user-scoped activity into `media_events` for timelines, future statistics, OFF AI memory, recommendations, notifications, and achievements.
+
+Current stable event types include imports, manual watched/unwatched events, ratings, notes, provider/source lifecycle events, provider item link/unlink events, playback started/completed, metadata enrichment, backup creation, and restore completion.
+
+Event metadata is sanitized through the shared metadata sanitizer before storage. Forbidden keys include stream URLs, playback URLs, provider URLs, playlist URLs, passwords, API keys, tokens, secrets, and credentials. Event recording catches failures and logs only a safe summary so user flows do not crash if an event cannot be written.
+
+The dashboard payload includes a `timeline` object with recent events plus today and this-week counts. The frontend renders it as a compact Timeline panel.
+
 ## Backup And Restore
 
 Provider-safe private backup commands:
@@ -178,6 +192,7 @@ Current resources:
 - Playback Sources
 - Playback Source Items
 - Analytics Events
+- Media Events
 - Audit Logs
 
 Only active `owner` and `admin` users can access the Filament panel. Imported media resources are inspection-first/read-only to keep user-owned library data explicit and safe.
@@ -188,7 +203,7 @@ Only active `owner` and `admin` users can access the Filament panel. Imported me
 php artisan test
 ```
 
-The feature tests cover status readiness, invite acceptance, login/logout, `/me`, unauthenticated private API access, empty and imported dashboard payloads, alert read persistence, analytics events, audit logs, import validation, player/provider ownership, manual tracking without a provider, provider auto-tracking, provider deletion preserving watch history/ratings/notes, backup/restore, dashboard URL safety, TMDB disabled/failure/enrichment behavior, manual library detail/rating/note/watch APIs, and cross-user isolation.
+The feature tests cover status readiness, invite acceptance, login/logout, `/me`, unauthenticated private API access, empty and imported dashboard payloads, alert read persistence, analytics events, audit logs, media events, import validation, player/provider ownership, manual tracking without a provider, provider auto-tracking, provider deletion preserving watch history/ratings/notes/events, backup/restore, dashboard URL safety, TMDB disabled/failure/enrichment behavior, manual library detail/rating/note/watch APIs, and cross-user isolation.
 
 ## Deployment Checklist
 
@@ -202,7 +217,7 @@ Runtime notes:
 
 - backend `.env` and SQLite database are server-private and ignored
 - app checkout: `/home/razbudise/ccc.razbudise.mk/app`
-- current deployed commit: `77d5563`
+- current deployed commit before Sprint 006: `d436f3aeb9362414e0d335705f6176971ace9dee`
 - deployment backup: `/home/razbudise/ccc.razbudise.mk/backups/20260705004417`
 - private import file: `storage/app/imports/tvtime.sqlite`
 - safe backup directory: `storage/app/private/mediahub-backups`

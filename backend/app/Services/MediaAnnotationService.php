@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\MediaEventSource;
+use App\Enums\MediaEventType;
 use App\Models\Episode;
 use App\Models\Movie;
 use App\Models\Note;
@@ -15,12 +17,14 @@ class MediaAnnotationService
     public function __construct(
         private readonly AnalyticsService $analytics,
         private readonly AuditLogService $auditLogs,
+        private readonly MediaEventService $mediaEvents,
     ) {}
 
     public function rate(User $user, string $mediaType, int $mediaId, int $rating): Rating
     {
         $this->assertOwnedMedia($user, $mediaType, $mediaId);
 
+        $existing = Rating::forUser($user)->forMedia($mediaType, $mediaId)->first();
         $record = Rating::updateOrCreate([
             'user_id' => $user->id,
             'media_type' => $mediaType,
@@ -37,6 +41,16 @@ class MediaAnnotationService
 
         $this->analytics->record('media.rating.saved', $user, $metadata);
         $this->auditLogs->record('media.rating.saved', $user, $record, $user, $metadata);
+        $this->mediaEvents->record(
+            $user,
+            $existing ? MediaEventType::RatingUpdated : MediaEventType::RatingCreated,
+            $record,
+            [
+                ...$metadata,
+                'media_title' => $this->mediaTitle($user, $mediaType, $mediaId),
+            ],
+            MediaEventSource::Manual,
+        );
 
         return $record;
     }
@@ -59,6 +73,10 @@ class MediaAnnotationService
 
         $this->analytics->record('media.note.created', $user, $metadata);
         $this->auditLogs->record('media.note.created', $user, $record, $user, $metadata);
+        $this->mediaEvents->record($user, MediaEventType::NoteCreated, $record, [
+            ...$metadata,
+            'media_title' => $this->mediaTitle($user, $mediaType, $mediaId),
+        ], MediaEventSource::Manual);
 
         return $record;
     }
@@ -80,6 +98,10 @@ class MediaAnnotationService
 
         $this->analytics->record('media.rating.cleared', $user, $metadata);
         $this->auditLogs->record('media.rating.cleared', $user, $rating, $user, $metadata);
+        $this->mediaEvents->record($user, MediaEventType::RatingDeleted, $rating, [
+            ...$metadata,
+            'media_title' => $this->mediaTitle($user, $mediaType, $mediaId),
+        ], MediaEventSource::Manual);
 
         $rating->delete();
     }
@@ -98,6 +120,10 @@ class MediaAnnotationService
 
         $this->analytics->record('media.note.updated', $user, $metadata);
         $this->auditLogs->record('media.note.updated', $user, $note, $user, $metadata);
+        $this->mediaEvents->record($user, MediaEventType::NoteUpdated, $note, [
+            ...$metadata,
+            'media_title' => $this->mediaTitle($user, $note->media_type, $note->media_id),
+        ], MediaEventSource::Manual);
 
         return $note->refresh();
     }
@@ -114,6 +140,10 @@ class MediaAnnotationService
 
         $this->analytics->record('media.note.deleted', $user, $metadata);
         $this->auditLogs->record('media.note.deleted', $user, $note, $user, $metadata);
+        $this->mediaEvents->record($user, MediaEventType::NoteDeleted, $note, [
+            ...$metadata,
+            'media_title' => $this->mediaTitle($user, $note->media_type, $note->media_id),
+        ], MediaEventSource::Manual);
 
         $note->delete();
     }
@@ -137,5 +167,15 @@ class MediaAnnotationService
         if ($note->user_id !== $user->id) {
             throw new ModelNotFoundException;
         }
+    }
+
+    private function mediaTitle(User $user, string $mediaType, int $mediaId): ?string
+    {
+        return match ($mediaType) {
+            'movie' => Movie::forUser($user)->whereKey($mediaId)->value('title'),
+            'show' => Show::forUser($user)->whereKey($mediaId)->value('title'),
+            'episode' => Episode::forUser($user)->whereKey($mediaId)->value('title'),
+            default => null,
+        };
     }
 }

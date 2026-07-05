@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\MediaEventSource;
+use App\Enums\MediaEventType;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
 use App\Models\MediaLink;
@@ -23,6 +25,7 @@ class PlaybackLibraryService
 {
     public function __construct(
         private readonly AuditLogService $auditLogs,
+        private readonly MediaEventService $mediaEvents,
     ) {}
 
     /**
@@ -59,6 +62,11 @@ class PlaybackLibraryService
             'provider_type' => $source->provider_type,
             'status' => $source->status,
         ]);
+        $this->mediaEvents->record($user, MediaEventType::ProviderCreated, $source, [
+            'title' => $source->name,
+            'provider_type' => $source->provider_type,
+            'status' => $source->status,
+        ], MediaEventSource::Provider);
 
         return $source;
     }
@@ -76,6 +84,13 @@ class PlaybackLibraryService
             'provider_type' => $source->provider_type,
             'status' => $source->status,
         ]);
+        if ($source->status === 'disabled') {
+            $this->mediaEvents->record($user, MediaEventType::ProviderDisabled, $source, [
+                'title' => $source->name,
+                'provider_type' => $source->provider_type,
+                'status' => $source->status,
+            ], MediaEventSource::Provider);
+        }
 
         return $source->refresh()->loadCount('items');
     }
@@ -108,6 +123,11 @@ class PlaybackLibraryService
             'kind' => $item->kind,
             'status' => $item->status,
         ]);
+        $this->mediaEvents->record($user, MediaEventType::ProviderItemCreated, $item, [
+            'title' => $item->title,
+            'kind' => $item->kind,
+            'playback_source_id' => $source->id,
+        ], MediaEventSource::Provider);
 
         return $item->refresh()->loadMissing(['source', 'mediaLink']);
     }
@@ -267,7 +287,7 @@ class PlaybackLibraryService
             ]);
         }
 
-        return PlaybackSession::create([
+        $session = PlaybackSession::create([
             'user_id' => $user->id,
             'playback_source_id' => $item->playback_source_id,
             'playback_source_item_id' => $item->id,
@@ -276,6 +296,15 @@ class PlaybackLibraryService
             'started_at' => now(),
             'last_position_seconds' => 0,
         ]);
+
+        $this->mediaEvents->record($user, MediaEventType::PlaybackStarted, $session, [
+            'title' => $item->title,
+            'kind' => $item->kind,
+            'playback_source_item_id' => $item->id,
+            'linked' => (bool) $item->mediaLink,
+        ], MediaEventSource::Player);
+
+        return $session;
     }
 
     /**
@@ -307,7 +336,7 @@ class PlaybackLibraryService
         $showId = isset($targets['show_id']) ? $this->ownedShow($user, (int) $targets['show_id'])->id : null;
         $episodeId = isset($targets['episode_id']) ? $this->ownedEpisode($user, (int) $targets['episode_id'])->id : null;
 
-        return MediaLink::updateOrCreate([
+        $link = MediaLink::updateOrCreate([
             'user_id' => $user->id,
             'playback_source_item_id' => $item->id,
         ], [
@@ -316,15 +345,39 @@ class PlaybackLibraryService
             'episode_id' => $episodeId,
             'linked_at' => now(),
         ]);
+
+        $this->mediaEvents->record($user, MediaEventType::ProviderItemLinked, $item, [
+            'title' => $item->title,
+            'kind' => $item->kind,
+            'movie_id' => $movieId,
+            'show_id' => $showId,
+            'episode_id' => $episodeId,
+        ], MediaEventSource::Provider);
+
+        return $link;
     }
 
     public function unlink(User $user, PlaybackSourceItem $item): void
     {
         $this->assertOwnedItem($user, $item);
 
+        $link = MediaLink::forUser($user)
+            ->where('playback_source_item_id', $item->id)
+            ->first();
+
         MediaLink::forUser($user)
             ->where('playback_source_item_id', $item->id)
             ->delete();
+
+        if ($link) {
+            $this->mediaEvents->record($user, MediaEventType::ProviderItemUnlinked, $item, [
+                'title' => $item->title,
+                'kind' => $item->kind,
+                'movie_id' => $link->movie_id,
+                'show_id' => $link->show_id,
+                'episode_id' => $link->episode_id,
+            ], MediaEventSource::Provider);
+        }
     }
 
     /**
@@ -336,6 +389,7 @@ class PlaybackLibraryService
 
         return DB::transaction(function () use ($data, $session, $user): PlaybackSession {
             $completed = (bool) ($data['completed'] ?? false);
+            $alreadyCompleted = $session->status === 'completed' || $session->ended_at !== null;
 
             $session->forceFill([
                 'last_position_seconds' => (int) ($data['position_seconds'] ?? $session->last_position_seconds),
@@ -360,6 +414,18 @@ class PlaybackLibraryService
                 $this->recordCanonicalWatch($user, $session, $progress);
             }
 
+            if ($completed && ! $alreadyCompleted) {
+                $this->mediaEvents->record($user, MediaEventType::PlaybackCompleted, $session, [
+                    'title' => $session->sourceItem?->title,
+                    'playback_source_item_id' => $session->playback_source_item_id,
+                    'movie_id' => $progress->movie_id,
+                    'episode_id' => $progress->episode_id,
+                    'duration_seconds' => $session->duration_seconds,
+                    'position_seconds' => $session->last_position_seconds,
+                    'linked' => (bool) $session->mediaLink,
+                ], MediaEventSource::Player);
+            }
+
             return $session->refresh();
         });
     }
@@ -375,6 +441,12 @@ class PlaybackLibraryService
             'status' => $source->status,
             'items_count' => $source->items()->count(),
         ]);
+        $this->mediaEvents->record($user, MediaEventType::ProviderDeleted, $source, [
+            'title' => $source->name,
+            'provider_type' => $source->provider_type,
+            'status' => $source->status,
+            'items_count' => $source->items()->count(),
+        ], MediaEventSource::Provider);
 
         $source->delete();
     }
@@ -400,6 +472,13 @@ class PlaybackLibraryService
             'watch_count' => 1,
             'source' => 'manual',
         ])->save();
+
+        $this->mediaEvents->record($user, MediaEventType::MovieWatched, $movie, [
+            'title' => $movie->title,
+            'media_type' => 'movie',
+            'watched_at' => $watch->watched_at?->toIso8601String(),
+            'runtime' => $watch->runtime,
+        ], MediaEventSource::Manual);
 
         return $watch->refresh();
     }
@@ -428,6 +507,14 @@ class PlaybackLibraryService
             'source' => 'manual',
         ])->save();
 
+        $this->mediaEvents->record($user, MediaEventType::EpisodeWatched, $episode, [
+            'title' => $episode->title ?: $episode->show?->title,
+            'media_type' => 'episode',
+            'show_id' => $episode->show_id,
+            'watched_at' => $watch->watched_at?->toIso8601String(),
+            'runtime' => $watch->runtime,
+        ], MediaEventSource::Manual);
+
         return $watch->refresh();
     }
 
@@ -437,10 +524,17 @@ class PlaybackLibraryService
             throw new ModelNotFoundException;
         }
 
-        MovieWatch::forUser($user)
+        $deleted = MovieWatch::forUser($user)
             ->where('movie_id', $movie->id)
             ->where('source', 'manual')
             ->delete();
+
+        if ($deleted > 0) {
+            $this->mediaEvents->record($user, MediaEventType::MovieUnwatched, $movie, [
+                'title' => $movie->title,
+                'media_type' => 'movie',
+            ], MediaEventSource::Manual);
+        }
     }
 
     public function untrackManualEpisode(User $user, Episode $episode): void
@@ -451,10 +545,18 @@ class PlaybackLibraryService
             throw new ModelNotFoundException;
         }
 
-        EpisodeWatch::forUser($user)
+        $deleted = EpisodeWatch::forUser($user)
             ->where('episode_id', $episode->id)
             ->where('source', 'manual')
             ->delete();
+
+        if ($deleted > 0) {
+            $this->mediaEvents->record($user, MediaEventType::EpisodeUnwatched, $episode, [
+                'title' => $episode->title ?: $episode->show?->title,
+                'media_type' => 'episode',
+                'show_id' => $episode->show_id,
+            ], MediaEventSource::Manual);
+        }
     }
 
     /**

@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DetailModal, PlayerSection } from "./App.jsx";
+import { DetailModal, PlayerSection, TimelinePanel } from "./App.jsx";
 
 const movieItem = {
   id: "movie-watch-1",
@@ -320,5 +320,59 @@ describe("PlayerSection", () => {
         },
       });
     });
+  });
+});
+
+describe("TimelinePanel", () => {
+  it("renders grouped media events with titles, subtitles, time, and source labels", () => {
+    render(
+      <TimelinePanel
+        timeline={{
+          recent: [
+            {
+              id: 1,
+              eventType: "movie.watched",
+              title: "Watched Heat",
+              subtitle: "Movie",
+              source: "manual",
+              occurredAt: new Date().toISOString(),
+              group: "Today",
+            },
+            {
+              id: 2,
+              eventType: "rating.created",
+              title: "Rated Severance 10/10",
+              subtitle: "Show",
+              source: "manual",
+              occurredAt: new Date(Date.now() - 86400000).toISOString(),
+              group: "Yesterday",
+            },
+          ],
+          todaySummary: { total: 1 },
+          thisWeekSummary: { total: 2 },
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: /timeline/i })).toBeInTheDocument();
+    expect(screen.getByText("Today")).toBeInTheDocument();
+    expect(screen.getByText("Yesterday")).toBeInTheDocument();
+    expect(screen.getByText("Watched Heat")).toBeInTheDocument();
+    expect(screen.getByText("Rated Severance 10/10")).toBeInTheDocument();
+    expect(screen.getAllByText("manual")).toHaveLength(2);
+  });
+
+  it("renders a quiet empty state when there are no events", () => {
+    render(
+      <TimelinePanel
+        timeline={{
+          recent: [],
+          todaySummary: { total: 0 },
+          thisWeekSummary: { total: 0 },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/activity will appear here/i)).toBeInTheDocument();
   });
 });

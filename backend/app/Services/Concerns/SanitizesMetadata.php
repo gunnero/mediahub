@@ -12,12 +12,19 @@ trait SanitizesMetadata
     {
         $blockedFragments = [
             'access_token',
+            'api_key',
             'auth',
+            'credential',
             'device',
             'ip',
             'password',
+            'playbackurl',
+            'playback_url',
+            'playlist_url',
+            'provider_url',
             'refresh_token',
             'secret',
+            'stream_url',
             'token',
             'user_agent',
         ];
@@ -34,6 +41,7 @@ trait SanitizesMetadata
 
                 return false;
             })
+            ->map(fn (mixed $value): mixed => is_array($value) ? $this->sanitizeMetadata($value) : $value)
             ->all();
     }
 }

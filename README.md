@@ -6,7 +6,7 @@ Provider-independent personal media operating system with a React/Vite dashboard
 
 - `src/`: React dashboard UI. It logs in through Laravel and loads `/api/v1/dashboard`.
 - `scripts/import_tvtime.py`: imports the preserved TV Time GDPR export into ignored private outputs.
-- `backend/`: Laravel 13 backend for invite-only users, Filament admin, analytics, audit logs, alerts, per-user libraries, provider-owned player state, manual watch history, ratings, notes, and safe backups.
+- `backend/`: Laravel 13 backend for invite-only users, Filament admin, analytics, audit logs, media events, alerts, per-user libraries, provider-owned player state, manual watch history, ratings, notes, and safe backups.
 
 The deployed staging site at `https://ccc.razbudise.mk` remains protected by Apache Basic Auth. Do not remove that protection until Laravel auth and deployment hardening are finished.
 
@@ -28,7 +28,7 @@ Do not commit or expose:
 Canonical media and watch history are permanent. Provider items are temporary.
 
 - Canonical media: `movies`, `shows`, `episodes`.
-- User activity: `movie_watches`, `episode_watches`, `ratings`, `notes`, `playback_sessions`.
+- User activity: `movie_watches`, `episode_watches`, `ratings`, `notes`, `playback_sessions`, `media_events`.
 - Provider layer: `playback_sources`, `playback_source_items`, `media_links`, `playback_progress`.
 
 Every record is scoped by `user_id`. Deleting or disabling a provider may remove provider rows, links, sessions, and source progress, but it must not delete canonical movies, shows, episodes, watch history, ratings, or notes.
@@ -139,6 +139,25 @@ php artisan mediahub:restore-user {user_id} storage/app/private/mediahub-backups
 
 Backups are written under ignored private Laravel storage and include canonical library data, public metadata, watch history, ratings, notes, safe media links, and safe progress. They intentionally exclude raw stream URLs, playlist URLs, provider settings, provider credentials, API keys, and secrets.
 
+## Media Event System
+
+MediaHub records a user-scoped `media_events` timeline for meaningful library activity. Events are the foundation for the activity timeline, better statistics, future OFF AI memory, recommendations, notifications, auditability, and achievements.
+
+Current event sources are `manual`, `player`, `import`, `provider`, `metadata`, and `system`. Event metadata is sanitized before storage and strips provider URLs, stream URLs, playlist URLs, passwords, tokens, API keys, secrets, and credentials, including nested metadata keys.
+
+API:
+
+```bash
+GET /api/v1/media-events
+GET /api/v1/media-events/recent
+```
+
+Filters for `/api/v1/media-events`: `event_type`, `source`, `subject_type`, `date_from`, `date_to`.
+
+The dashboard payload includes an additive `timeline` object with recent safe events plus today/this-week counts. The React dashboard renders this as a compact Timeline panel.
+
+See `docs/mediahub/MEDIA_EVENT_SYSTEM.md`.
+
 ## Backend Setup
 
 ```bash
@@ -167,6 +186,8 @@ The React app expects the backend on the same origin. Private routes use Laravel
 - `GET /api/v1/dashboard`
 - `POST /api/v1/alerts/{alert}/read`
 - `POST /api/v1/alerts/read-all`
+- `GET /api/v1/media-events`
+- `GET /api/v1/media-events/recent`
 - `GET /api/v1/library/movies/{movie}`
 - `GET /api/v1/library/shows/{show}`
 - `GET /api/v1/library/episodes/{episode}`

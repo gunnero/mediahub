@@ -70,6 +70,11 @@ const fallbackData = {
   moviesToCheckOut: [],
   topShows: [],
   activity: [],
+  timeline: {
+    recent: [],
+    todaySummary: { total: 0 },
+    thisWeekSummary: { total: 0 },
+  },
   player: {
     enabled: false,
     emptyState: "Attach your own source to enable playback and automatic tracking.",
@@ -96,6 +101,23 @@ function shortDate(value) {
     month: "short",
     day: "numeric",
     year: "numeric",
+  }).format(date);
+}
+
+function shortTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
   }).format(date);
 }
 
@@ -430,6 +452,49 @@ function ActivityChart({ activity }) {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+export function TimelinePanel({ timeline }) {
+  const events = timeline?.recent || [];
+  const grouped = events.reduce((groups, event) => {
+    const group = event.group || "Earlier";
+    return {
+      ...groups,
+      [group]: [...(groups[group] || []), event],
+    };
+  }, {});
+  const orderedGroups = ["Today", "Yesterday", "Earlier"].filter((group) => grouped[group]?.length);
+
+  return (
+    <section className="timeline-panel">
+      <div className="section-heading">
+        <h2>Timeline</h2>
+        <span>{formatNumber(timeline?.thisWeekSummary?.total || 0)} this week</span>
+      </div>
+      {events.length ? (
+        <div className="timeline-list">
+          {orderedGroups.map((group) => (
+            <div className="timeline-group" key={group}>
+              <span>{group}</span>
+              {grouped[group].map((event) => (
+                <article className="timeline-row" key={event.id}>
+                  <i />
+                  <div>
+                    <strong>{event.title}</strong>
+                    <small>{event.subtitle}</small>
+                  </div>
+                  <em>{shortTime(event.occurredAt)}</em>
+                  <b>{event.source}</b>
+                </article>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="timeline-empty">Activity will appear here as you watch, rate, note, and link media.</div>
+      )}
     </section>
   );
 }
@@ -1805,6 +1870,7 @@ export function App() {
             )}
           </div>
           <aside className="insight-column">
+            <TimelinePanel timeline={dashboard.timeline} />
             <AlertCenter
               activeTab={activeAlertTab}
               alerts={alerts}
