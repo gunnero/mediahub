@@ -52,9 +52,15 @@ Current routes:
 - `PATCH /api/v1/library/notes/{note}`
 - `DELETE /api/v1/library/notes/{note}`
 - `GET /api/v1/player/sources`
+- `POST /api/v1/player/sources`
+- `PATCH /api/v1/player/sources/{source}`
 - `DELETE /api/v1/player/sources/{source}`
+- `GET /api/v1/player/items`
+- `POST /api/v1/player/sources/{source}/items`
+- `GET /api/v1/player/link-targets`
 - `POST /api/v1/player/items/{item}/play`
 - `POST /api/v1/player/items/{item}/link`
+- `DELETE /api/v1/player/items/{item}/link`
 - `PATCH /api/v1/player/sessions/{session}`
 
 The API uses session-backed same-origin authentication. Public registration is intentionally absent; users are created through invites or admin management.
@@ -88,6 +94,8 @@ All player tables are scoped by `user_id`:
 Provider settings and item stream URLs are encrypted/hidden. API list/dashboard payloads never include stream URLs; the play endpoint returns a playback URL only to the owner of that specific source item. Admin resources expose source metadata/status and item hashes, not raw URLs. Do not add a global/shared stream catalog.
 
 The player service validates the whole ownership graph for source items, media links, playback sessions, and progress. A row with the current `user_id` is not enough if it points at another user's provider source or canonical media.
+
+The frontend Player tab now uses these APIs for user-owned provider attach/manage, manual source-item creation, item search, manual link/unlink confirmation, HTML5/HLS playback, progress saving, and completion tracking. HLS support uses the frontend `hls.js` fallback where native browser playback is unavailable; no stream catalog or stream provider is bundled with MediaHub.
 
 ## Ratings And Notes
 

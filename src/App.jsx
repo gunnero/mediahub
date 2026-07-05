@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   CalendarDots,
@@ -646,26 +646,483 @@ export function DetailModal({
   );
 }
 
-function PlayerSection({ player }) {
-  const safePlayer = player || fallbackData.player;
-
-  if (!safePlayer.enabled) {
-    return (
-      <div className="focus-block quiet-note">
-        <Play size={34} weight="duotone" />
-        <h2>Player</h2>
-        <p>{safePlayer.emptyState}</p>
-      </div>
-    );
+function playerTargetPayload(target) {
+  if (!target) {
+    return {};
   }
 
+  return {
+    [`${target.type}_id`]: target.id,
+    confirm: true,
+  };
+}
+
+export function PlayerSection({
+  apiClient = apiRequest,
+  onRefreshDashboard,
+  onSessionExpired,
+  player,
+}) {
+  const safePlayer = player || fallbackData.player;
+  const [sources, setSources] = useState([]);
+  const [items, setItems] = useState(safePlayer.sourceItems || []);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [itemQuery, setItemQuery] = useState("");
+  const [sourceForm, setSourceForm] = useState({
+    name: "",
+    providerType: "manual",
+    legalConfirmed: false,
+  });
+  const [itemForm, setItemForm] = useState({
+    sourceId: "",
+    title: "",
+    kind: "movie",
+    streamUrl: "",
+  });
+  const [linkingItem, setLinkingItem] = useState(null);
+  const [targetQuery, setTargetQuery] = useState("");
+  const [targetType, setTargetType] = useState("");
+  const [targets, setTargets] = useState([]);
+  const [selectedTarget, setSelectedTarget] = useState(null);
+  const [confirmLink, setConfirmLink] = useState(false);
+  const [playback, setPlayback] = useState(null);
+  const [progressForm, setProgressForm] = useState({
+    positionSeconds: "0",
+    durationSeconds: "0",
+  });
+  const videoRef = useRef(null);
+
   const continueWatching = safePlayer.continueWatching || [];
-  const sourceItems = safePlayer.sourceItems || [];
-  const linkedItems = safePlayer.linkedItems || [];
-  const unlinkedItems = safePlayer.unlinkedItems || [];
+  const sourceItems = items.length ? items : safePlayer.sourceItems || [];
+  const linkedItems = sourceItems.filter((item) => item.linked);
+  const unlinkedItems = sourceItems.filter((item) => !item.linked);
+  const activeSources = sources.filter((source) => source.status === "active");
+  const selectedSourceId = itemForm.sourceId || activeSources[0]?.id || sources[0]?.id || "";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInitialPlayerData() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const [sourcePayload, itemPayload] = await Promise.all([
+          apiClient("/api/v1/player/sources"),
+          apiClient("/api/v1/player/items"),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextSources = sourcePayload?.sources || [];
+
+        setSources(nextSources);
+        setItems(itemPayload?.items || []);
+
+        if (!itemForm.sourceId && nextSources[0]?.id) {
+          setItemForm((current) => ({ ...current, sourceId: String(nextSources[0].id) }));
+        }
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+
+        if (loadError instanceof SessionExpiredError) {
+          onSessionExpired?.();
+          return;
+        }
+
+        setError(loadError.message || "Could not load player sources.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadInitialPlayerData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, onSessionExpired]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const playbackUrl = playback?.playbackUrl || "";
+
+    if (!video || !playbackUrl.includes(".m3u8") || video.canPlayType("application/vnd.apple.mpegurl")) {
+      return undefined;
+    }
+
+    let hls = null;
+    let cancelled = false;
+
+    import("hls.js/light").then(({ default: Hls }) => {
+      if (cancelled || !Hls.isSupported()) {
+        return;
+      }
+
+      hls = new Hls();
+      hls.loadSource(playbackUrl);
+      hls.attachMedia(video);
+    });
+
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+    };
+  }, [playback?.playbackUrl]);
+
+  async function loadPlayerData(filters = {}) {
+    const params = new URLSearchParams();
+
+    if (filters.q) {
+      params.set("q", filters.q);
+    }
+
+    const itemPath = params.toString()
+      ? `/api/v1/player/items?${params.toString()}`
+      : "/api/v1/player/items";
+
+    const [sourcePayload, itemPayload] = await Promise.all([
+      apiClient("/api/v1/player/sources"),
+      apiClient(itemPath),
+    ]);
+
+    const nextSources = sourcePayload?.sources || [];
+
+    setSources(nextSources);
+    setItems(itemPayload?.items || []);
+
+    if (!itemForm.sourceId && nextSources[0]?.id) {
+      setItemForm((current) => ({ ...current, sourceId: String(nextSources[0].id) }));
+    }
+  }
+
+  async function runPlayerAction(action, pendingLabel = "Saving") {
+    setBusy(pendingLabel);
+    setError("");
+
+    try {
+      await action();
+    } catch (actionError) {
+      if (actionError instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+
+      setError(actionError.message || "Player action failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleCreateSource(event) {
+    event.preventDefault();
+
+    await runPlayerAction(async () => {
+      await apiClient("/api/v1/player/sources", {
+        method: "POST",
+        body: {
+          name: sourceForm.name.trim(),
+          provider_type: sourceForm.providerType,
+          legal_confirmed: sourceForm.legalConfirmed,
+        },
+      });
+
+      setSourceForm({ name: "", providerType: "manual", legalConfirmed: false });
+      await loadPlayerData({ q: itemQuery });
+      await onRefreshDashboard?.();
+    }, "Attaching");
+  }
+
+  async function handleSourceStatus(source, status) {
+    await runPlayerAction(async () => {
+      await apiClient(`/api/v1/player/sources/${source.id}`, {
+        method: "PATCH",
+        body: { status },
+      });
+      await loadPlayerData({ q: itemQuery });
+      await onRefreshDashboard?.();
+    }, status === "disabled" ? "Disabling" : "Enabling");
+  }
+
+  async function handleDeleteSource(source) {
+    await runPlayerAction(async () => {
+      await apiClient(`/api/v1/player/sources/${source.id}`, { method: "DELETE" });
+      await loadPlayerData({ q: itemQuery });
+      await onRefreshDashboard?.();
+    }, "Deleting");
+  }
+
+  async function handleCreateItem(event) {
+    event.preventDefault();
+
+    await runPlayerAction(async () => {
+      await apiClient(`/api/v1/player/sources/${selectedSourceId}/items`, {
+        method: "POST",
+        body: {
+          title: itemForm.title.trim(),
+          kind: itemForm.kind,
+          stream_url: itemForm.streamUrl.trim(),
+        },
+      });
+
+      setItemForm((current) => ({ ...current, title: "", streamUrl: "" }));
+      await loadPlayerData({ q: itemQuery });
+      await onRefreshDashboard?.();
+    }, "Adding");
+  }
+
+  async function handleSearchItems(event) {
+    event.preventDefault();
+
+    await runPlayerAction(async () => {
+      await loadPlayerData({ q: itemQuery.trim() });
+    }, "Searching");
+  }
+
+  function openLinkModal(item) {
+    setLinkingItem(item);
+    setTargetQuery(item.title || "");
+    setTargetType(item.kind === "show" ? "show" : item.kind === "episode" ? "episode" : "movie");
+    setTargets([]);
+    setSelectedTarget(null);
+    setConfirmLink(false);
+    setError("");
+  }
+
+  async function handleTargetSearch(event) {
+    event.preventDefault();
+
+    await runPlayerAction(async () => {
+      const params = new URLSearchParams();
+      if (targetQuery.trim()) {
+        params.set("q", targetQuery.trim());
+      }
+      if (targetType) {
+        params.set("type", targetType);
+      }
+
+      const payload = await apiClient(`/api/v1/player/link-targets?${params.toString()}`);
+      setTargets(payload?.targets || []);
+    }, "Searching");
+  }
+
+  async function handleLinkItem(event) {
+    event.preventDefault();
+
+    await runPlayerAction(async () => {
+      await apiClient(`/api/v1/player/items/${linkingItem.id}/link`, {
+        method: "POST",
+        body: playerTargetPayload(selectedTarget),
+      });
+
+      setLinkingItem(null);
+      setTargets([]);
+      setSelectedTarget(null);
+      setConfirmLink(false);
+      await loadPlayerData({ q: itemQuery });
+      await onRefreshDashboard?.();
+    }, "Linking");
+  }
+
+  async function handleUnlinkItem(item) {
+    await runPlayerAction(async () => {
+      await apiClient(`/api/v1/player/items/${item.id}/link`, { method: "DELETE" });
+      await loadPlayerData({ q: itemQuery });
+      await onRefreshDashboard?.();
+    }, "Unlinking");
+  }
+
+  async function handlePlayItem(item) {
+    await runPlayerAction(async () => {
+      const payload = await apiClient(`/api/v1/player/items/${item.id}/play`, { method: "POST" });
+
+      setPlayback({
+        item,
+        session: payload.session,
+        playbackUrl: payload.playbackUrl,
+      });
+      setProgressForm({
+        positionSeconds: "0",
+        durationSeconds: "",
+      });
+    }, "Starting");
+  }
+
+  async function handleSaveProgress(completed = false) {
+    if (!playback?.session?.id) {
+      return;
+    }
+
+    const position = Number(progressForm.positionSeconds || 0);
+    const duration = Number(progressForm.durationSeconds || 0);
+
+    await runPlayerAction(async () => {
+      const payload = await apiClient(`/api/v1/player/sessions/${playback.session.id}`, {
+        method: "PATCH",
+        body: {
+          position_seconds: position,
+          duration_seconds: duration,
+          completed,
+        },
+      });
+
+      setPlayback((current) => current ? { ...current, session: payload.session } : current);
+      await onRefreshDashboard?.();
+    }, completed ? "Completing" : "Saving");
+  }
 
   return (
     <div className="focus-block player-board">
+      {!safePlayer.enabled && (
+        <div className="quiet-note player-empty-state">
+          <Play size={34} weight="duotone" />
+          <h2>Player</h2>
+          <p>{safePlayer.emptyState}</p>
+        </div>
+      )}
+
+      {error ? <div className="detail-error">{error}</div> : null}
+
+      <section className="player-panel provider-panel">
+        <div className="section-heading">
+          <h2>Provider sources</h2>
+          <span>{sources.length} attached</span>
+        </div>
+        <form className="player-form" onSubmit={handleCreateSource}>
+          <label>
+            <span>Source name</span>
+            <input
+              onChange={(event) => setSourceForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="My NAS"
+              required
+              type="text"
+              value={sourceForm.name}
+            />
+          </label>
+          <label>
+            <span>Provider type</span>
+            <select
+              onChange={(event) => setSourceForm((current) => ({ ...current, providerType: event.target.value }))}
+              value={sourceForm.providerType}
+            >
+              <option value="manual">Manual source</option>
+              <option value="plex">Plex</option>
+              <option value="jellyfin">Jellyfin</option>
+              <option value="emby">Emby</option>
+              <option value="smb">SMB share</option>
+              <option value="nas">NAS</option>
+              <option value="local">Local folder</option>
+            </select>
+          </label>
+          <label className="check-row">
+            <input
+              checked={sourceForm.legalConfirmed}
+              onChange={(event) => setSourceForm((current) => ({ ...current, legalConfirmed: event.target.checked }))}
+              required
+              type="checkbox"
+            />
+            <span>I own or am allowed to use this source.</span>
+          </label>
+          <button className="primary-action" disabled={busy === "Attaching"} type="submit">
+            Attach source
+          </button>
+        </form>
+        <div className="provider-list">
+          {loading ? <div className="empty-strip compact">Loading providers...</div> : null}
+          {sources.map((source) => (
+            <div className="provider-row" key={source.id}>
+              <span>
+                <strong>{source.name}</strong>
+                <small>{source.providerType} · {source.status} · {source.itemsCount || 0} items</small>
+              </span>
+              <div>
+                {source.status === "active" ? (
+                  <button className="text-action" onClick={() => handleSourceStatus(source, "disabled")} type="button">
+                    Disable
+                  </button>
+                ) : (
+                  <button className="text-action" onClick={() => handleSourceStatus(source, "active")} type="button">
+                    Enable
+                  </button>
+                )}
+                <button className="text-action danger" onClick={() => handleDeleteSource(source)} type="button">
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+          {!loading && sources.length === 0 ? <div className="empty-strip compact">No providers attached</div> : null}
+        </div>
+      </section>
+
+      <section className="player-panel">
+        <div className="section-heading">
+          <h2>Add source item</h2>
+          <span>Manual first</span>
+        </div>
+        <form className="player-form source-item-form" onSubmit={handleCreateItem}>
+          <label>
+            <span>Source</span>
+            <select
+              disabled={!sources.length}
+              onChange={(event) => setItemForm((current) => ({ ...current, sourceId: event.target.value }))}
+              value={String(selectedSourceId)}
+            >
+              {sources.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Item title</span>
+            <input
+              disabled={!sources.length}
+              onChange={(event) => setItemForm((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Movie or episode file"
+              required
+              type="text"
+              value={itemForm.title}
+            />
+          </label>
+          <label>
+            <span>Kind</span>
+            <select
+              disabled={!sources.length}
+              onChange={(event) => setItemForm((current) => ({ ...current, kind: event.target.value }))}
+              value={itemForm.kind}
+            >
+              <option value="movie">Movie</option>
+              <option value="show">Show</option>
+              <option value="episode">Episode</option>
+            </select>
+          </label>
+          <label>
+            <span>Stream or file URL</span>
+            <input
+              disabled={!sources.length}
+              onChange={(event) => setItemForm((current) => ({ ...current, streamUrl: event.target.value }))}
+              placeholder="https://..."
+              required
+              type="url"
+              value={itemForm.streamUrl}
+            />
+          </label>
+          <button className="secondary-action" disabled={!sources.length || busy === "Adding"} type="submit">
+            Add source item
+          </button>
+        </form>
+      </section>
+
       <section className="player-panel">
         <div className="section-heading">
           <h2>Continue watching</h2>
@@ -692,18 +1149,94 @@ function PlayerSection({ player }) {
           <h2>Source items</h2>
           <span>{sourceItems.length} available</span>
         </div>
+        <form className="player-search" onSubmit={handleSearchItems}>
+          <label>
+            <span>Filter source items</span>
+            <input
+              onChange={(event) => setItemQuery(event.target.value)}
+              placeholder="Search source items"
+              type="search"
+              value={itemQuery}
+            />
+          </label>
+          <button className="secondary-action" type="submit">Search</button>
+        </form>
         <div className="player-list">
-          {sourceItems.slice(0, 8).map((item) => (
-            <button className="player-row" key={item.id} type="button">
+          {sourceItems.slice(0, 20).map((item) => (
+            <div className="player-row player-item-row" key={item.id}>
               <FilmSlate size={22} />
               <span>
                 <strong>{item.title}</strong>
-                <small>{item.linked ? "linked" : "unlinked"} · {item.sourceName}</small>
+                <small>
+                  {item.linked ? `linked to ${item.link?.canonicalTitle || "library item"}` : "needs linking"} · {item.sourceName}
+                </small>
               </span>
-            </button>
+              <div className="player-row-actions">
+                <button className="text-action" onClick={() => handlePlayItem(item)} type="button">
+                  Play {item.title}
+                </button>
+                {item.linked ? (
+                  <button className="text-action danger" onClick={() => handleUnlinkItem(item)} type="button">
+                    Unlink {item.title}
+                  </button>
+                ) : (
+                  <button className="text-action" onClick={() => openLinkModal(item)} type="button">
+                    Link {item.title}
+                  </button>
+                )}
+              </div>
+            </div>
           ))}
+          {!sourceItems.length ? <div className="empty-strip compact">No source items yet</div> : null}
         </div>
       </section>
+
+      {playback ? (
+        <section className="player-panel playback-panel">
+          <div className="section-heading">
+            <h2>Now playing</h2>
+            <span>{playback.session?.status || "playing"}</span>
+          </div>
+          <strong>{playback.item.title}</strong>
+          {!playback.item.linked ? (
+            <div className="data-warning">Progress is saved only to this source until linked.</div>
+          ) : null}
+          <video
+            className="provider-video"
+            controls
+            data-testid="provider-video"
+            ref={videoRef}
+            src={playback.playbackUrl}
+          />
+          <div className="progress-controls">
+            <label>
+              <span>Position seconds</span>
+              <input
+                min="0"
+                onChange={(event) => setProgressForm((current) => ({ ...current, positionSeconds: event.target.value }))}
+                type="number"
+                value={progressForm.positionSeconds}
+              />
+            </label>
+            <label>
+              <span>Duration seconds</span>
+              <input
+                min="0"
+                onChange={(event) => setProgressForm((current) => ({ ...current, durationSeconds: event.target.value }))}
+                type="number"
+                value={progressForm.durationSeconds}
+              />
+            </label>
+            <button className="secondary-action" onClick={() => handleSaveProgress(false)} type="button">
+              Save progress
+            </button>
+            <button className="primary-action" onClick={() => handleSaveProgress(true)} type="button">
+              Mark complete
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section className="player-summary-grid">
         <div>
           <strong>{linkedItems.length}</strong>
@@ -714,11 +1247,90 @@ function PlayerSection({ player }) {
           <span>Unlinked</span>
         </div>
       </section>
+
+      {linkingItem ? (
+        <div className="modal-layer" role="presentation" onMouseDown={() => setLinkingItem(null)}>
+          <section
+            aria-label={`Link ${linkingItem.title}`}
+            aria-modal="true"
+            className="link-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <button className="modal-close" onClick={() => setLinkingItem(null)} type="button" aria-label="Close">
+              <X size={18} />
+            </button>
+            <div className="section-heading">
+              <h2>Link source item</h2>
+              <span>{linkingItem.title}</span>
+            </div>
+            <form className="player-form" onSubmit={handleTargetSearch}>
+              <label>
+                <span>Search your library</span>
+                <input
+                  onChange={(event) => setTargetQuery(event.target.value)}
+                  type="search"
+                  value={targetQuery}
+                />
+              </label>
+              <label>
+                <span>Target type</span>
+                <select onChange={(event) => setTargetType(event.target.value)} value={targetType}>
+                  <option value="">Any</option>
+                  <option value="movie">Movie</option>
+                  <option value="show">Show</option>
+                  <option value="episode">Episode</option>
+                </select>
+              </label>
+              <button className="secondary-action" type="submit">Search library</button>
+            </form>
+            <div className="target-list">
+              {targets.map((target) => (
+                <button
+                  aria-label={`${target.title} ${target.subtitle}${target.meta ? ` ${target.meta}` : ""}`}
+                  className={selectedTarget?.type === target.type && selectedTarget?.id === target.id ? "target-row active" : "target-row"}
+                  key={`${target.type}-${target.id}`}
+                  onClick={() => setSelectedTarget(target)}
+                  type="button"
+                >
+                  <strong>{target.title}</strong>
+                  <small>{target.subtitle}{target.meta ? ` ${target.meta}` : ""}</small>
+                </button>
+              ))}
+              {!targets.length ? <div className="empty-strip compact">Search to find a matching library item</div> : null}
+            </div>
+            <form className="player-form" onSubmit={handleLinkItem}>
+              <label className="check-row">
+                <input
+                  checked={confirmLink}
+                  onChange={(event) => setConfirmLink(event.target.checked)}
+                  required
+                  type="checkbox"
+                />
+                <span>I confirm this source item matches the selected library item.</span>
+              </label>
+              <button className="primary-action" disabled={!selectedTarget || !confirmLink || busy === "Linking"} type="submit">
+                Link item
+              </button>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function FocusSection({ activeSection, activity, collections, stats, alerts, player, onOpen }) {
+function FocusSection({
+  activeSection,
+  activity,
+  alerts,
+  collections,
+  onOpen,
+  onPlayerRefresh,
+  onSessionExpired,
+  player,
+  stats,
+}) {
   if (activeSection === "shows") {
     return (
       <div className="focus-block">
@@ -759,7 +1371,13 @@ function FocusSection({ activeSection, activity, collections, stats, alerts, pla
   }
 
   if (activeSection === "player") {
-    return <PlayerSection player={player} />;
+    return (
+      <PlayerSection
+        onRefreshDashboard={onPlayerRefresh}
+        onSessionExpired={onSessionExpired}
+        player={player}
+      />
+    );
   }
 
   if (activeSection === "stats") {
@@ -1161,6 +1779,8 @@ export function App() {
                 activity={dashboard.activity}
                 collections={collections}
                 onOpen={openItem}
+                onPlayerRefresh={refreshDashboard}
+                onSessionExpired={expireSession}
                 player={dashboard.player}
                 stats={stats}
               />

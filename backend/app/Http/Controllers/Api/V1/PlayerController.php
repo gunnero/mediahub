@@ -9,6 +9,7 @@ use App\Models\PlaybackSourceItem;
 use App\Services\PlaybackLibraryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class PlayerController extends Controller
 {
@@ -16,6 +17,81 @@ class PlayerController extends Controller
     {
         return response()->json([
             'sources' => $player->sourcesFor($request->user()),
+        ]);
+    }
+
+    public function storeSource(Request $request, PlaybackLibraryService $player): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'provider_type' => ['required', 'string', Rule::in(['manual', 'plex', 'jellyfin', 'emby', 'smb', 'nas', 'local'])],
+            'legal_confirmed' => ['accepted'],
+        ]);
+
+        $source = $player->createSource($request->user(), $data);
+
+        return response()->json([
+            'source' => $player->sourceSummary($source->loadCount('items')),
+        ], 201);
+    }
+
+    public function updateSource(Request $request, PlaybackSource $source, PlaybackLibraryService $player): JsonResponse
+    {
+        $data = $request->validate([
+            'status' => ['required', 'string', Rule::in(['active', 'disabled'])],
+        ]);
+
+        $source = $player->updateSourceStatus($request->user(), $source, $data);
+
+        return response()->json([
+            'source' => $player->sourceSummary($source),
+        ]);
+    }
+
+    public function storeItem(Request $request, PlaybackSource $source, PlaybackLibraryService $player): JsonResponse
+    {
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:255'],
+            'kind' => ['required', 'string', Rule::in(['movie', 'show', 'episode'])],
+            'stream_url' => ['required', 'url', 'max:2048'],
+            'external_id' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $item = $player->createManualItem($request->user(), $source, $data);
+
+        return response()->json([
+            'item' => $player->sourceItemsForUser($request->user(), ['source_id' => $source->id, 'q' => $item->title])[0] ?? [
+                'id' => $item->id,
+                'title' => $item->title,
+                'kind' => $item->kind,
+                'linked' => false,
+            ],
+        ], 201);
+    }
+
+    public function items(Request $request, PlaybackLibraryService $player): JsonResponse
+    {
+        $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'source_id' => ['nullable', 'integer'],
+            'status' => ['nullable', 'string', Rule::in(['available', 'unavailable'])],
+            'linked' => ['nullable', 'boolean'],
+        ]);
+
+        return response()->json([
+            'items' => $player->sourceItemsForUser($request->user(), $data),
+        ]);
+    }
+
+    public function linkTargets(Request $request, PlaybackLibraryService $player): JsonResponse
+    {
+        $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'type' => ['nullable', 'string', Rule::in(['movie', 'show', 'episode'])],
+        ]);
+
+        return response()->json([
+            'targets' => $player->linkTargetsFor($request->user(), $data),
         ]);
     }
 
@@ -40,6 +116,7 @@ class PlayerController extends Controller
             'movie_id' => ['nullable', 'integer'],
             'show_id' => ['nullable', 'integer'],
             'episode_id' => ['nullable', 'integer'],
+            'confirm' => ['accepted'],
         ]);
 
         $link = $player->link($request->user(), $item, $data);
@@ -54,6 +131,13 @@ class PlayerController extends Controller
                 'linked_at' => $link->linked_at?->toIso8601String(),
             ],
         ], 201);
+    }
+
+    public function unlink(Request $request, PlaybackSourceItem $item, PlaybackLibraryService $player): JsonResponse
+    {
+        $player->unlink($request->user(), $item);
+
+        return response()->json(null, 204);
     }
 
     public function updateSession(Request $request, PlaybackSession $session, PlaybackLibraryService $player): JsonResponse

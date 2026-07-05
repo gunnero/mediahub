@@ -39,9 +39,15 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::patch('/library/notes/{note}', [ManualLibraryController::class, 'updateNote']);
         Route::delete('/library/notes/{note}', [ManualLibraryController::class, 'deleteNote']);
         Route::get('/player/sources', [PlayerController::class, 'sources']);
+        Route::post('/player/sources', [PlayerController::class, 'storeSource']);
+        Route::patch('/player/sources/{source}', [PlayerController::class, 'updateSource']);
         Route::delete('/player/sources/{source}', [PlayerController::class, 'destroySource']);
+        Route::get('/player/items', [PlayerController::class, 'items']);
+        Route::post('/player/sources/{source}/items', [PlayerController::class, 'storeItem']);
+        Route::get('/player/link-targets', [PlayerController::class, 'linkTargets']);
         Route::post('/player/items/{item}/play', [PlayerController::class, 'play']);
         Route::post('/player/items/{item}/link', [PlayerController::class, 'link']);
+        Route::delete('/player/items/{item}/link', [PlayerController::class, 'unlink']);
         Route::patch('/player/sessions/{session}', [PlayerController::class, 'updateSession']);
     });
 });

@@ -99,12 +99,14 @@ class PlayerProviderAccessTest extends TestCase
         $this->actingAs($user)
             ->postJson("/api/v1/player/items/{$otherItem->id}/link", [
                 'movie_id' => $ownMovie->id,
+                'confirm' => true,
             ])
             ->assertNotFound();
 
         $this->actingAs($user)
             ->postJson("/api/v1/player/items/{$ownItem->id}/link", [
                 'movie_id' => $otherMovie->id,
+                'confirm' => true,
             ])
             ->assertNotFound();
 
@@ -250,6 +252,7 @@ class PlayerProviderAccessTest extends TestCase
         $this->actingAs($user)
             ->postJson("/api/v1/player/items/{$item->id}/link", [
                 'movie_id' => $movie->id,
+                'confirm' => true,
             ])
             ->assertCreated();
 
@@ -311,6 +314,7 @@ class PlayerProviderAccessTest extends TestCase
         $this->actingAs($user)
             ->postJson("/api/v1/player/items/{$item->id}/link", [
                 'movie_id' => $movie->id,
+                'confirm' => true,
             ])
             ->assertCreated();
 
@@ -349,6 +353,7 @@ class PlayerProviderAccessTest extends TestCase
         $this->actingAs($user)
             ->postJson("/api/v1/player/items/{$item->id}/link", [
                 'episode_id' => $episode->id,
+                'confirm' => true,
             ])
             ->assertCreated()
             ->assertJsonPath('link.episode_id', $episode->id);

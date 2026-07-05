@@ -61,7 +61,10 @@ class WatchHistoryInvariantTest extends TestCase
         $item = $this->sourceItemFor($user);
 
         $this->actingAs($user)
-            ->postJson("/api/v1/player/items/{$item->id}/link", ['movie_id' => $movie->id])
+            ->postJson("/api/v1/player/items/{$item->id}/link", [
+                'movie_id' => $movie->id,
+                'confirm' => true,
+            ])
             ->assertCreated();
 
         $sessionId = $this->actingAs($user)
@@ -121,7 +124,10 @@ class WatchHistoryInvariantTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->postJson("/api/v1/player/items/{$item->id}/link", ['movie_id' => $movie->id])
+            ->postJson("/api/v1/player/items/{$item->id}/link", [
+                'movie_id' => $movie->id,
+                'confirm' => true,
+            ])
             ->assertCreated();
         $this->actingAs($user)
             ->postJson("/api/v1/library/movies/{$movie->id}/rating", ['rating' => 10])
@@ -160,7 +166,10 @@ class WatchHistoryInvariantTest extends TestCase
         $unlinkedItem = $this->sourceItemFor($user, 'unlinked-1');
 
         $this->actingAs($user)
-            ->postJson("/api/v1/player/items/{$linkedItem->id}/link", ['movie_id' => $movie->id])
+            ->postJson("/api/v1/player/items/{$linkedItem->id}/link", [
+                'movie_id' => $movie->id,
+                'confirm' => true,
+            ])
             ->assertCreated();
 
         PlaybackProgress::create([

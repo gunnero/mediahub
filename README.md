@@ -159,14 +159,22 @@ The React app expects the backend on the same origin. Private routes use Laravel
 - `PATCH /api/v1/library/notes/{note}`
 - `DELETE /api/v1/library/notes/{note}`
 - `GET /api/v1/player/sources`
+- `POST /api/v1/player/sources`
+- `PATCH /api/v1/player/sources/{source}`
 - `DELETE /api/v1/player/sources/{source}`
+- `GET /api/v1/player/items`
+- `POST /api/v1/player/sources/{source}/items`
+- `GET /api/v1/player/link-targets`
 - `POST /api/v1/player/items/{item}/play`
 - `POST /api/v1/player/items/{item}/link`
+- `DELETE /api/v1/player/items/{item}/link`
 - `PATCH /api/v1/player/sessions/{session}`
 
 Filament admin is available at `/admin` for active `owner` and `admin` users.
 
 The React detail modal uses the library endpoints for user-owned movies, shows, and episodes. Users can rate 1-10, clear ratings, save/delete private notes, and add/remove manual watch rows for movies and episodes. The remove action only deletes manual watch rows; imported/provider watch history remains permanent.
+
+The React Player tab lets a user attach their own source, add manual source items, search/filter source items, link/unlink items to same-user canonical library records with explicit confirmation, start HTML5/HLS playback, save progress, and mark playback complete. Source/provider URLs are not shown in dashboard or list payloads; playback URLs are requested only from the owner-only play endpoint.
 
 ## Verification
 

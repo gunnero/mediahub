@@ -131,7 +131,10 @@ class RatingsAndNotesTest extends TestCase
         $item = $this->sourceItemFor($user);
 
         $this->actingAs($user)
-            ->postJson("/api/v1/player/items/{$item->id}/link", ['movie_id' => $movie->id])
+            ->postJson("/api/v1/player/items/{$item->id}/link", [
+                'movie_id' => $movie->id,
+                'confirm' => true,
+            ])
             ->assertCreated();
         $this->actingAs($user)
             ->postJson("/api/v1/library/movies/{$movie->id}/rating", ['rating' => 9])
