@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AlertController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\InviteAcceptanceController;
+use App\Http\Controllers\Api\V1\LibraryBrowserController;
 use App\Http\Controllers\Api\V1\ManualLibraryController;
 use App\Http\Controllers\Api\V1\MediaEventController;
 use App\Http\Controllers\Api\V1\PlayerController;
@@ -23,6 +24,10 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::post('/alerts/read-all', [AlertController::class, 'readAll']);
         Route::get('/media-events', [MediaEventController::class, 'index']);
         Route::get('/media-events/recent', [MediaEventController::class, 'recent']);
+        Route::get('/library/movies', [LibraryBrowserController::class, 'movies']);
+        Route::get('/library/shows', [LibraryBrowserController::class, 'shows']);
+        Route::get('/library/history', [LibraryBrowserController::class, 'history']);
+        Route::get('/library/search', [LibraryBrowserController::class, 'search']);
         Route::get('/library/movies/{movie}', [ManualLibraryController::class, 'showMovie']);
         Route::get('/library/shows/{show}', [ManualLibraryController::class, 'showShow']);
         Route::get('/library/episodes/{episode}', [ManualLibraryController::class, 'showEpisode']);

@@ -158,6 +158,38 @@ The dashboard payload must never expose:
 
 The authenticated play endpoint is the only current endpoint that returns a playback URL, and only after same-user provider item ownership checks pass.
 
+## Library Browser API
+
+The user-facing library browser is canonical-only. It is allowed to browse/search:
+
+- movies
+- shows
+- episodes
+- movie watch history
+- episode watch history
+- ratings/notes presence
+- safe public metadata
+- same-user provider link status as a boolean/count
+
+Current browser endpoints:
+
+- `GET /api/v1/library/movies`
+- `GET /api/v1/library/shows`
+- `GET /api/v1/library/history`
+- `GET /api/v1/library/search`
+- `GET /api/v1/library/movies/{movie}`
+- `GET /api/v1/library/shows/{show}`
+- `GET /api/v1/library/episodes/{episode}`
+
+Rules:
+
+- all browser queries must be scoped by `user_id`
+- global search must search canonical movies, shows, and episodes only
+- provider source-item search belongs only inside the Player tab
+- show details may derive seasons from `episodes.season_number`
+- browser and search payloads must never include stream URLs, playlist URLs, provider credentials, API keys, secrets, raw provider settings, or raw provider URLs
+- deleting/changing providers must not alter browser history, ratings, notes, or canonical media
+
 ## Backup And Restore
 
 `mediahub:backup-user` creates a provider-safe private JSON backup under ignored Laravel storage.
@@ -218,6 +250,7 @@ Future sprints may add:
 - richer metadata conflict resolution
 - user-facing manual metadata correction
 - richer manual library APIs
+- richer library browser facets and saved filters
 - user-facing import upload
 - release calendars and notifications
 

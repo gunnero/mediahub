@@ -158,6 +158,18 @@ The dashboard payload includes an additive `timeline` object with recent safe ev
 
 See `docs/mediahub/MEDIA_EVENT_SYSTEM.md`.
 
+## Library Browser
+
+The React dashboard now has user-facing canonical library browsers:
+
+- Movies: searchable/filterable by watched, watchlist, rated, and private notes.
+- Shows: searchable/filterable by followed, in progress, completed, new episodes, rated, and private notes.
+- Show detail: seasons and episodes are grouped from canonical `episodes` records.
+- History: paginated watch history across movies and episodes.
+- Global search: searches canonical movies, shows, and episodes only.
+
+These screens call user-scoped `/api/v1/library/*` endpoints and never use provider/source item lists for normal library search. Provider URLs, stream URLs, playlist URLs, credentials, API keys, secrets, and raw provider settings remain excluded from dashboard, library, search, and history payloads.
+
 ## Backend Setup
 
 ```bash
@@ -188,6 +200,10 @@ The React app expects the backend on the same origin. Private routes use Laravel
 - `POST /api/v1/alerts/read-all`
 - `GET /api/v1/media-events`
 - `GET /api/v1/media-events/recent`
+- `GET /api/v1/library/movies`
+- `GET /api/v1/library/shows`
+- `GET /api/v1/library/history`
+- `GET /api/v1/library/search`
 - `GET /api/v1/library/movies/{movie}`
 - `GET /api/v1/library/shows/{show}`
 - `GET /api/v1/library/episodes/{episode}`

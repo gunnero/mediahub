@@ -11,7 +11,7 @@ Project name: MediaHub.
 
 Purpose: provider-independent personal media operating system for movies and TV shows. The TV Time archive/importer is one data source, not the product identity.
 
-Current version: frontend `package.json` is `0.0.0`; UI footer says `v1.0.0`; backend includes Laravel foundation, authenticated dashboard, user-owned provider/player layer, Canonical Media Engine sprint 001, Manual Library UI sprint 002, Provider Attach & Playback UI sprint 004, optional TMDB Metadata Foundation sprint 005, and local Sprint 006 Media Event System work. Sprint 006 is not committed or deployed yet. No release tag yet.
+Current version: frontend `package.json` is `0.0.0`; UI footer says `v1.0.0`; backend includes Laravel foundation, authenticated dashboard, user-owned provider/player layer, Canonical Media Engine sprint 001, Manual Library UI sprint 002, Provider Attach & Playback UI sprint 004, optional TMDB Metadata Foundation sprint 005, Media Event System sprint 006, Product UX sprint 001, and local Sprint 007 Library Browser work. No Sprint 007 commit or deployment has been made yet.
 
 Completed:
 
@@ -30,6 +30,7 @@ Completed:
 - Provider-independent backup/restore commands: `mediahub:backup-user` and `mediahub:restore-user`.
 - Dashboard additive stats for manual watches, auto-tracked watches, provider link state, ratings, notes, and source-only progress.
 - User-facing detail modal for movies, shows, and episodes with rating, private notes, safe watch history, provider link status, and manual watched/unwatched controls for movies/episodes.
+- User-facing canonical library browsers for movies, shows, show seasons/episodes, watch history, and global search.
 - User-facing Player tab for attaching own provider/source records, adding manual source items, linking/unlinking source items to same-user canonical media, starting HTML5/HLS playback, saving progress, and marking playback complete.
 - Optional TMDB metadata foundation: private `.env` config, TMDB client service, additive metadata enrichment service, summary-only Artisan commands, public poster/backdrop use in dashboard/detail payloads, and safe Filament metadata inspection/refresh actions.
 - User-scoped media event system for meaningful activity timeline, future statistics, OFF AI memory, recommendations, notifications, auditability, and achievements. Events sanitize forbidden metadata keys and never store stream/provider URLs or credentials.
@@ -46,6 +47,7 @@ Still planned:
 
 - Review, commit, and deploy Sprint 006 after the full verification gate stays green.
 - Production hardening beyond the current Basic-Auth-protected staging deployment.
+- Review, commit, and deploy Sprint 007 after the full verification gate stays green.
 - User-facing import upload flow.
 - Background jobs/scheduler for future alert checks.
 - Metadata conflict resolution and manual metadata correction.
@@ -124,7 +126,7 @@ Rollback:
 Backend: Laravel `13.x`, PHP `^8.3` per Composer; staging currently runs PHP `8.4.23`, Filament `5.6`, PHPUnit.
 Frontend: React `19.2`, Vite `6.4`, Phosphor icons, plain CSS.
 Database: SQLite locally; Laravel migrations are source of truth. Production DB can be SQLite or MySQL/MariaDB, but not decided here.
-APIs: Laravel `/api/v1`; optional TMDB API integration for public media metadata enrichment.
+APIs: Laravel `/api/v1`; canonical library browser/search/history endpoints; optional TMDB API integration for public media metadata enrichment.
 Authentication: Laravel session/cookie auth, invite-only registration, roles `owner`, `admin`, `member`, statuses `active`, `disabled`.
 Queue system: Laravel default jobs tables exist; no queued product jobs yet.
 Testing: `php artisan test`, `npm test -- --run`, `python3 -m unittest discover -s tests -v`, `npm run build`.
@@ -260,7 +262,11 @@ Every media/library/player/annotation table is scoped by `user_id`.
 - `DashboardController`: `GET /api/v1/dashboard`; returns user-scoped dashboard JSON.
 - `AlertController@read`: `POST /api/v1/alerts/{alert}/read`; marks one owned alert read.
 - `AlertController@readAll`: `POST /api/v1/alerts/read-all`; marks all owned alerts read.
-- `ManualLibraryController@showMovie/showShow/showEpisode`: `GET /api/v1/library/{media}/{id}`; returns a safe user-owned detail payload with status, rating, private notes, watch history, and provider link status.
+- `LibraryBrowserController@movies`: `GET /api/v1/library/movies`; returns paginated same-user movie cards with search/status/sort filters.
+- `LibraryBrowserController@shows`: `GET /api/v1/library/shows`; returns paginated same-user show cards with search/status/sort filters.
+- `LibraryBrowserController@history`: `GET /api/v1/library/history`; returns paginated same-user movie/episode watch history.
+- `LibraryBrowserController@search`: `GET /api/v1/library/search`; returns grouped same-user canonical movie/show/episode search results.
+- `ManualLibraryController@showMovie/showShow/showEpisode`: `GET /api/v1/library/{media}/{id}`; returns a safe user-owned detail payload with status, rating, private notes, watch history, provider link status, and show season/episode groups.
 - `ManualLibraryController@watchMovie/watchEpisode`: `POST /api/v1/library/{media}/{id}/watch`; creates or updates one manual watch row for a user-owned movie or episode.
 - `ManualLibraryController@unwatchMovie/unwatchEpisode`: `DELETE /api/v1/library/{media}/{id}/watch`; removes only manual watch rows for a user-owned movie or episode, preserving imported/provider history.
 - `ManualLibraryController@rateMovie/rateShow/rateEpisode`: `POST /api/v1/library/{media}/{id}/rating`; saves a 1-10 rating for same-user canonical media.
@@ -285,6 +291,7 @@ Every media/library/player/annotation table is scoped by `user_id`.
 
 - `InviteService`: creates hashed invite tokens and accepts valid pending invites.
 - `DashboardPayloadService`: builds the React-compatible payload from Laravel tables, preferring safe TMDB poster/backdrop image URLs when enriched, adding a safe timeline object, and never exposing provider/stream URLs.
+- `LibraryBrowserService`: builds paginated canonical movie, show, watch-history, and grouped search payloads for the React browser without exposing provider/source URLs.
 - `MediaDetailService`: builds safe per-item detail payloads for the React modal with public metadata fields and without stream URLs or provider secrets.
 - `TMDBClientService`: optional TMDB API client with disabled mode, timeouts, response caching, and no API key logging.
 - `MediaMetadataService`: enriches movies, shows, episodes, and user libraries additively with public metadata while preserving user/import-owned fields.
@@ -308,7 +315,7 @@ API:
 
 - Public under `web` middleware: `GET /api/v1/status`, `POST /api/v1/auth/login`, `POST /api/v1/invites/accept`
 - Authenticated under `auth`: `GET /api/v1/me`, `POST /api/v1/auth/logout`, `GET /api/v1/dashboard`, `POST /api/v1/alerts/{alert}/read`, `POST /api/v1/alerts/read-all`
-- Authenticated library: `GET /api/v1/library/movies/{movie}`, `GET /api/v1/library/shows/{show}`, `GET /api/v1/library/episodes/{episode}`, `POST|DELETE /api/v1/library/movies/{movie}/watch`, `POST|DELETE /api/v1/library/episodes/{episode}/watch`, `POST|DELETE /api/v1/library/{media}/{id}/rating`, `POST /api/v1/library/{media}/{id}/notes`, `PATCH|DELETE /api/v1/library/notes/{note}`
+- Authenticated library: `GET /api/v1/library/movies`, `GET /api/v1/library/shows`, `GET /api/v1/library/history`, `GET /api/v1/library/search`, `GET /api/v1/library/movies/{movie}`, `GET /api/v1/library/shows/{show}`, `GET /api/v1/library/episodes/{episode}`, `POST|DELETE /api/v1/library/movies/{movie}/watch`, `POST|DELETE /api/v1/library/episodes/{episode}/watch`, `POST|DELETE /api/v1/library/{media}/{id}/rating`, `POST /api/v1/library/{media}/{id}/notes`, `PATCH|DELETE /api/v1/library/notes/{note}`
 - Authenticated player: `GET|POST /api/v1/player/sources`, `PATCH|DELETE /api/v1/player/sources/{source}`, `GET /api/v1/player/items`, `POST /api/v1/player/sources/{source}/items`, `GET /api/v1/player/link-targets`, `POST /api/v1/player/items/{item}/play`, `POST|DELETE /api/v1/player/items/{item}/link`, `PATCH /api/v1/player/sessions/{session}`
 - Authenticated media events: `GET /api/v1/media-events`, `GET /api/v1/media-events/recent`
 

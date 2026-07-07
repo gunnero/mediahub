@@ -35,6 +35,10 @@ Current routes:
 - `POST /api/v1/alerts/read-all`
 - `GET /api/v1/media-events`
 - `GET /api/v1/media-events/recent`
+- `GET /api/v1/library/movies`
+- `GET /api/v1/library/shows`
+- `GET /api/v1/library/history`
+- `GET /api/v1/library/search`
 - `GET /api/v1/library/movies/{movie}`
 - `GET /api/v1/library/shows/{show}`
 - `GET /api/v1/library/episodes/{episode}`
@@ -67,7 +71,16 @@ Current routes:
 
 The API uses session-backed same-origin authentication. Public registration is intentionally absent; users are created through invites or admin management.
 
-`GET /api/v1/dashboard` returns the dashboard-compatible JSON shape consumed by the React app. Detail endpoints return safe canonical item payloads with watch history, rating, private notes, and provider link status, but never raw stream URLs or provider settings.
+`GET /api/v1/dashboard` returns the dashboard-compatible JSON shape consumed by the React app. Detail endpoints return safe canonical item payloads with watch history, rating, private notes, provider link status, and show season/episode groups, but never raw stream URLs or provider settings.
+
+Library browser endpoints are canonical and user-scoped:
+
+- `GET /api/v1/library/movies`: paginated movies with `search`, `status`, `sort`, `page`, and `per_page` filters.
+- `GET /api/v1/library/shows`: paginated shows with `search`, `status`, `sort`, `page`, and `per_page` filters.
+- `GET /api/v1/library/history`: paginated movie/episode watch history with `type`, `search`, `date_from`, `date_to`, `page`, and `per_page` filters.
+- `GET /api/v1/library/search`: grouped canonical search results for movies, shows, and episodes.
+
+These endpoints do not search or return provider source items and must not expose provider URLs, stream URLs, playlist URLs, credentials, API keys, secrets, or raw provider settings.
 
 `GET /api/v1/media-events` and `/recent` return only the authenticated user's sanitized media events. Supported filters are `event_type`, `source`, `subject_type`, `date_from`, and `date_to`.
 
@@ -100,6 +113,8 @@ Provider settings and item stream URLs are encrypted/hidden. API list/dashboard 
 The player service validates the whole ownership graph for source items, media links, playback sessions, and progress. A row with the current `user_id` is not enough if it points at another user's provider source or canonical media.
 
 The frontend Player tab now uses these APIs for user-owned provider attach/manage, manual source-item creation, item search, manual link/unlink confirmation, HTML5/HLS playback, progress saving, and completion tracking. HLS support uses the frontend `hls.js` fallback where native browser playback is unavailable; no stream catalog or stream provider is bundled with MediaHub.
+
+The frontend Movies, Shows, History, global search, and show season browser use the canonical library endpoints. Provider source-item search remains isolated inside the Player tab.
 
 ## TMDB Metadata
 
@@ -203,7 +218,7 @@ Only active `owner` and `admin` users can access the Filament panel. Imported me
 php artisan test
 ```
 
-The feature tests cover status readiness, invite acceptance, login/logout, `/me`, unauthenticated private API access, empty and imported dashboard payloads, alert read persistence, analytics events, audit logs, media events, import validation, player/provider ownership, manual tracking without a provider, provider auto-tracking, provider deletion preserving watch history/ratings/notes/events, backup/restore, dashboard URL safety, TMDB disabled/failure/enrichment behavior, manual library detail/rating/note/watch APIs, and cross-user isolation.
+The feature tests cover status readiness, invite acceptance, login/logout, `/me`, unauthenticated private API access, empty and imported dashboard payloads, alert read persistence, analytics events, audit logs, media events, import validation, canonical library browser/search/history APIs, player/provider ownership, manual tracking without a provider, provider auto-tracking, provider deletion preserving watch history/ratings/notes/events, backup/restore, dashboard URL safety, TMDB disabled/failure/enrichment behavior, manual library detail/rating/note/watch APIs, and cross-user isolation.
 
 ## Deployment Checklist
 

@@ -88,6 +88,8 @@ class MediaDetailService
             'notes' => $this->notes($user, 'show', $show->id),
             'watchHistory' => $watches->map(fn (EpisodeWatch $watch): array => $this->episodeWatchItem($watch))->values()->all(),
             'provider' => $this->showProviderStatus($user, $show),
+            'latestEpisode' => $watches->first()?->episode ? $this->episodeRow($user, $watches->first()->episode) : null,
+            'seasons' => $this->seasons($user, $show),
         ];
     }
 
@@ -191,6 +193,64 @@ class MediaDetailService
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    private function seasons(User $user, Show $show): array
+    {
+        $episodes = Episode::forUser($user)
+            ->where('show_id', $show->id)
+            ->orderBy('season_number')
+            ->orderBy('episode_number')
+            ->get();
+
+        return $episodes
+            ->groupBy(fn (Episode $episode): int => (int) $episode->season_number)
+            ->map(function ($seasonEpisodes, int $seasonNumber) use ($user): array {
+                $episodeRows = $seasonEpisodes
+                    ->map(fn (Episode $episode): array => $this->episodeRow($user, $episode))
+                    ->values()
+                    ->all();
+
+                return [
+                    'seasonNumber' => $seasonNumber,
+                    'title' => $seasonNumber > 0 ? 'Season '.$seasonNumber : 'Specials',
+                    'episodesCount' => count($episodeRows),
+                    'watchedEpisodes' => collect($episodeRows)->where('watched', true)->count(),
+                    'episodes' => $episodeRows,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function episodeRow(User $user, Episode $episode): array
+    {
+        $latestWatch = EpisodeWatch::forUser($user)
+            ->where('episode_id', $episode->id)
+            ->latest('watched_at')
+            ->first();
+
+        return [
+            'id' => $episode->id,
+            'episodeId' => $episode->id,
+            'showId' => $episode->show_id,
+            'seasonNumber' => (int) $episode->season_number,
+            'episodeNumber' => (int) $episode->episode_number,
+            'code' => $this->episodeCode($episode),
+            'title' => $this->episodeTitle($episode),
+            'runtime' => (int) $episode->runtime,
+            'watched' => $latestWatch !== null,
+            'watchedAt' => $latestWatch?->watched_at?->toIso8601String(),
+            'rating' => $this->rating($user, 'episode', $episode->id)['rating'] ?? null,
+            'hasNote' => Note::forUser($user)->forMedia('episode', $episode->id)->exists(),
+            'providerLinked' => $this->providerStatus($user, 'episode', $episode->id)['linked'],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function providerStatus(User $user, string $columnMediaType, int $mediaId): array
@@ -289,5 +349,20 @@ class MediaDetailService
         }
 
         return 'Episode';
+    }
+
+    private function episodeCode(Episode $episode): string
+    {
+        if ($episode->season_number && $episode->episode_number) {
+            return 'S'.str_pad((string) $episode->season_number, 2, '0', STR_PAD_LEFT)
+                .'E'.str_pad((string) $episode->episode_number, 2, '0', STR_PAD_LEFT);
+        }
+
+        return 'Episode';
+    }
+
+    private function episodeTitle(Episode $episode): string
+    {
+        return trim((string) $episode->title) ?: 'Episode '.((int) $episode->episode_number ?: $episode->id);
     }
 }

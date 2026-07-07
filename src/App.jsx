@@ -9,7 +9,6 @@ import {
   FilmSlate,
   GearSix,
   House,
-  ListBullets,
   MagnifyingGlass,
   Play,
   SignOut,
@@ -31,10 +30,10 @@ const navItems = [
   { id: "home", label: "Home", icon: House },
   { id: "shows", label: "Shows", icon: TelevisionSimple },
   { id: "movies", label: "Movies", icon: FilmSlate },
+  { id: "history", label: "History", icon: Clock },
   { id: "player", label: "Player", icon: Play },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "stats", label: "Stats", icon: ChartBar },
-  { id: "lists", label: "Lists", icon: ListBullets },
   { id: "settings", label: "Settings", icon: GearSix },
 ];
 
@@ -166,6 +165,27 @@ function mediaBasePath(detail) {
     return `/api/v1/library/shows/${detail.showId}`;
   }
   return "";
+}
+
+function buildQueryString(params) {
+  const search = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      search.set(key, String(value));
+    }
+  });
+
+  return search.toString();
+}
+
+function ratingLabel(value) {
+  return value ? `${value}/10` : "";
+}
+
+function libraryEndpoint(path, filters) {
+  const query = buildQueryString(filters);
+  return query ? `${path}?${query}` : path;
 }
 
 function Logo() {
@@ -424,6 +444,608 @@ function Shelf({ title, items, onOpen, compact = false }) {
   );
 }
 
+function LibraryToolbar({
+  searchLabel,
+  searchPlaceholder,
+  searchValue,
+  onSearchChange,
+  onSearchSubmit,
+  statusLabel,
+  statusValue,
+  onStatusChange,
+  statusOptions,
+  sortLabel,
+  sortValue,
+  onSortChange,
+  sortOptions,
+}) {
+  return (
+    <form className="library-toolbar" onSubmit={onSearchSubmit}>
+      <label>
+        <span>{searchLabel}</span>
+        <input
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={searchPlaceholder}
+          type="search"
+          value={searchValue}
+        />
+      </label>
+      <label>
+        <span>{statusLabel}</span>
+        <select onChange={(event) => onStatusChange(event.target.value)} value={statusValue}>
+          {statusOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span>{sortLabel}</span>
+        <select onChange={(event) => onSortChange(event.target.value)} value={sortValue}>
+          {sortOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className="secondary-action" type="submit">
+        Search
+      </button>
+    </form>
+  );
+}
+
+function LibraryCard({ item, onOpen }) {
+  const badges = [
+    item.watched ? "Watched" : null,
+    ratingLabel(item.rating),
+    item.hasNote ? "Private note" : null,
+    item.providerLinked ? "Linked source" : null,
+    item.metadataStatus,
+  ].filter(Boolean);
+
+  return (
+    <button
+      aria-label={`Open ${item.title}`}
+      className="library-card"
+      onClick={() => onOpen(item)}
+      type="button"
+    >
+      <span className="library-card-art">
+        <img src={imageFor(item)} alt="" />
+      </span>
+      <span className="library-card-copy">
+        <strong>{item.title}</strong>
+        <small>{item.meta || item.subtitle}</small>
+        <span className="library-card-badges">
+          {badges.map((badge) => (
+            <b key={badge}>{badge}</b>
+          ))}
+        </span>
+      </span>
+      <span className="mini-progress">
+        <i style={{ width: `${Math.min(100, item.progress || 0)}%` }} />
+      </span>
+    </button>
+  );
+}
+
+function LibraryState({ error, loading, children }) {
+  if (error) {
+    return <div className="detail-error">{error}</div>;
+  }
+
+  if (loading) {
+    return <div className="empty-strip compact">Loading library...</div>;
+  }
+
+  return children;
+}
+
+export function MovieLibrary({
+  apiClient = apiRequest,
+  initialSearch = "",
+  onOpen,
+  onSessionExpired,
+}) {
+  const [searchDraft, setSearchDraft] = useState(initialSearch);
+  const [filters, setFilters] = useState({
+    search: initialSearch,
+    status: "all",
+    sort: "latest_watched",
+    page: 1,
+    per_page: 24,
+  });
+  const [payload, setPayload] = useState({ items: [], pagination: { page: 1, total: 0, hasMore: false } });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setSearchDraft(initialSearch);
+    setFilters((current) => (
+      current.search === initialSearch ? current : { ...current, search: initialSearch, page: 1 }
+    ));
+  }, [initialSearch]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMovies() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const nextPayload = await apiClient(libraryEndpoint("/api/v1/library/movies", filters));
+
+        if (!cancelled) {
+          setPayload(nextPayload);
+        }
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+
+        if (loadError instanceof SessionExpiredError) {
+          onSessionExpired?.();
+          return;
+        }
+
+        setError(loadError.message || "Could not load movies.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadMovies();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, filters, onSessionExpired]);
+
+  function submitSearch(event) {
+    event.preventDefault();
+    setFilters((current) => ({ ...current, search: searchDraft.trim(), page: 1 }));
+  }
+
+  return (
+    <section className="library-browser">
+      <div className="section-heading">
+        <div>
+          <h2>Movies</h2>
+          <p>Browse your permanent movie memory, independent from any provider.</p>
+        </div>
+        <span>{formatNumber(payload.pagination?.total || payload.items.length)} movies</span>
+      </div>
+      <LibraryToolbar
+        searchLabel="Search movies"
+        searchPlaceholder="Search your movies"
+        searchValue={searchDraft}
+        onSearchChange={setSearchDraft}
+        onSearchSubmit={submitSearch}
+        statusLabel="Movie status"
+        statusValue={filters.status}
+        onStatusChange={(status) => setFilters((current) => ({ ...current, status, page: 1 }))}
+        statusOptions={[
+          { value: "all", label: "All movies" },
+          { value: "watched", label: "Watched" },
+          { value: "watchlist", label: "Watchlist" },
+          { value: "rated", label: "Rated" },
+          { value: "notes", label: "With notes" },
+        ]}
+        sortLabel="Sort movies"
+        sortValue={filters.sort}
+        onSortChange={(sort) => setFilters((current) => ({ ...current, sort, page: 1 }))}
+        sortOptions={[
+          { value: "latest_watched", label: "Latest watched" },
+          { value: "title", label: "Title" },
+          { value: "rating", label: "Rating" },
+          { value: "year", label: "Year" },
+        ]}
+      />
+      <LibraryState error={error} loading={loading}>
+        {payload.items.length ? (
+          <div className="library-grid">
+            {payload.items.map((item) => (
+              <LibraryCard item={item} key={item.id} onOpen={onOpen} />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-strip compact">No movies match these filters</div>
+        )}
+      </LibraryState>
+      <PaginationControls
+        pagination={payload.pagination}
+        onPage={(page) => setFilters((current) => ({ ...current, page }))}
+      />
+    </section>
+  );
+}
+
+export function ShowLibrary({
+  apiClient = apiRequest,
+  initialSearch = "",
+  onOpen,
+  onSessionExpired,
+}) {
+  const [searchDraft, setSearchDraft] = useState(initialSearch);
+  const [filters, setFilters] = useState({
+    search: initialSearch,
+    status: "all",
+    sort: "latest_watched",
+    page: 1,
+    per_page: 24,
+  });
+  const [payload, setPayload] = useState({ items: [], pagination: { page: 1, total: 0, hasMore: false } });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setSearchDraft(initialSearch);
+    setFilters((current) => (
+      current.search === initialSearch ? current : { ...current, search: initialSearch, page: 1 }
+    ));
+  }, [initialSearch]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadShows() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const nextPayload = await apiClient(libraryEndpoint("/api/v1/library/shows", filters));
+
+        if (!cancelled) {
+          setPayload(nextPayload);
+        }
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+
+        if (loadError instanceof SessionExpiredError) {
+          onSessionExpired?.();
+          return;
+        }
+
+        setError(loadError.message || "Could not load shows.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadShows();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, filters, onSessionExpired]);
+
+  function submitSearch(event) {
+    event.preventDefault();
+    setFilters((current) => ({ ...current, search: searchDraft.trim(), page: 1 }));
+  }
+
+  return (
+    <section className="library-browser">
+      <div className="section-heading">
+        <div>
+          <h2>Shows</h2>
+          <p>Browse followed series, watched progress, and canonical episodes.</p>
+        </div>
+        <span>{formatNumber(payload.pagination?.total || payload.items.length)} shows</span>
+      </div>
+      <LibraryToolbar
+        searchLabel="Search shows"
+        searchPlaceholder="Search your shows"
+        searchValue={searchDraft}
+        onSearchChange={setSearchDraft}
+        onSearchSubmit={submitSearch}
+        statusLabel="Show status"
+        statusValue={filters.status}
+        onStatusChange={(status) => setFilters((current) => ({ ...current, status, page: 1 }))}
+        statusOptions={[
+          { value: "all", label: "All shows" },
+          { value: "followed", label: "Followed" },
+          { value: "in_progress", label: "In progress" },
+          { value: "completed", label: "Completed" },
+          { value: "new_episodes", label: "New episodes" },
+          { value: "rated", label: "Rated" },
+          { value: "notes", label: "With notes" },
+        ]}
+        sortLabel="Sort shows"
+        sortValue={filters.sort}
+        onSortChange={(sort) => setFilters((current) => ({ ...current, sort, page: 1 }))}
+        sortOptions={[
+          { value: "latest_watched", label: "Latest watched" },
+          { value: "title", label: "Title" },
+          { value: "rating", label: "Rating" },
+          { value: "progress", label: "Progress" },
+        ]}
+      />
+      <LibraryState error={error} loading={loading}>
+        {payload.items.length ? (
+          <div className="library-grid">
+            {payload.items.map((item) => (
+              <LibraryCard item={item} key={item.id} onOpen={onOpen} />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-strip compact">No shows match these filters</div>
+        )}
+      </LibraryState>
+      <PaginationControls
+        pagination={payload.pagination}
+        onPage={(page) => setFilters((current) => ({ ...current, page }))}
+      />
+    </section>
+  );
+}
+
+function PaginationControls({ pagination, onPage }) {
+  if (!pagination || (pagination.page <= 1 && !pagination.hasMore)) {
+    return null;
+  }
+
+  return (
+    <div className="pagination-controls">
+      <button
+        className="text-action"
+        disabled={pagination.page <= 1}
+        onClick={() => onPage(Math.max(1, pagination.page - 1))}
+        type="button"
+      >
+        Previous
+      </button>
+      <span>Page {pagination.page}</span>
+      <button
+        className="text-action"
+        disabled={!pagination.hasMore}
+        onClick={() => onPage(pagination.page + 1)}
+        type="button"
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
+export function HistorySection({
+  apiClient = apiRequest,
+  onOpen,
+  onSessionExpired,
+}) {
+  const [searchDraft, setSearchDraft] = useState("");
+  const [filters, setFilters] = useState({ type: "all", search: "", page: 1, per_page: 30 });
+  const [payload, setPayload] = useState({ items: [], pagination: { page: 1, total: 0, hasMore: false } });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const nextPayload = await apiClient(libraryEndpoint("/api/v1/library/history", filters));
+
+        if (!cancelled) {
+          setPayload(nextPayload);
+        }
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+
+        if (loadError instanceof SessionExpiredError) {
+          onSessionExpired?.();
+          return;
+        }
+
+        setError(loadError.message || "Could not load watch history.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, filters, onSessionExpired]);
+
+  function submitSearch(event) {
+    event.preventDefault();
+    setFilters((current) => ({ ...current, search: searchDraft.trim(), page: 1 }));
+  }
+
+  return (
+    <section className="library-browser history-browser">
+      <div className="section-heading">
+        <div>
+          <h2>Watch history</h2>
+          <p>Your permanent viewing record stays here even when providers change.</p>
+        </div>
+        <span>{formatNumber(payload.pagination?.total || payload.items.length)} watches</span>
+      </div>
+      <form className="library-toolbar history-toolbar" onSubmit={submitSearch}>
+        <label>
+          <span>Search history</span>
+          <input
+            onChange={(event) => setSearchDraft(event.target.value)}
+            placeholder="Search watched titles"
+            type="search"
+            value={searchDraft}
+          />
+        </label>
+        <label>
+          <span>History type</span>
+          <select
+            onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value, page: 1 }))}
+            value={filters.type}
+          >
+            <option value="all">Movies and episodes</option>
+            <option value="movie">Movies</option>
+            <option value="episode">Episodes</option>
+          </select>
+        </label>
+        <button className="secondary-action" type="submit">
+          Search
+        </button>
+      </form>
+      <LibraryState error={error} loading={loading}>
+        {payload.items.length ? (
+          <div className="history-list">
+            {payload.items.map((item) => (
+              <button
+                aria-label={`Open ${item.title} history`}
+                className="history-row"
+                key={item.id}
+                onClick={() => onOpen(item)}
+                type="button"
+              >
+                <img src={imageFor(item)} alt="" />
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.subtitle}{item.showTitle ? ` · ${item.showTitle}` : ""}</small>
+                </span>
+                <em>{shortDate(item.watchedAt)}</em>
+                <b>{sourceLabel(item.source)}</b>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-strip compact">No watch history matches these filters</div>
+        )}
+      </LibraryState>
+      <PaginationControls
+        pagination={payload.pagination}
+        onPage={(page) => setFilters((current) => ({ ...current, page }))}
+      />
+    </section>
+  );
+}
+
+export function GlobalSearchPanel({
+  apiClient = apiRequest,
+  onOpen,
+  onSessionExpired,
+  query = "",
+}) {
+  const [payload, setPayload] = useState({ movies: [], shows: [], episodes: [] });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const safeQuery = query.trim();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function searchLibrary() {
+      if (safeQuery.length < 2) {
+        setPayload({ movies: [], shows: [], episodes: [] });
+        setError("");
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+
+      try {
+        const nextPayload = await apiClient(`/api/v1/library/search?${buildQueryString({ query: safeQuery })}`);
+
+        if (!cancelled) {
+          setPayload(nextPayload);
+        }
+      } catch (searchError) {
+        if (cancelled) {
+          return;
+        }
+
+        if (searchError instanceof SessionExpiredError) {
+          onSessionExpired?.();
+          return;
+        }
+
+        setError(searchError.message || "Search failed.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    searchLibrary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, onSessionExpired, safeQuery]);
+
+  if (safeQuery.length < 2) {
+    return null;
+  }
+
+  const groups = [
+    { id: "movies", title: "Movies", items: payload.movies || [] },
+    { id: "shows", title: "Shows", items: payload.shows || [] },
+    { id: "episodes", title: "Episodes", items: payload.episodes || [] },
+  ];
+  const totalResults = groups.reduce((total, group) => total + group.items.length, 0);
+
+  return (
+    <section className="global-search-panel">
+      <div className="section-heading">
+        <div>
+          <span>Canonical search</span>
+          <h2>Results for “{safeQuery}”</h2>
+        </div>
+        <em>{loading ? "Searching..." : `${totalResults} matches`}</em>
+      </div>
+      {error ? <div className="detail-error">{error}</div> : null}
+      {groups.map((group) => (
+        group.items.length ? (
+          <div className="search-result-group" key={group.id}>
+            <h3>{group.title}</h3>
+            <div>
+              {group.items.map((item) => (
+                <button
+                  aria-label={`Open ${item.title}`}
+                  className="search-result-row"
+                  key={`${group.id}-${item.id}`}
+                  onClick={() => onOpen(item)}
+                  type="button"
+                >
+                  <img src={imageFor(item)} alt="" />
+                  <span>
+                    <strong>{item.title}</strong>
+                    <small>{item.meta || item.subtitle}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null
+      ))}
+      {!loading && !error && totalResults === 0 ? (
+        <div className="empty-strip compact">No canonical matches yet</div>
+      ) : null}
+    </section>
+  );
+}
+
 function StatsStrip({ stats }) {
   const cards = [
     {
@@ -537,6 +1159,7 @@ export function DetailModal({
   onDeleteNote,
   onMarkWatched,
   onMarkUnwatched,
+  onOpenEpisode,
 }) {
   const [noteBody, setNoteBody] = useState("");
   const closeButtonRef = useRef(null);
@@ -746,6 +1369,49 @@ export function DetailModal({
                       )}
                     </div>
                   </section>
+
+                  {detail.kind === "show" && detail.seasons?.length ? (
+                    <section className="detail-section">
+                      <div className="detail-section-heading">
+                        <strong>Episodes</strong>
+                        <span>{detail.seasons.length} seasons</span>
+                      </div>
+                      <div className="season-browser">
+                        {detail.seasons.map((season) => (
+                          <div className="season-group" key={season.seasonNumber}>
+                            <div className="season-heading">
+                              <strong>Season {season.seasonNumber}</strong>
+                              <span>{season.watchedEpisodes}/{season.totalEpisodes} watched</span>
+                            </div>
+                            <div className="episode-list">
+                              {season.episodes.map((episode) => (
+                                <button
+                                  aria-label={`Open ${episode.title}`}
+                                  className={`episode-row ${episode.watched ? "watched" : ""}`}
+                                  key={episode.id}
+                                  onClick={() => onOpenEpisode?.({
+                                    episodeId: episode.episodeId || episode.id,
+                                    showId: episode.showId || detail.showId,
+                                    kind: "episode",
+                                    title: episode.title,
+                                    subtitle: episode.code,
+                                    meta: `${detail.title} - ${episode.code}`,
+                                  })}
+                                  type="button"
+                                >
+                                  <span>
+                                    <strong>{episode.title}</strong>
+                                    <small>{episode.code}</small>
+                                  </span>
+                                  <em>{episode.watched ? "Watched" : "Not watched"}</em>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
 
                   <section className="detail-section">
                     <div className="detail-section-heading">
@@ -1504,7 +2170,9 @@ function FocusSection({
   activeSection,
   activity,
   alerts,
+  apiClient,
   collections,
+  globalQuery,
   onOpen,
   onPlayerRefresh,
   onSessionExpired,
@@ -1513,23 +2181,33 @@ function FocusSection({
 }) {
   if (activeSection === "shows") {
     return (
-      <div className="focus-block">
-        <Shelf title="Top watched shows" items={collections.topShows} onOpen={onOpen} />
-        <Shelf
-          compact
-          title="Followed shows with available episodes"
-          items={collections.followedNewEpisodes}
-          onOpen={onOpen}
-        />
-      </div>
+      <ShowLibrary
+        apiClient={apiClient}
+        initialSearch={globalQuery}
+        onOpen={onOpen}
+        onSessionExpired={onSessionExpired}
+      />
     );
   }
 
   if (activeSection === "movies") {
     return (
-      <div className="focus-block">
-        <Shelf title="Movies to check out" items={collections.moviesToCheckOut} onOpen={onOpen} />
-      </div>
+      <MovieLibrary
+        apiClient={apiClient}
+        initialSearch={globalQuery}
+        onOpen={onOpen}
+        onSessionExpired={onSessionExpired}
+      />
+    );
+  }
+
+  if (activeSection === "history") {
+    return (
+      <HistorySection
+        apiClient={apiClient}
+        onOpen={onOpen}
+        onSessionExpired={onSessionExpired}
+      />
     );
   }
 
@@ -1553,6 +2231,7 @@ function FocusSection({
   if (activeSection === "player") {
     return (
       <PlayerSection
+        apiClient={apiClient}
         onRefreshDashboard={onPlayerRefresh}
         onSessionExpired={onSessionExpired}
         player={player}
@@ -1569,15 +2248,13 @@ function FocusSection({
     );
   }
 
-  if (activeSection === "lists" || activeSection === "settings") {
+  if (activeSection === "settings") {
     return (
       <div className="focus-block quiet-note">
         <CalendarDots size={34} weight="duotone" />
-        <h2>{activeSection === "lists" ? "Lists are ready for import polish" : "Private by default"}</h2>
+        <h2>Private by default</h2>
         <p>
-          {activeSection === "lists"
-            ? "The GDPR export includes list rows, and this first dashboard keeps the space ready for full list browsing."
-            : "Raw exports, generated JSON, SQLite, and poster assets are ignored locally so the sensitive archive is not accidentally committed."}
+          Raw exports, generated JSON, SQLite, and poster assets are ignored locally so the sensitive archive is not accidentally committed.
         </p>
       </div>
     );
@@ -1938,6 +2615,14 @@ export function App() {
         <div className="dashboard-grid">
           <div className="primary-column">
             <Hero item={dashboard.hero} onOpen={openItem} />
+            {query.trim().length >= 2 && activeSection === "home" ? (
+              <GlobalSearchPanel
+                apiClient={apiRequest}
+                onOpen={openItem}
+                onSessionExpired={expireSession}
+                query={query}
+              />
+            ) : null}
             {activeSection === "home" ? (
               <>
                 <Shelf
@@ -1956,8 +2641,10 @@ export function App() {
               <FocusSection
                 activeSection={activeSection}
                 alerts={alerts}
+                apiClient={apiRequest}
                 activity={dashboard.activity}
                 collections={collections}
+                globalQuery={query}
                 onOpen={openItem}
                 onPlayerRefresh={refreshDashboard}
                 onSessionExpired={expireSession}
@@ -2003,6 +2690,7 @@ export function App() {
         onDeleteNote={handleDeleteNote}
         onMarkUnwatched={handleMarkUnwatched}
         onMarkWatched={handleMarkWatched}
+        onOpenEpisode={openItem}
         onSaveNote={handleSaveNote}
         onSaveRating={handleSaveRating}
       />

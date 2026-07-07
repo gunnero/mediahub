@@ -2,7 +2,15 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DetailModal, PlayerSection, TimelinePanel } from "./App.jsx";
+import {
+  DetailModal,
+  GlobalSearchPanel,
+  HistorySection,
+  MovieLibrary,
+  PlayerSection,
+  ShowLibrary,
+  TimelinePanel,
+} from "./App.jsx";
 
 const movieItem = {
   id: "movie-watch-1",
@@ -102,6 +110,65 @@ describe("DetailModal", () => {
     expect(screen.getByText("1995")).toBeInTheDocument();
     expect(screen.getByText("TMDB #949")).toBeInTheDocument();
     expect(screen.getByText("enriched")).toBeInTheDocument();
+  });
+
+  it("renders a season and episode browser for shows", () => {
+    const onOpenEpisode = vi.fn();
+    renderDetail({
+      detail: {
+        ...movieDetail,
+        id: 8,
+        kind: "show",
+        showId: 8,
+        title: "Severance",
+        subtitle: "TV show",
+        meta: "2/9 watched",
+        watched: true,
+        seasons: [
+          {
+            seasonNumber: 1,
+            watchedEpisodes: 1,
+            totalEpisodes: 2,
+            episodes: [
+              {
+                id: 101,
+                episodeId: 101,
+                showId: 8,
+                title: "Good News About Hell",
+                code: "S01E01",
+                watched: true,
+                latestWatchedAt: "2026-07-01T12:00:00Z",
+              },
+              {
+                id: 102,
+                episodeId: 102,
+                showId: 8,
+                title: "Half Loop",
+                code: "S01E02",
+                watched: false,
+              },
+            ],
+          },
+        ],
+      },
+      onOpenEpisode,
+    });
+
+    expect(screen.getByText("Season 1")).toBeInTheDocument();
+    expect(screen.getByText("1/2 watched")).toBeInTheDocument();
+    expect(screen.getByText("Good News About Hell")).toBeInTheDocument();
+    expect(screen.getByText("Half Loop")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open half loop/i }));
+
+    expect(onOpenEpisode).toHaveBeenCalledWith({
+      episodeId: 102,
+      showId: 8,
+      kind: "episode",
+      title: "Half Loop",
+      subtitle: "S01E02",
+      meta: "Severance - S01E02",
+    });
   });
 
   it("saves and clears rating selections", () => {
@@ -345,6 +412,168 @@ describe("PlayerSection", () => {
         },
       });
     });
+  });
+});
+
+const movieLibraryPayload = {
+  items: [
+    {
+      id: 42,
+      movieId: 42,
+      kind: "movie",
+      title: "Heat",
+      subtitle: "Movie",
+      meta: "1995 · 170 min",
+      year: "1995",
+      runtime: 170,
+      status: "watched",
+      watched: true,
+      rating: 9,
+      hasNote: true,
+      providerLinked: true,
+      metadataStatus: "enriched",
+      progress: 100,
+    },
+  ],
+  pagination: { page: 1, perPage: 24, total: 1, hasMore: false },
+};
+
+const showLibraryPayload = {
+  items: [
+    {
+      id: 8,
+      showId: 8,
+      kind: "show",
+      title: "Severance",
+      subtitle: "Followed show",
+      meta: "2/9 watched",
+      status: "followed",
+      progress: 22,
+      rating: 10,
+      hasNote: false,
+      providerLinked: false,
+      metadataStatus: "enriched",
+      watchedEpisodes: 2,
+      airedEpisodes: 9,
+    },
+  ],
+  pagination: { page: 1, perPage: 24, total: 1, hasMore: false },
+};
+
+describe("Library browser", () => {
+  it("renders a searchable movie browser with ratings, notes, watched state, and safe metadata", async () => {
+    const apiClient = vi.fn().mockResolvedValue(movieLibraryPayload);
+    const onOpen = vi.fn();
+
+    render(<MovieLibrary apiClient={apiClient} onOpen={onOpen} />);
+
+    expect(await screen.findByRole("heading", { name: /movies/i })).toBeInTheDocument();
+    expect(screen.getByText("Heat")).toBeInTheDocument();
+    expect(screen.getByText("9/10")).toBeInTheDocument();
+    expect(screen.getByText("Private note")).toBeInTheDocument();
+    expect(screen.getByText("Linked source")).toBeInTheDocument();
+    expect(screen.getByText("enriched")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/search movies/i), { target: { value: "arrival" } });
+    fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+    await waitFor(() => {
+      expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("/api/v1/library/movies?"));
+      expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("search=arrival"));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /open heat/i }));
+    expect(onOpen).toHaveBeenCalledWith(movieLibraryPayload.items[0]);
+    expect(screen.queryByText(/stream_url/i)).not.toBeInTheDocument();
+  });
+
+  it("renders a show browser with progress filters and opens canonical show details", async () => {
+    const apiClient = vi.fn().mockResolvedValue(showLibraryPayload);
+    const onOpen = vi.fn();
+
+    render(<ShowLibrary apiClient={apiClient} onOpen={onOpen} />);
+
+    expect(await screen.findByRole("heading", { name: /shows/i })).toBeInTheDocument();
+    expect(screen.getByText("Severance")).toBeInTheDocument();
+    expect(screen.getByText("2/9 watched")).toBeInTheDocument();
+    expect(screen.getByText("10/10")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/show status/i), { target: { value: "in_progress" } });
+
+    await waitFor(() => {
+      expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("status=in_progress"));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /open severance/i }));
+    expect(onOpen).toHaveBeenCalledWith(showLibraryPayload.items[0]);
+  });
+});
+
+describe("HistorySection", () => {
+  it("renders paginated watch history and filters by canonical item type", async () => {
+    const apiClient = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "movie-42",
+          kind: "movie",
+          title: "Heat",
+          subtitle: "Movie",
+          meta: "manual",
+          watchedAt: "2026-07-01T12:00:00Z",
+          source: "manual",
+          movieId: 42,
+        },
+      ],
+      pagination: { page: 1, perPage: 30, total: 1, hasMore: false },
+    });
+    const onOpen = vi.fn();
+
+    render(<HistorySection apiClient={apiClient} onOpen={onOpen} />);
+
+    expect(await screen.findByRole("heading", { name: /watch history/i })).toBeInTheDocument();
+    expect(screen.getByText("Heat")).toBeInTheDocument();
+    expect(screen.getByText("Manual entry")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/history type/i), { target: { value: "movie" } });
+
+    await waitFor(() => {
+      expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("type=movie"));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /open heat history/i }));
+    expect(onOpen).toHaveBeenCalled();
+  });
+});
+
+describe("GlobalSearchPanel", () => {
+  it("searches canonical movies, shows, and episodes without listing provider items", async () => {
+    const apiClient = vi.fn().mockResolvedValue({
+      movies: [{ ...movieLibraryPayload.items[0], title: "Heat" }],
+      shows: [{ ...showLibraryPayload.items[0], title: "Severance" }],
+      episodes: [
+        {
+          id: 101,
+          episodeId: 101,
+          showId: 8,
+          kind: "episode",
+          title: "Good News About Hell",
+          subtitle: "S01E01",
+          meta: "Severance - S01E01",
+        },
+      ],
+    });
+    const onOpen = vi.fn();
+
+    render(<GlobalSearchPanel apiClient={apiClient} onOpen={onOpen} query="heat" />);
+
+    expect(await screen.findByText("Canonical search")).toBeInTheDocument();
+    expect(screen.getByText("Heat")).toBeInTheDocument();
+    expect(screen.getByText("Severance")).toBeInTheDocument();
+    expect(screen.getByText("Good News About Hell")).toBeInTheDocument();
+    expect(screen.queryByText(/provider/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open good news about hell/i }));
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ episodeId: 101 }));
   });
 });
 
