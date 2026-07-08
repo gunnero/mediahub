@@ -403,6 +403,20 @@ class TmdbMetadataTest extends TestCase
             'episode_number' => 1,
             'title' => 'Pilot',
         ]);
+        $seasonZeroEpisode = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $matchedShow->id,
+            'season_number' => 0,
+            'episode_number' => 1,
+            'title' => 'Special',
+        ]);
+        $episodeZeroEpisode = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $matchedShow->id,
+            'season_number' => 1,
+            'episode_number' => 0,
+            'title' => 'Preview',
+        ]);
         $blockedEpisode = Episode::create([
             'user_id' => $user->id,
             'show_id' => $unmatchedShow->id,
@@ -435,6 +449,69 @@ class TmdbMetadataTest extends TestCase
 
         $this->assertSame(456, $eligibleEpisode->refresh()->tmdb_id);
         $this->assertNull($blockedEpisode->refresh()->tmdb_id);
+        $this->assertNull($seasonZeroEpisode->refresh()->tmdb_id);
+        $this->assertNull($episodeZeroEpisode->refresh()->tmdb_id);
+        Http::assertSentCount(1);
+    }
+
+    public function test_guarded_episode_enrichment_limit_does_not_waste_slots_on_invalid_numbering(): void
+    {
+        Config::set('tmdb.enabled', true);
+        Config::set('tmdb.api_key', 'test-key');
+        $user = $this->member();
+        $show = Show::create([
+            'user_id' => $user->id,
+            'title' => 'Matched Show',
+            'tmdb_id' => 123,
+            'metadata_refreshed_at' => now(),
+        ]);
+        $seasonZeroEpisode = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'season_number' => 0,
+            'episode_number' => 1,
+            'title' => 'Special',
+        ]);
+        $episodeZeroEpisode = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'season_number' => 1,
+            'episode_number' => 0,
+            'title' => 'Preview',
+        ]);
+        $eligibleEpisode = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'title' => 'Pilot',
+        ]);
+
+        Http::fake([
+            'api.themoviedb.org/3/tv/123/season/1/episode/1*' => Http::response([
+                'id' => 456,
+                'name' => 'Pilot',
+                'overview' => 'A matched episode.',
+                'runtime' => 42,
+                'external_ids' => [],
+            ]),
+        ]);
+
+        $this->artisan('mediahub:enrich-user', [
+            'user_id' => $user->id,
+            '--type' => 'episodes',
+            '--only-missing' => true,
+            '--only-parent-enriched' => true,
+            '--limit' => 1,
+        ])
+            ->expectsOutput('planned: 1')
+            ->expectsOutput('enriched: 1')
+            ->expectsOutput('skipped: 0')
+            ->assertExitCode(0);
+
+        $this->assertSame(456, $eligibleEpisode->refresh()->tmdb_id);
+        $this->assertNull($seasonZeroEpisode->refresh()->tmdb_id);
+        $this->assertNull($episodeZeroEpisode->refresh()->tmdb_id);
         Http::assertSentCount(1);
     }
 
@@ -469,6 +546,20 @@ class TmdbMetadataTest extends TestCase
         ]);
         Episode::create([
             'user_id' => $user->id,
+            'show_id' => $matchedShow->id,
+            'season_number' => 0,
+            'episode_number' => 1,
+            'title' => 'Special',
+        ]);
+        Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $matchedShow->id,
+            'season_number' => 1,
+            'episode_number' => 0,
+            'title' => 'Preview',
+        ]);
+        Episode::create([
+            'user_id' => $user->id,
             'show_id' => $unmatchedShow->id,
             'season_number' => 1,
             'episode_number' => 1,
@@ -476,10 +567,11 @@ class TmdbMetadataTest extends TestCase
         ]);
 
         $this->artisan('mediahub:metadata-status', ['user_id' => $user->id])
-            ->expectsOutput('episodes_total: 3')
+            ->expectsOutput('episodes_total: 5')
             ->expectsOutput('episodes_enriched: 1')
-            ->expectsOutput('episodes_missing_metadata: 2')
-            ->expectsOutput('episodes_blocked_parent_unmatched: 1')
+            ->expectsOutput('episodes_missing_metadata: 4')
+            ->expectsOutput('episodes_blocked_no_parent_tmdb: 1')
+            ->expectsOutput('episodes_not_enrichable_invalid_numbering: 2')
             ->expectsOutput('episodes_eligible_for_enrichment: 1')
             ->assertExitCode(0);
     }

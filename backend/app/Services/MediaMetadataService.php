@@ -223,9 +223,7 @@ class MediaMetadataService
         }
 
         if (in_array($options['type'], ['episodes', 'all'], true) && $this->hasRemaining($remaining)) {
-            $episodes = $this->limitedQuery($this->episodeParentFilter($this->missingFilter(Episode::forUser($user)->with('show'), $options), $options), $remaining)
-                ->whereNotNull('season_number')
-                ->whereNotNull('episode_number')
+            $episodes = $this->limitedQuery($this->episodeEligibilityFilter($this->missingFilter(Episode::forUser($user)->with('show'), $options), $options), $remaining)
                 ->orderBy('show_id')
                 ->orderBy('season_number')
                 ->orderBy('episode_number')
@@ -255,7 +253,7 @@ class MediaMetadataService
         $episode->loadMissing('show');
         $show = $episode->show;
 
-        if (! $show?->tmdb_id || ! $episode->season_number || ! $episode->episode_number) {
+        if (! $show?->tmdb_id || (int) $episode->season_number <= 0 || (int) $episode->episode_number <= 0) {
             return $this->summary(skipped: 1);
         }
 
@@ -292,10 +290,20 @@ class MediaMetadataService
         });
         $blockedByParent = (clone $missingEpisodes)
             ->whereDoesntHave('show', fn (Builder $query) => $query->whereNotNull('tmdb_id'));
+        $parentMatchedMissing = (clone $missingEpisodes)
+            ->whereHas('show', fn (Builder $query) => $query->whereNotNull('tmdb_id'));
+        $invalidNumbering = (clone $parentMatchedMissing)
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('season_number')
+                    ->orWhereNull('episode_number')
+                    ->orWhere('season_number', '<=', 0)
+                    ->orWhere('episode_number', '<=', 0);
+            });
         $eligibleEpisodes = (clone $missingEpisodes)
             ->whereHas('show', fn (Builder $query) => $query->whereNotNull('tmdb_id'))
-            ->whereNotNull('season_number')
-            ->whereNotNull('episode_number');
+            ->where('season_number', '>', 0)
+            ->where('episode_number', '>', 0);
 
         return [
             'movies_total' => Movie::forUser($user)->count(),
@@ -305,7 +313,8 @@ class MediaMetadataService
             'episodes_total' => Episode::forUser($user)->count(),
             'episodes_enriched' => Episode::forUser($user)->whereNotNull('tmdb_id')->count(),
             'episodes_missing_metadata' => (clone $missingEpisodes)->count(),
-            'episodes_blocked_parent_unmatched' => $blockedByParent->count(),
+            'episodes_blocked_no_parent_tmdb' => $blockedByParent->count(),
+            'episodes_not_enrichable_invalid_numbering' => $invalidNumbering->count(),
             'episodes_eligible_for_enrichment' => $eligibleEpisodes->count(),
         ];
     }
@@ -609,13 +618,16 @@ class MediaMetadataService
      * @param  array{type:string,limit:int|null,only_missing:bool,only_parent_enriched:bool,dry_run:bool,sleep_ms:int,min_confidence:float}  $options
      * @return Builder<Movie|Show|Episode>
      */
-    private function episodeParentFilter(Builder $query, array $options): Builder
+    private function episodeEligibilityFilter(Builder $query, array $options): Builder
     {
         if (! $options['only_parent_enriched']) {
             return $query;
         }
 
-        return $query->whereHas('show', fn (Builder $query) => $query->whereNotNull('tmdb_id'));
+        return $query
+            ->whereHas('show', fn (Builder $query) => $query->whereNotNull('tmdb_id'))
+            ->where('season_number', '>', 0)
+            ->where('episode_number', '>', 0);
     }
 
     /**
