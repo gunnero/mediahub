@@ -8,7 +8,7 @@ Usage:
   ./rollback-mediahub.sh --yes
 
 Restores the latest MediaHub staging backup on web01, reloads Apache, and
-verifies that staging is still protected by Apache Basic Auth and noindex.
+verifies the public login, Laravel authentication, and noindex protection.
 
 Environment variables:
   MEDIAHUB_ROLLBACK_BACKUP=/home/razbudise/ccc.razbudise.mk/backups/20260705004417
@@ -150,13 +150,18 @@ REMOTE_ROLLBACK
 }
 
 verify_live_protection() {
-  local headers status
+  local headers status private_status
   headers="$(mktemp)"
   status="$(curl -sS -o /dev/null -D "$headers" -w '%{http_code}' "$LIVE_URL/" || true)"
 
-  if [[ "$status" != "401" ]]; then
+  if [[ "$status" != "200" ]]; then
     rm -f "$headers"
-    fail "Expected unauthenticated $LIVE_URL/ to return 401 after rollback, got $status"
+    fail "Expected the public MediaHub login page to return 200 after rollback, got $status"
+  fi
+
+  if grep -iq '^www-authenticate:' "$headers"; then
+    rm -f "$headers"
+    fail "Unexpected Apache Basic Auth challenge after rollback"
   fi
 
   if ! grep -iq '^x-robots-tag:.*noindex' "$headers"; then
@@ -165,7 +170,13 @@ verify_live_protection() {
     fail "Expected X-Robots-Tag noindex header after rollback"
   fi
 
+  private_status="$(curl -sS -H 'Accept: application/json' -o /dev/null -w '%{http_code}' "$LIVE_URL/api/v1/me" || true)"
   rm -f "$headers"
+
+  if [[ "$private_status" != "401" ]]; then
+    fail "Expected unauthenticated Laravel /api/v1/me to return 401 after rollback, got $private_status"
+  fi
+
   log "Rollback verification passed"
 }
 

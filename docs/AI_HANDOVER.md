@@ -3,7 +3,7 @@
 Generated: 2026-07-05
 Repository: `/Users/aleksandardimovski/Sites/tvtime/dashboard`
 Remote: `https://github.com/gunnero/Tvtime.git`
-Staging: `https://ccc.razbudise.mk` behind Apache Basic Auth
+Staging: `https://ccc.razbudise.mk` with a public login page, Laravel-authenticated private routes, and Apache `noindex`
 
 ## 1. Project Overview
 
@@ -46,7 +46,7 @@ Completed:
 - Filament admin panel at `/admin`.
 - Filament resources for Users, Invites, Alerts, Shows, Movies, Episodes, Episode Watches, Movie Watches, Playback Sources, Playback Source Items, Media Events, Analytics Events, Audit Logs.
 - Feature tests for auth, invite-only flow, dashboard, import, analytics, audit, alert persistence, provider ownership, manual tracking, provider deletion behavior, and cross-user isolation.
-- Staging deployment to `https://ccc.razbudise.mk` on `web01` behind existing Apache Basic Auth.
+- Staging deployment to `https://ccc.razbudise.mk` on `web01`; Apache Basic Auth was removed with explicit approval on 2026-07-11 while Laravel auth and `noindex` remain.
 - First owner user created on staging and full private SQLite imported for that user.
 - Safe staging backup created with sensitive provider fields excluded.
 
@@ -79,8 +79,8 @@ Paths:
 
 Apache:
 
-- Basic Auth remains enabled through `/etc/apache2/htpasswd/ccc.razbudise.mk`.
-- Only the existing `staging` Basic Auth user remains after smoke tests.
+- The public login page does not emit an Apache `WWW-Authenticate` challenge.
+- Laravel session authentication protects private product and admin routes.
 - `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` remains enabled.
 - `/api`, `/admin`, Livewire, Filament assets, and Laravel public assets route to Laravel/PHP-FPM.
 - React SPA routes fall back to `index.html`.
@@ -109,7 +109,7 @@ Imported owner user `1` counts:
 
 Smoke tests passed:
 
-- Basic Auth returns 401 without credentials.
+- The public login page returns `200`; unauthenticated private APIs return `401` through Laravel.
 - Laravel login/logout.
 - `/api/v1/status`, `/api/v1/me`, `/api/v1/dashboard`.
 - Dashboard payload sensitive-key scan found no stream/provider URL or token fields.
@@ -382,7 +382,7 @@ Admin:
 Priority 1:
 
 - Review and commit Sprint 006 after the full verification gate stays green.
-- Deploy Sprint 006 without removing Apache Basic Auth.
+- Deploy Sprint 006 while preserving the public-login/Laravel-auth boundary and Apache `noindex` header.
 - Smoke test `/api/v1/media-events`, dashboard timeline, manual watch/rating/note/provider/playback event creation, Filament Media Events, and sensitive payload scans on staging.
 - Configure the pending private TMDB API key on staging before any metadata smoke enrichment.
 
@@ -416,9 +416,9 @@ Priority 3:
 - Deleting a provider must not delete ratings or notes.
 - User backups must not include stream URLs, playlist URLs, provider credentials, API keys, or secrets by default.
 - Dashboard API returns the existing static JSON shape so frontend changes stay small.
-- Do not replace Apache Basic Auth on staging yet.
+- Do not reintroduce Apache Basic Auth without explicit product direction; Laravel is the application authentication boundary.
 
-Do not change these without explicit product direction: private ignore rules, invite-only access, `user_id` scoping, Basic Auth on staging, and the current dashboard payload contract.
+Do not change these without explicit product direction: private ignore rules, invite-only access, `user_id` scoping, the public-login/Laravel-auth boundary, Apache `noindex`, and the current dashboard payload contract.
 
 ## 12. APIs And External Integrations
 
@@ -427,7 +427,7 @@ Kalveri AI: optional Laravel integration exists for media match suggestions. It 
 TVDB/TVMaze: not implemented yet.
 External APIs: TMDB and optional Kalveri AI. Python importer can cache remote artwork into ignored `public/assets/cache`.
 Caching: TMDB responses are cached through Laravel cache with `TMDB_CACHE_TTL`; no other external product cache strategy yet.
-Rate limiting: no custom rate limits yet; add before public launch if Basic Auth is removed.
+Rate limiting: no custom rate limits yet; add before any wider public launch. Removing the browser-level Basic Auth gate did not make private APIs public.
 Media event API: internal authenticated `/api/v1/media-events` routes expose only the current user's sanitized timeline data and support simple filters for future activity views.
 
 ## 13. Authentication
@@ -478,7 +478,7 @@ Technical debt:
 ## 16. Next Sprint
 
 1. Review Product Design Sprint 001 in the browser on desktop and mobile, then commit if the verification gate stays green.
-2. Deploy committed Sprint 006 plus Product Design Sprint 001 to `ccc.razbudise.mk` without removing Apache Basic Auth.
+2. Deploy committed Sprint 006 plus Product Design Sprint 001 to `ccc.razbudise.mk` while preserving Laravel auth and Apache `noindex`.
 3. Smoke test media event APIs, Entertainment diary, Filament Media Events, and event creation from manual watch/rating/note/provider/playback flows.
 4. Configure a private server-side `TMDB_API_KEY`, run `php artisan mediahub:metadata-status 1`, then test one movie and one show enrichment before any full-user enrichment.
 
@@ -508,4 +508,4 @@ See section 3 for the source tree. Full local checkouts also contain ignored/gen
 
 ## 20. Five-Minute Summary
 
-MediaHub is now an authenticated Laravel + React personal media operating system. The existing poster UI remains, but it logs into Laravel and loads `/api/v1/dashboard` instead of static JSON. Laravel owns invite-only users, sessions, alerts, analytics, audit logs, user-scoped canonical media, watch history, ratings, notes, provider/player tables, Filament admin, TV Time import, provider-safe backup/restore, optional TMDB metadata enrichment, and a local Sprint 006 media event system. Provider items are temporary; canonical media, watch history, ratings, notes, public metadata, and meaningful activity events are permanent user-owned library data. The React detail modal lets users view safe movie/show/episode detail, save/clear ratings, save/delete private notes, inspect safe watch history, see provider link status, inspect public metadata, and manually mark movies/episodes watched or unwatched without deleting imported/provider history. The dashboard now has an additive sanitized timeline panel. There is no global stream catalog and dashboard/detail/list/timeline payloads do not expose stream/provider URLs; the play endpoint is owner-only and is the only place a playback URL is returned. Sprint 006 adds `media_events`, `MediaEventService`, authenticated event APIs, a Filament Media Events resource, dashboard timeline payloads, and event hooks for imports, manual watches, ratings, notes, provider actions, playback completion, metadata enrichment, backup, and restore. Next step is review/commit, then deploy Sprint 006 behind existing Apache Basic Auth and smoke test event creation plus sensitive payload scans.
+MediaHub is now an authenticated Laravel + React personal media operating system. The existing poster UI remains, but it logs into Laravel and loads `/api/v1/dashboard` instead of static JSON. Laravel owns invite-only users, sessions, alerts, analytics, audit logs, user-scoped canonical media, watch history, ratings, notes, provider/player tables, Filament admin, TV Time import, provider-safe backup/restore, optional TMDB metadata enrichment, and a local Sprint 006 media event system. Provider items are temporary; canonical media, watch history, ratings, notes, public metadata, and meaningful activity events are permanent user-owned library data. The React detail modal lets users view safe movie/show/episode detail, save/clear ratings, save/delete private notes, inspect safe watch history, see provider link status, inspect public metadata, and manually mark movies/episodes watched or unwatched without deleting imported/provider history. The dashboard now has an additive sanitized timeline panel. There is no global stream catalog and dashboard/detail/list/timeline payloads do not expose stream/provider URLs; the play endpoint is owner-only and is the only place a playback URL is returned. Sprint 006 adds `media_events`, `MediaEventService`, authenticated event APIs, a Filament Media Events resource, dashboard timeline payloads, and event hooks for imports, manual watches, ratings, notes, provider actions, playback completion, metadata enrichment, backup, and restore. Staging exposes the login page publicly, keeps private routes behind Laravel authentication, and retains Apache `noindex`; the browser-level Basic Auth prompt is intentionally removed.

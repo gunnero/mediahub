@@ -8,7 +8,7 @@ Provider-independent personal media operating system with a React/Vite dashboard
 - `scripts/import_tvtime.py`: imports the preserved TV Time GDPR export into ignored private outputs.
 - `backend/`: Laravel 13 backend for invite-only users, Filament admin, analytics, audit logs, media events, alerts, per-user libraries, provider-owned player state, manual watch history, ratings, notes, and safe backups.
 
-The deployed staging site at `https://ccc.razbudise.mk` remains protected by Apache Basic Auth. Do not remove that protection until Laravel auth and deployment hardening are finished.
+The staging login page at `https://ccc.razbudise.mk` is publicly reachable. Laravel session authentication protects private routes, while Apache keeps the staging-only `X-Robots-Tag: noindex` header. The browser-level Apache Basic Auth gate was removed with explicit approval on 2026-07-11.
 
 ## Privacy Rules
 
@@ -331,7 +331,7 @@ git diff --check
 
 ## Deployment Checklist
 
-1. Keep Apache Basic Auth enabled on staging.
+1. Confirm the public login page returns `200`, has no `WWW-Authenticate` challenge, and retains the staging `noindex` header.
 2. Pull the reviewed branch on the server.
 3. Install PHP dependencies in `backend/` with production flags.
 4. Configure backend `.env` on the server; do not commit it.
@@ -340,11 +340,11 @@ git diff --check
 7. Build the React frontend with `npm run build`.
 8. Sync only `dist/index.html` and `dist/assets/*` into `backend/public`; keep `backend/public/index.php`, `.htaccess`, `robots.txt`, favicon, and Laravel/Filament/Livewire assets intact.
 9. Confirm `/api/v1/status` still routes through Laravel after the frontend sync.
-10. Smoke test Basic Auth, Laravel login, `/api/v1/status`, `/api/v1/dashboard`, and `/admin`.
+10. Smoke test Laravel login, unauthenticated private-route `401` responses, `/api/v1/status`, `/api/v1/dashboard`, and `/admin`.
 
 ## Staging Deployment 2026-07-05
 
-Live staging URL: `https://ccc.razbudise.mk`, still behind Apache Basic Auth.
+Live staging URL: `https://ccc.razbudise.mk`, with a public login page and Laravel-authenticated private routes.
 
 Server layout on `web01`:
 
@@ -354,10 +354,10 @@ Server layout on `web01`:
 - private import source: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/imports/tvtime.sqlite`
 - MediaHub backup output: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/private/mediahub-backups`
 
-Apache routes `/api`, `/admin`, Livewire, Filament assets, and Laravel public assets through Laravel/PHP-FPM. SPA routes fall back to React `index.html`. Basic Auth and `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` remain enabled.
+Apache routes `/api`, `/admin`, Livewire, Filament assets, and Laravel public assets through Laravel/PHP-FPM. SPA routes fall back to React `index.html`. Apache Basic Auth is disabled; `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` remains enabled.
 
 Imported staging counts for owner user `1`: 92 shows, 7,291 episodes, 7,292 episode watches, 533 movies, 512 movie watches, and 8 alerts. The safe user backup was created and verified to exclude sensitive provider field keys.
 
-Smoke results: Basic Auth 401 without credentials, Laravel login/logout, `/api/v1/status`, `/api/v1/me`, `/api/v1/dashboard`, Player empty state, manual movie detail, rating save/clear, note save/update/delete, mark watched/unwatched, alert read persistence, `/admin`, dashboard sensitive-key scan, and authenticated browser asset/console checks all passed.
+Smoke results: public login page, Laravel login/logout, unauthenticated `/api/v1/me` returning `401`, `/api/v1/status`, `/api/v1/dashboard`, Player empty state, manual movie detail, rating save/clear, note save/update/delete, mark watched/unwatched, alert read persistence, `/admin`, dashboard sensitive-key scan, and authenticated browser asset/console checks all passed.
 
 Rollback: restore `/etc/apache2/sites-available/ccc.razbudise.mk.conf` from the deployment backup, switch `DocumentRoot` back to the backed-up `public_html` deployment if needed, run `apachectl configtest`, then `systemctl reload apache2`.

@@ -281,11 +281,11 @@ The feature tests cover status readiness, invite acceptance, login/logout, `/me`
 
 ## Deployment Checklist
 
-Do not deploy private files. Keep Apache Basic Auth enabled on staging. After code is reviewed on the server, configure `.env`, run migrations with `php artisan migrate --force`, run `php artisan filament:assets` if Composer did not publish Filament assets, build frontend assets from the repo root, then sync only React `dist/index.html` and `dist/assets/*` into `backend/public`. Preserve Laravel `index.php`, `.htaccess`, `robots.txt`, favicon, and Laravel/Filament/Livewire assets. Smoke test `/api/v1/status`, login, `/api/v1/dashboard`, alert read actions, and `/admin`.
+Do not deploy private files. The staging login page is public, private routes use Laravel authentication, and Apache must retain the `noindex` header without a `WWW-Authenticate` challenge. After code is reviewed on the server, configure `.env`, run migrations with `php artisan migrate --force`, run `php artisan filament:assets` if Composer did not publish Filament assets, build frontend assets from the repo root, then sync only React `dist/index.html` and `dist/assets/*` into `backend/public`. Preserve Laravel `index.php`, `.htaccess`, `robots.txt`, favicon, and Laravel/Filament/Livewire assets. Smoke test `/api/v1/status`, unauthenticated `/api/v1/me`, login, `/api/v1/dashboard`, alert read actions, and `/admin`.
 
 ## Staging Deployment 2026-07-05
 
-`web01` now serves `https://ccc.razbudise.mk` from `/home/razbudise/ccc.razbudise.mk/app/backend/public`, with Apache Basic Auth still enabled for the whole site except ACME challenges.
+`web01` serves `https://ccc.razbudise.mk` from `/home/razbudise/ccc.razbudise.mk/app/backend/public`. The login page is public, Laravel protects private routes, and Apache retains staging `noindex` headers without Basic Auth.
 
 Runtime notes:
 
@@ -313,4 +313,4 @@ The server required `php8.4-sqlite3` for the SQLite staging database. Installing
 
 Imported user `1` counts: 92 shows, 7,291 episodes, 7,292 episode watches, 533 movies, 512 movie watches, and 8 alerts. `mediahub:backup-user 1` produced a provider-safe backup under ignored private storage; field-key verification found no stream URL, playlist URL, provider credential, API key, secret, or password keys.
 
-Live smoke passed for Basic Auth, login/logout, `/api/v1/status`, `/api/v1/me`, `/api/v1/dashboard`, Player empty state, manual detail/rating/note/watch APIs, alert read persistence, `/admin`, sensitive dashboard scan, and authenticated browser console/asset checks.
+Live smoke passed for the public login page, Laravel login/logout, unauthenticated private-route `401`, `/api/v1/status`, `/api/v1/me`, `/api/v1/dashboard`, Player empty state, manual detail/rating/note/watch APIs, alert read persistence, `/admin`, sensitive dashboard scan, and authenticated browser console/asset checks.

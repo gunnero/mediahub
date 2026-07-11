@@ -107,6 +107,7 @@ class BackendFoundationTest extends TestCase
 
     public function test_private_api_routes_require_authentication(): void
     {
+        $this->get('/api/v1/me')->assertUnauthorized();
         $this->getJson('/api/v1/me')->assertUnauthorized();
         $this->getJson('/api/v1/dashboard')->assertUnauthorized();
         $this->postJson('/api/v1/alerts/1/read')->assertUnauthorized();

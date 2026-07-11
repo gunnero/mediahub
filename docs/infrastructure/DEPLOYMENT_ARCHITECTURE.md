@@ -44,13 +44,14 @@ The frontend sync must preserve Laravel public files. It must not overwrite `bac
 
 Apache must keep these rules:
 
-- Apache Basic Auth remains enabled for staging.
+- The login page is public and must not emit an Apache `WWW-Authenticate` challenge.
+- Laravel session authentication protects private product and admin routes.
 - ACME challenge paths may remain excluded for certificate renewal.
 - `/api/*`, `/admin/*`, Livewire, Filament assets, and Laravel public assets route to Laravel/PHP-FPM.
 - React SPA routes load the built frontend.
 - Staging responses keep `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet`.
 
-Do not remove Basic Auth until the user explicitly approves it.
+Apache Basic Auth was removed with explicit approval on 2026-07-11. Do not reintroduce it without new explicit approval.
 
 ## Deployment Flow
 
@@ -59,7 +60,7 @@ Do not remove Basic Auth until the user explicitly approves it.
 1. Verify the local branch is `main`.
 2. Verify the local working tree is clean.
 3. Verify SSH access to `web01` using an explicit `IdentityFile`.
-4. Verify live staging is still protected by Basic Auth and `X-Robots-Tag`.
+4. Verify the public login page, Laravel authentication boundary, and `X-Robots-Tag`.
 5. Create a timestamped server backup.
 6. Pull the latest `origin/main` on the server.
 7. Run production Composer install.
@@ -104,7 +105,7 @@ Authenticated smoke checks scan API payloads for sensitive field names such as `
 6. Restore Apache vhost config if present.
 7. Run `apachectl configtest`.
 8. Reload Apache.
-9. Verify Basic Auth and noindex remain enabled.
+9. Verify the login page has no Basic Auth challenge, private APIs return `401`, and noindex remains enabled.
 
 ## Required Local Setup
 
@@ -137,8 +138,6 @@ The scripts are configurable through environment variables, so secrets never nee
 
 Optional smoke-test variables:
 
-- `MEDIAHUB_BASIC_AUTH_USER`
-- `MEDIAHUB_BASIC_AUTH_PASS`
 - `MEDIAHUB_APP_EMAIL`
 - `MEDIAHUB_APP_PASSWORD`
 
@@ -150,4 +149,4 @@ After each deploy, verify:
 - `backend/public/assets/` contains the newest Vite `.js` and `.css` files.
 - `backend/public/index.php` still exists.
 - `/api/v1/status` still routes to Laravel.
-- Basic Auth and `X-Robots-Tag` noindex are still enabled.
+- The public login has no `WWW-Authenticate` header, Laravel private routes return `401` when unauthenticated, and `X-Robots-Tag` noindex remains enabled.

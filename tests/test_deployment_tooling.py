@@ -32,6 +32,8 @@ class DeploymentToolingTest(unittest.TestCase):
             "npm run build",
             "apachectl configtest",
             "X-Robots-Tag",
+            "Unexpected Apache Basic Auth challenge",
+            "/api/v1/me",
             "stream_url",
             "provider_url",
             "playlist_url",
@@ -90,7 +92,8 @@ class DeploymentToolingTest(unittest.TestCase):
                 "Node",
                 "Laravel",
                 "React",
-                "Basic Auth",
+                "public login",
+                "Laravel authentication",
                 "noindex",
             ],
             "docs/infrastructure/SSH_SETUP.md": [
@@ -113,6 +116,7 @@ class DeploymentToolingTest(unittest.TestCase):
                 "/api/v1/media-events",
                 "401",
                 "X-Robots-Tag",
+                "public login",
                 "stream/provider URLs",
             ],
         }

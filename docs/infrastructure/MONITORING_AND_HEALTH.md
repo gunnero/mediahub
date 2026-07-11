@@ -4,7 +4,7 @@ This document defines lightweight health checks for staging deployment verificat
 
 ## Staging Protection
 
-Unauthenticated staging must stay private:
+The login screen is public while application data stays private behind Laravel authentication:
 
 ```bash
 curl -I https://ccc.razbudise.mk/
@@ -12,16 +12,15 @@ curl -I https://ccc.razbudise.mk/
 
 Expected:
 
-- HTTP status `401`
-- `WWW-Authenticate` header from Apache Basic Auth
+- HTTP status `200`
+- no `WWW-Authenticate` header
 - `X-Robots-Tag` containing `noindex`
 
 ## API Health
 
-Behind Apache Basic Auth:
-
 ```bash
-curl -u "$MEDIAHUB_BASIC_AUTH_USER:$MEDIAHUB_BASIC_AUTH_PASS" https://ccc.razbudise.mk/api/v1/status
+curl https://ccc.razbudise.mk/api/v1/status
+curl -H 'Accept: application/json' -o /dev/null -w '%{http_code}\n' https://ccc.razbudise.mk/api/v1/me
 ```
 
 Expected:
@@ -29,6 +28,7 @@ Expected:
 - HTTP 200
 - app readiness data
 - database readiness data
+- unauthenticated private API status `401`
 
 ## Authenticated Product Health
 
@@ -67,7 +67,7 @@ Do not include that endpoint in broad dashboard/list/timeline payload scans unle
 
 After deployment, manually verify:
 
-1. Basic Auth prompt appears for a fresh unauthenticated browser.
+1. A fresh browser opens the MediaHub login screen without a browser credential prompt.
 2. Login works.
 3. Dashboard loads.
 4. Entertainment diary appears.
@@ -87,7 +87,7 @@ Each deployment report should include:
 - migration result
 - cache result
 - Apache configtest result
-- Basic Auth check
+- public login and Laravel authentication checks
 - noindex check
 - smoke result
 - known issues
@@ -95,7 +95,7 @@ Each deployment report should include:
 
 ## Monitoring Boundaries
 
-This is staging, not public production. Keep the checks minimal and private:
+This is staging, not public production. Keep the checks minimal and privacy-safe:
 
 - No third-party analytics.
 - No public uptime page.

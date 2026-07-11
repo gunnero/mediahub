@@ -8,8 +8,8 @@ Usage:
   ./deploy-mediahub.sh [--check]
 
 Deploys MediaHub staging from GitHub to web01. The script is safe to keep in
-Git: all passwords, Basic Auth credentials, Laravel app credentials, and API
-keys must be supplied through the environment and are never printed.
+Git: all Laravel app credentials and API keys must be supplied through the
+environment and are never printed.
 
 Options:
   --check   Verify local git, SSH access, and live protection without deploying.
@@ -25,8 +25,6 @@ Useful environment variables:
   MEDIAHUB_LIVE_URL=https://ccc.razbudise.mk
 
 Optional smoke credentials:
-  MEDIAHUB_BASIC_AUTH_USER=...
-  MEDIAHUB_BASIC_AUTH_PASS=...
   MEDIAHUB_APP_EMAIL=...
   MEDIAHUB_APP_PASSWORD=...
 USAGE
@@ -139,13 +137,18 @@ verify_ssh_access() {
 }
 
 verify_live_protection() {
-  local headers status
+  local headers status private_status
   headers="$(mktemp)"
   status="$(curl -sS -o /dev/null -D "$headers" -w '%{http_code}' "$LIVE_URL/" || true)"
 
-  if [[ "$status" != "401" ]]; then
+  if [[ "$status" != "200" ]]; then
     rm -f "$headers"
-    fail "Expected unauthenticated $LIVE_URL/ to return 401 from Apache Basic Auth, got $status"
+    fail "Expected the public MediaHub login page to return 200, got $status"
+  fi
+
+  if grep -iq '^www-authenticate:' "$headers"; then
+    rm -f "$headers"
+    fail "Unexpected Apache Basic Auth challenge on $LIVE_URL/"
   fi
 
   if ! grep -iq '^x-robots-tag:.*noindex' "$headers"; then
@@ -154,8 +157,14 @@ verify_live_protection() {
     fail "Expected X-Robots-Tag noindex header on staging"
   fi
 
+  private_status="$(curl -sS -H 'Accept: application/json' -o /dev/null -w '%{http_code}' "$LIVE_URL/api/v1/me" || true)"
   rm -f "$headers"
-  log "Basic Auth and X-Robots-Tag staging protection verified"
+
+  if [[ "$private_status" != "401" ]]; then
+    fail "Expected unauthenticated Laravel /api/v1/me to return 401, got $private_status"
+  fi
+
+  log "Public login, Laravel authentication, and X-Robots-Tag verified"
 }
 
 run_remote_deploy() {
@@ -319,19 +328,12 @@ scan_forbidden_payload_keys() {
 run_live_smoke() {
   verify_live_protection
 
-  if [[ -z "${MEDIAHUB_BASIC_AUTH_USER:-}" || -z "${MEDIAHUB_BASIC_AUTH_PASS:-}" ]]; then
-    log "Skipping authenticated API smoke: MEDIAHUB_BASIC_AUTH_USER/PASS are not set"
-    return 0
-  fi
-
   local tmpdir
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "${tmpdir:-}"' RETURN
 
-  local curl_auth=(-u "${MEDIAHUB_BASIC_AUTH_USER}:${MEDIAHUB_BASIC_AUTH_PASS}")
-
-  log "Checking authenticated /api/v1/status"
-  curl -fsS "${curl_auth[@]}" "$LIVE_URL/api/v1/status" > "$tmpdir/status.json"
+  log "Checking public /api/v1/status"
+  curl -fsS "$LIVE_URL/api/v1/status" > "$tmpdir/status.json"
 
   if [[ -n "${MEDIAHUB_APP_EMAIL:-}" && -n "${MEDIAHUB_APP_PASSWORD:-}" ]]; then
     log "Checking authenticated app payloads without printing credentials"
@@ -349,7 +351,7 @@ print(json.dumps({
 PY
     )"
 
-    curl -fsS -c "$cookie_jar" -b "$cookie_jar" "${curl_auth[@]}" \
+    curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
       -H 'Accept: application/json' \
       -H 'Content-Type: application/json' \
       -X POST \
@@ -360,7 +362,7 @@ PY
     local endpoint file
     for endpoint in dashboard media-events media-events/recent player/items; do
       file="$tmpdir/${endpoint//\//_}.json"
-      curl -fsS -c "$cookie_jar" -b "$cookie_jar" "${curl_auth[@]}" \
+      curl -fsS -c "$cookie_jar" -b "$cookie_jar" \
         -H 'Accept: application/json' \
         "$LIVE_URL/api/v1/$endpoint" \
         > "$file"

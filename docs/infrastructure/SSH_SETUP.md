@@ -124,7 +124,8 @@ Script check:
 Expected result:
 
 - SSH connects without asking Codex to manually load a key.
-- `https://ccc.razbudise.mk/` returns 401 without Basic Auth credentials.
+- `https://ccc.razbudise.mk/` returns `200` without a `WWW-Authenticate` header.
+- Unauthenticated `https://ccc.razbudise.mk/api/v1/me` returns `401` through Laravel.
 - `X-Robots-Tag` contains `noindex`.
 
 ## If SSH Still Fails
