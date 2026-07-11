@@ -16,6 +16,24 @@ function dateLabel(value) {
   return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
+function providerSyncLabel(status) {
+  return {
+    idle: "Catalog not imported",
+    never_synced: "Catalog not imported",
+    syncing: "Syncing catalog",
+    ready: "Catalog ready",
+    completed: "Catalog ready",
+    completed_with_warnings: "Catalog ready with warnings",
+    failed: "Catalog refresh failed",
+  }[status] || "Catalog status unavailable";
+}
+
+function providerSyncHint(provider) {
+  if (provider.syncStatus === "failed") return "Check the connection or provider availability, then refresh again.";
+  if (["idle", "never_synced"].includes(provider.syncStatus) && provider.providerType !== "manual") return "Refresh catalog to import content.";
+  return "";
+}
+
 function initials(title) {
   return String(title || "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "MH";
 }
@@ -213,7 +231,7 @@ export function SettingsSection({ apiClient = apiRequest, onOpenPlayer, onSessio
 
   async function save(event) {
     event.preventDefault(); setError(""); setStatus("Saving provider...");
-    try { await apiClient(editingId ? `/api/v1/providers/${editingId}` : "/api/v1/providers", { method: editingId ? "PATCH" : "POST", body: body(!editingId) }); setEditingId(null); setForm(emptyProviderForm); setStatus("Provider saved. Credentials remain encrypted and private."); await loadProviders(); }
+    try { const wasEditing = Boolean(editingId); const providerType = form.providerType; await apiClient(editingId ? `/api/v1/providers/${editingId}` : "/api/v1/providers", { method: editingId ? "PATCH" : "POST", body: body(!editingId) }); setEditingId(null); setForm(emptyProviderForm); setStatus(!wasEditing && providerType !== "manual" ? "Provider connected. Refresh catalog to import content." : "Provider saved. Credentials remain encrypted and private."); await loadProviders(); }
     catch (saveError) { setError(saveError.message || "Could not save provider."); setStatus(""); }
   }
 
@@ -229,8 +247,8 @@ export function SettingsSection({ apiClient = apiRequest, onOpenPlayer, onSessio
 
   async function action(provider, kind) {
     setError(""); setStatus("");
-    try { if (kind === "delete") await apiClient(`/api/v1/providers/${provider.id}`, { method: "DELETE" }); if (kind === "toggle") await apiClient(`/api/v1/providers/${provider.id}`, { method: "PATCH", body: { enabled: !provider.enabled } }); if (kind === "refresh") { const response = await apiClient(`/api/v1/providers/${provider.id}/refresh`, { method: "POST" }); setStatus(`Catalog refreshed: ${response.summary?.created || 0} new, ${response.summary?.updated || 0} updated.`); } await loadProviders(); }
-    catch (actionError) { setError(actionError.message || "Provider action failed safely."); }
+    try { if (kind === "delete") await apiClient(`/api/v1/providers/${provider.id}`, { method: "DELETE" }); if (kind === "toggle") await apiClient(`/api/v1/providers/${provider.id}`, { method: "PATCH", body: { enabled: !provider.enabled } }); if (kind === "refresh") { setStatus("Refreshing your private catalog..."); const response = await apiClient(`/api/v1/providers/${provider.id}/refresh`, { method: "POST" }); setStatus(`Catalog refreshed: ${response.summary?.created || 0} new, ${response.summary?.updated || 0} updated.`); } await loadProviders(); }
+    catch (actionError) { await loadProviders(); setStatus(""); setError(actionError.message || "Provider action failed safely."); }
   }
 
   async function addManualItem(event) {
@@ -260,7 +278,7 @@ export function SettingsSection({ apiClient = apiRequest, onOpenPlayer, onSessio
         {form.providerType === "m3u" ? <label><span>M3U playlist URL</span><input aria-label="M3U playlist URL" onChange={(event) => setForm((current) => ({ ...current, playlistUrl: event.target.value }))} placeholder={editingId ? "Saved - enter only to replace" : "https://provider.example/playlist.m3u"} required={!editingId} type="url" value={form.playlistUrl} /></label> : null}
         {form.providerType !== "manual" ? <label><span>Optional XMLTV URL</span><input aria-label="XMLTV URL" onChange={(event) => setForm((current) => ({ ...current, xmltvUrl: event.target.value }))} placeholder={editingId ? "Saved - enter only to replace" : "https://provider.example/guide.xml"} type="url" value={form.xmltvUrl} /></label> : null}
         <label><span>EPG time shift</span><input aria-label="EPG time shift" max="24" min="-24" onChange={(event) => setForm((current) => ({ ...current, epgTimeShift: event.target.value }))} type="number" value={form.epgTimeShift} /></label><label><span>Refresh frequency</span><select aria-label="Refresh frequency" onChange={(event) => setForm((current) => ({ ...current, refreshFrequency: event.target.value }))} value={form.refreshFrequency}><option value="manual">Manual</option><option value="6h">Every 6 hours</option><option value="12h">Every 12 hours</option><option value="daily">Daily</option></select></label>{!editingId ? <label className="check-row"><input checked={form.legalConfirmed} onChange={(event) => setForm((current) => ({ ...current, legalConfirmed: event.target.checked }))} required type="checkbox" /><span>I own or am authorized to use this provider.</span></label> : null}<div className="modal-actions"><button className="secondary-action" onClick={testConnection} type="button">Test connection</button><button className="primary-action" type="submit">{editingId ? "Save changes" : "Add Provider"}</button>{editingId ? <button className="text-action" onClick={() => setEditingId(null)} type="button">Cancel edit</button> : null}</div></form></section>
-        <section className="provider-settings-list"><div className="section-heading"><div><h3>Your Providers</h3><p>Raw URLs and passwords are never displayed.</p></div><span>{providers.length}</span></div>{loading ? <div className="empty-strip compact">Loading providers...</div> : providers.map((provider) => <article className="settings-provider-row" key={provider.id}><div><strong>{provider.name}</strong><span>{provider.providerType} · {provider.enabled ? "Enabled" : "Disabled"}</span><small>{provider.activeItemsCount}/{provider.itemsCount} active items · {provider.syncStatus}{provider.lastSyncedAt ? ` · synced ${dateLabel(provider.lastSyncedAt)}` : ""}</small><em>{provider.credentialsConfigured ? "Credentials saved" : "No credentials"}{provider.epgAvailable ? " · EPG ready" : ""}</em></div><div><button className="text-action" onClick={() => edit(provider)} type="button">Edit</button><button className="text-action" onClick={() => action(provider, "toggle")} type="button">{provider.enabled ? "Disable" : "Enable"}</button><button className="text-action" onClick={() => action(provider, "refresh")} type="button">Refresh Catalog</button><button className="text-action danger" onClick={() => action(provider, "delete")} type="button">Delete</button></div></article>)}{!loading && providers.length === 0 ? <div className="empty-strip compact">No providers connected</div> : null}
+        <section className="provider-settings-list"><div className="section-heading"><div><h3>Your Providers</h3><p>Raw URLs and passwords are never displayed.</p></div><span>{providers.length}</span></div>{loading ? <div className="empty-strip compact">Loading providers...</div> : providers.map((provider) => <article className="settings-provider-row" key={provider.id}><div><strong>{provider.name}</strong><span>{provider.providerType} · {provider.enabled ? "Enabled" : "Disabled"}</span><small>{provider.activeItemsCount}/{provider.itemsCount} active items · {providerSyncLabel(provider.syncStatus)}{provider.lastSyncedAt ? ` · last attempt ${dateLabel(provider.lastSyncedAt)}` : ""}</small>{providerSyncHint(provider) ? <small>{providerSyncHint(provider)}</small> : null}<em>{provider.credentialsConfigured ? "Credentials saved" : "No credentials"}{provider.epgAvailable ? " · EPG ready" : ""}</em></div><div><button className="text-action" onClick={() => edit(provider)} type="button">Edit</button><button className="text-action" onClick={() => action(provider, "toggle")} type="button">{provider.enabled ? "Disable" : "Enable"}</button><button className="text-action" disabled={!provider.enabled || provider.syncStatus === "syncing"} onClick={() => action(provider, "refresh")} type="button">{provider.syncStatus === "syncing" ? "Refreshing..." : "Refresh Catalog"}</button><button className="text-action danger" onClick={() => action(provider, "delete")} type="button">Delete</button></div></article>)}{!loading && providers.length === 0 ? <div className="empty-strip compact">No providers connected</div> : null}
           {!loading && providers.some((provider) => provider.providerType === "manual") ? <form className="manual-item-form settings-provider-form" onSubmit={addManualItem}><div className="section-heading"><div><h3>Add Manual Source Item</h3><p>Use this only for a private source you are authorized to play.</p></div></div><label><span>Manual provider</span><select aria-label="Manual provider" onChange={(event) => setManualItem((current) => ({ ...current, providerId: event.target.value }))} required value={manualItem.providerId}><option value="">Select provider</option>{providers.filter((provider) => provider.providerType === "manual").map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label><label><span>Item title</span><input aria-label="Item title" onChange={(event) => setManualItem((current) => ({ ...current, title: event.target.value }))} required value={manualItem.title} /></label><label><span>Media type</span><select aria-label="Media type" onChange={(event) => setManualItem((current) => ({ ...current, kind: event.target.value }))} value={manualItem.kind}><option value="movie">Movie</option><option value="show">Show</option><option value="episode">Episode</option><option value="live">Live channel</option></select></label><label><span>Private playback URL</span><input aria-label="Private playback URL" onChange={(event) => setManualItem((current) => ({ ...current, streamUrl: event.target.value }))} required type="url" value={manualItem.streamUrl} /></label><button className="secondary-action" type="submit">Add Source Item</button></form> : null}
           <button className="secondary-action" onClick={onOpenPlayer} type="button">Open Player</button></section></div> : null}
     </section>

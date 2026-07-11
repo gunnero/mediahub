@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\MediaEventSource;
 use App\Enums\MediaEventType;
+use App\Enums\ProviderSyncStatus;
 use App\Models\Episode;
 use App\Models\MediaLink;
 use App\Models\Movie;
@@ -24,7 +25,7 @@ class ProviderCatalogService
         private readonly MediaEventService $events,
     ) {}
 
-    /** @return array{created:int,updated:int,deactivated:int,available:int,suggested:int,epgAvailable:bool} */
+    /** @return array{created:int,updated:int,deactivated:int,available:int,suggested:int,liveItems:int,movieItems:int,seriesItems:int,episodeItems:int,categories:int,epgRows:int,failedEndpoints:int,safeFailureReason:string|null,epgAvailable:bool} */
     public function refresh(User $user, PlaybackSource $source): array
     {
         $this->assertOwned($user, $source);
@@ -33,7 +34,7 @@ class ProviderCatalogService
             throw new RuntimeException('provider_disabled');
         }
 
-        $source->forceFill(['sync_status' => 'syncing', 'last_sync_error' => null])->save();
+        $source->forceFill(['sync_status' => ProviderSyncStatus::Syncing->value, 'last_sync_error' => null])->save();
         $this->events->record($user, MediaEventType::ProviderRefreshStarted, $source, [
             'title' => $source->name,
             'provider_type' => $source->provider_type,
@@ -45,15 +46,11 @@ class ProviderCatalogService
 
             $metadata = $source->metadata ?? [];
             $metadata['epg_available'] = $summary['epgAvailable'];
-            $metadata['sync_summary'] = [
-                'created' => $summary['created'],
-                'updated' => $summary['updated'],
-                'deactivated' => $summary['deactivated'],
-                'available' => $summary['available'],
-                'suggested' => $summary['suggested'],
-            ];
+            $metadata['sync_summary'] = $this->safeSummary($summary);
             $source->forceFill([
-                'sync_status' => 'ready',
+                'sync_status' => $summary['failedEndpoints'] > 0
+                    ? ProviderSyncStatus::CompletedWithWarnings->value
+                    : ProviderSyncStatus::Completed->value,
                 'last_sync_error' => null,
                 'last_synced_at' => now(),
                 'metadata' => $metadata,
@@ -74,7 +71,15 @@ class ProviderCatalogService
                 $safeCode = 'provider_refresh_failed';
             }
 
-            $source->forceFill(['sync_status' => 'failed', 'last_sync_error' => $safeCode])->save();
+            $failureSummary = $this->emptySummary(1, $safeCode);
+            $metadata = $source->metadata ?? [];
+            $metadata['sync_summary'] = $this->safeSummary($failureSummary);
+            $source->forceFill([
+                'sync_status' => ProviderSyncStatus::Failed->value,
+                'last_sync_error' => $safeCode,
+                'last_synced_at' => now(),
+                'metadata' => $metadata,
+            ])->save();
             $this->auditLogs->record('playback_source.refresh_failed', $user, $source, $user, [
                 'provider_type' => $source->provider_type,
                 'error_code' => $safeCode,
@@ -91,12 +96,14 @@ class ProviderCatalogService
 
     /**
      * @param  array{items:list<array<string,mixed>>,epgAvailable:bool}  $catalog
-     * @return array{created:int,updated:int,deactivated:int,available:int,suggested:int,epgAvailable:bool}
+     * @return array{created:int,updated:int,deactivated:int,available:int,suggested:int,liveItems:int,movieItems:int,seriesItems:int,episodeItems:int,categories:int,epgRows:int,failedEndpoints:int,safeFailureReason:string|null,epgAvailable:bool}
      */
     private function persist(User $user, PlaybackSource $source, array $catalog): array
     {
-        $summary = ['created' => 0, 'updated' => 0, 'deactivated' => 0, 'available' => 0, 'suggested' => 0, 'epgAvailable' => (bool) $catalog['epgAvailable']];
+        $summary = $this->emptySummary();
+        $summary['epgAvailable'] = (bool) $catalog['epgAvailable'];
         $seen = [];
+        $categories = [];
 
         foreach ($catalog['items'] as $row) {
             $externalId = (string) ($row['external_id'] ?? '');
@@ -144,7 +151,26 @@ class ProviderCatalogService
             $summary[$isNew ? 'created' : 'updated']++;
             $summary['available']++;
             $summary['suggested'] += $suggestion && ! $hasLink ? 1 : 0;
+            $kindCount = match ($item->kind) {
+                'live' => 'liveItems',
+                'movie' => 'movieItems',
+                'show' => 'seriesItems',
+                'episode' => 'episodeItems',
+                default => null,
+            };
+            if ($kindCount) {
+                $summary[$kindCount]++;
+            }
+            if (filled($item->category)) {
+                $categories[$item->category] = true;
+            }
+            $epg = $catalogMetadata['epg'] ?? null;
+            if (is_array($epg)) {
+                $summary['epgRows'] += (int) isset($epg['current']) + (int) isset($epg['next']);
+            }
         }
+
+        $summary['categories'] = count($categories);
 
         if (! in_array($source->provider_type, ['manual', 'xmltv'], true)) {
             $deactivated = PlaybackSourceItem::forUser($user)
@@ -157,6 +183,36 @@ class ProviderCatalogService
         }
 
         return $summary;
+    }
+
+    /** @return array{created:int,updated:int,deactivated:int,available:int,suggested:int,liveItems:int,movieItems:int,seriesItems:int,episodeItems:int,categories:int,epgRows:int,failedEndpoints:int,safeFailureReason:string|null,epgAvailable:bool} */
+    private function emptySummary(int $failedEndpoints = 0, ?string $safeFailureReason = null): array
+    {
+        return [
+            'created' => 0,
+            'updated' => 0,
+            'deactivated' => 0,
+            'available' => 0,
+            'suggested' => 0,
+            'liveItems' => 0,
+            'movieItems' => 0,
+            'seriesItems' => 0,
+            'episodeItems' => 0,
+            'categories' => 0,
+            'epgRows' => 0,
+            'failedEndpoints' => $failedEndpoints,
+            'safeFailureReason' => $safeFailureReason,
+            'epgAvailable' => false,
+        ];
+    }
+
+    /** @param array<string, mixed> $summary @return array<string, int|string|null> */
+    private function safeSummary(array $summary): array
+    {
+        return collect($summary)
+            ->except('epgAvailable')
+            ->map(fn (mixed $value): int|string|null => is_int($value) || is_string($value) || $value === null ? $value : null)
+            ->all();
     }
 
     /** @param array<string, mixed> $metadata @return array<string, mixed>|null */

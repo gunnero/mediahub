@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\MediaEventSource;
 use App\Enums\MediaEventType;
+use App\Enums\ProviderSyncStatus;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
 use App\Models\MediaLink;
@@ -52,6 +53,7 @@ class PlaybackLibraryService
             'name' => $data['name'],
             'provider_type' => $data['provider_type'],
             'status' => 'active',
+            'sync_status' => ProviderSyncStatus::NeverSynced->value,
             'metadata' => [
                 'created_from' => 'manual-ui',
                 'legal_confirmed_at' => now()->toIso8601String(),
@@ -313,9 +315,12 @@ class PlaybackLibraryService
             ->values()
             ->all();
 
+        $counts = $this->catalogCounts(clone $base);
+
         if ($view === 'home') {
             return [
                 'view' => 'home',
+                'counts' => $counts,
                 'continueWatching' => $this->continueWatchingFor($user),
                 'recentMovies' => $this->catalogShelf(clone $base, ['movie'], 12),
                 'recentShows' => $this->catalogShelf(clone $base, ['show'], 12),
@@ -358,6 +363,7 @@ class PlaybackLibraryService
 
         return [
             'view' => $view,
+            'counts' => $counts,
             'items' => $items,
             'categories' => $categories,
             'pagination' => [
@@ -734,12 +740,30 @@ class PlaybackLibraryService
             'status' => $source->status,
             'itemsCount' => $source->items_count ?? $source->items()->count(),
             'lastSyncedAt' => $source->last_synced_at?->toIso8601String(),
-            'syncStatus' => $source->sync_status ?: 'idle',
+            'syncStatus' => ProviderSyncStatus::normalize($source->sync_status),
             'lastSyncError' => $source->last_sync_error,
             'credentialsConfigured' => filled($settings['username'] ?? null) && filled($settings['password'] ?? null),
             'serverConfigured' => filled($settings['base_url'] ?? null) || filled($settings['playlist_url'] ?? null),
             'xmltvConfigured' => filled($settings['xmltv_url'] ?? null),
             'epgAvailable' => (bool) ($metadata['epg_available'] ?? false),
+        ];
+    }
+
+    /** @return array{total:int,movies:int,shows:int,episodes:int,live:int,categories:int} */
+    private function catalogCounts(Builder $query): array
+    {
+        $kindCounts = (clone $query)
+            ->selectRaw('kind, COUNT(*) as items_count')
+            ->groupBy('kind')
+            ->pluck('items_count', 'kind');
+
+        return [
+            'total' => (int) $kindCounts->sum(),
+            'movies' => (int) ($kindCounts['movie'] ?? 0),
+            'shows' => (int) ($kindCounts['show'] ?? 0),
+            'episodes' => (int) ($kindCounts['episode'] ?? 0),
+            'live' => (int) ($kindCounts['live'] ?? 0),
+            'categories' => (clone $query)->whereNotNull('category')->distinct()->count('category'),
         ];
     }
 

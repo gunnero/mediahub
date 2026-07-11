@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('playback_sources', function (Blueprint $table): void {
-            $table->string('sync_status', 32)->default('idle')->index();
+            $table->string('sync_status', 32)->default('never_synced')->index();
             $table->string('last_sync_error', 64)->nullable();
         });
 

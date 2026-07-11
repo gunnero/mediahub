@@ -290,7 +290,7 @@ const providerSummary = {
   enabled: true,
   itemsCount: 2,
   activeItemsCount: 2,
-  syncStatus: "ready",
+  syncStatus: "completed",
 };
 
 const homeCatalog = {
@@ -473,6 +473,44 @@ describe("SettingsSection", () => {
     fireEvent.click(screen.getByRole("button", { name: /add source item/i }));
     await waitFor(() => expect(apiClient).toHaveBeenCalledWith("/api/v1/player/sources/3/items", { method: "POST", body: { title: "Private Film", kind: "movie", stream_url: "https://media.invalid/private-film.mp4" } }));
     expect(document.body.textContent).not.toContain("https://media.invalid/private-film.mp4");
+  });
+
+  it("makes the first catalog refresh requirement explicit for a saved Xtream provider", async () => {
+    let providers = [];
+    const apiClient = vi.fn(async (path, options = {}) => {
+      if (path === "/api/v1/providers" && !options.method) return { providers };
+      if (path === "/api/v1/providers" && options.method === "POST") {
+        providers = [{ ...providerSummary, id: 8, name: options.body.name, providerType: "xtream", itemsCount: 0, activeItemsCount: 0, syncStatus: "never_synced" }];
+        return { provider: providers[0] };
+      }
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+    render(<SettingsSection apiClient={apiClient} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^providers$/i }));
+    fireEvent.change(screen.getByLabelText(/provider display name/i), { target: { value: "Private TV" } });
+    fireEvent.change(screen.getByLabelText(/provider type/i), { target: { value: "xtream" } });
+    fireEvent.change(screen.getByLabelText(/server base url/i), { target: { value: "https://provider.example.test" } });
+    fireEvent.change(screen.getByLabelText(/provider username/i), { target: { value: "private-user" } });
+    fireEvent.change(screen.getByLabelText(/provider password/i), { target: { value: "private-password" } });
+    fireEvent.click(screen.getByLabelText(/i own or am authorized/i));
+    fireEvent.click(screen.getByRole("button", { name: /add provider/i }));
+
+    expect(await screen.findByText("Provider connected. Refresh catalog to import content.")).toBeInTheDocument();
+    expect(screen.getByText(/active items · catalog not imported/i)).toBeInTheDocument();
+  });
+
+  it("shows a failed refresh as a visible action state instead of idle", async () => {
+    const failedProvider = { ...providerSummary, providerType: "xtream", itemsCount: 0, activeItemsCount: 0, syncStatus: "failed", lastSyncError: "provider_http_520", lastSyncedAt: "2026-07-11T00:00:00Z" };
+    const apiClient = vi.fn(async (path) => {
+      if (path === "/api/v1/providers") return { providers: [failedProvider] };
+      throw new Error(`Unexpected API call: ${path}`);
+    });
+    render(<SettingsSection apiClient={apiClient} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^providers$/i }));
+    expect(await screen.findByText(/active items · catalog refresh failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/check the connection or provider availability/i)).toBeInTheDocument();
   });
 });
 

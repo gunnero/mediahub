@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\MediaEventSource;
 use App\Enums\MediaEventType;
+use App\Enums\ProviderSyncStatus;
 use App\Models\PlaybackSource;
 use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -37,7 +38,7 @@ class ProviderService
             'name' => trim((string) $data['name']),
             'provider_type' => $data['provider_type'],
             'status' => ($data['enabled'] ?? true) ? 'active' : 'disabled',
-            'sync_status' => 'idle',
+            'sync_status' => ProviderSyncStatus::NeverSynced->value,
             'settings' => $this->settings($data),
             'metadata' => [
                 'created_from' => 'settings-ui',
@@ -147,7 +148,7 @@ class ProviderService
             'providerType' => $source->provider_type,
             'status' => $source->status,
             'enabled' => $source->status === 'active',
-            'syncStatus' => $source->sync_status ?: 'idle',
+            'syncStatus' => ProviderSyncStatus::normalize($source->sync_status),
             'lastSyncError' => $source->last_sync_error,
             'lastSyncedAt' => $source->last_synced_at?->toIso8601String(),
             'itemsCount' => (int) ($source->items_count ?? $source->items()->count()),
