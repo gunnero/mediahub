@@ -320,10 +320,12 @@ class ProviderConnectionService
     private function request(string $url, array $query = []): Response
     {
         try {
-            $response = Http::timeout(max(1, (int) config('mediahub_providers.timeout', 20)))
+            $request = Http::timeout(max(1, (int) config('mediahub_providers.timeout', 20)))
                 ->retry(2, 200, throw: false)
-                ->accept('*/*')
-                ->get($url, $query);
+                ->accept('*/*');
+            $response = $query === []
+                ? $request->get($url)
+                : $request->get($url, $query);
         } catch (Throwable) {
             throw new RuntimeException('provider_unreachable');
         }
