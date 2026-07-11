@@ -116,6 +116,31 @@ The frontend Player tab now uses these APIs for user-owned provider attach/manag
 
 The frontend Movies, Shows, History, global search, and show season browser use the canonical library endpoints. Provider source-item search remains isolated inside the Player tab.
 
+## Kalveri AI Media Matcher
+
+Kalveri AI matching is optional and disabled by default:
+
+```dotenv
+KALVERI_AI_ENABLED=false
+KALVERI_AI_BASE_URL=
+KALVERI_AI_API_KEY=
+KALVERI_AI_TIMEOUT=20
+```
+
+`KalveriAIClient` sends structured JSON only and logs safe status summaries without API keys. `KalveriAIMediaMatcherService` builds sanitized payloads, runs local matching first, calls Kalveri AI only when useful, stores suggestions under model metadata, records safe `ai.match.*` media events, and never auto-links or auto-applies a suggestion.
+
+Provider-item API:
+
+- `POST /api/v1/player/items/{item}/ai-match`
+- `POST /api/v1/player/items/{item}/ai-match/reject`
+
+Metadata review commands:
+
+- `php artisan mediahub:ai-match-review-episode {episode_id}`
+- `php artisan mediahub:apply-review-match {episode_id} --season=1 --episode=2`
+
+Allowed Kalveri AI payload fields are normalized/original titles, media type guess, year, season/episode numbers, same-user candidate IDs/titles, and public TMDB IDs. Forbidden fields include stream URLs, playlist URLs, provider settings, provider credentials, private notes, API keys, tokens, and watch history.
+
 ## TMDB Metadata
 
 TMDB metadata enrichment is optional and disabled by default. Configure only private runtime `.env` values:
@@ -155,9 +180,9 @@ Tables:
 
 ## Media Events
 
-`MediaEventService` records meaningful user-scoped activity into `media_events` for timelines, future statistics, OFF AI memory, recommendations, notifications, and achievements.
+`MediaEventService` records meaningful user-scoped activity into `media_events` for timelines, future statistics, Kalveri AI memory, recommendations, notifications, and achievements.
 
-Current stable event types include imports, manual watched/unwatched events, ratings, notes, provider/source lifecycle events, provider item link/unlink events, playback started/completed, metadata enrichment, backup creation, and restore completion.
+Current stable event types include imports, manual watched/unwatched events, ratings, notes, provider/source lifecycle events, provider item link/unlink events, playback started/completed, metadata enrichment, AI match requested/suggested/confirmed/rejected, backup creation, and restore completion.
 
 Event metadata is sanitized through the shared metadata sanitizer before storage. Forbidden keys include stream URLs, playback URLs, provider URLs, playlist URLs, passwords, API keys, tokens, secrets, and credentials. Event recording catches failures and logs only a safe summary so user flows do not crash if an event cannot be written.
 

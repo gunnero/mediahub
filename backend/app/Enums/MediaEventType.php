@@ -27,6 +27,10 @@ enum MediaEventType: string
     case PlaybackProgressed = 'playback.progressed';
     case PlaybackCompleted = 'playback.completed';
     case MetadataEnriched = 'metadata.enriched';
+    case AIMatchRequested = 'ai.match.requested';
+    case AIMatchSuggested = 'ai.match.suggested';
+    case AIMatchConfirmed = 'ai.match.confirmed';
+    case AIMatchRejected = 'ai.match.rejected';
     case BackupCreated = 'backup.created';
     case RestoreCompleted = 'restore.completed';
 }

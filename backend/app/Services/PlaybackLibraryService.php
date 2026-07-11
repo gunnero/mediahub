@@ -308,7 +308,7 @@ class PlaybackLibraryService
     }
 
     /**
-     * @param  array{movie_id?:int|null,show_id?:int|null,episode_id?:int|null}  $data
+     * @param  array{movie_id?:int|null,show_id?:int|null,episode_id?:int|null,ai_suggestion?:bool|null}  $data
      */
     public function link(User $user, PlaybackSourceItem $item, array $data): MediaLink
     {
@@ -353,6 +353,16 @@ class PlaybackLibraryService
             'show_id' => $showId,
             'episode_id' => $episodeId,
         ], MediaEventSource::Provider);
+
+        if (($data['ai_suggestion'] ?? false) === true) {
+            $this->mediaEvents->record($user, MediaEventType::AIMatchConfirmed, $item, [
+                'title' => $item->title,
+                'kind' => $item->kind,
+                'movie_id' => $movieId,
+                'show_id' => $showId,
+                'episode_id' => $episodeId,
+            ], MediaEventSource::AI);
+        }
 
         return $link;
     }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PlaybackSession;
 use App\Models\PlaybackSource;
 use App\Models\PlaybackSourceItem;
+use App\Services\KalveriAIMediaMatcherService;
 use App\Services\PlaybackLibraryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -117,6 +118,7 @@ class PlayerController extends Controller
             'show_id' => ['nullable', 'integer'],
             'episode_id' => ['nullable', 'integer'],
             'confirm' => ['accepted'],
+            'ai_suggestion' => ['nullable', 'boolean'],
         ]);
 
         $link = $player->link($request->user(), $item, $data);
@@ -131,6 +133,20 @@ class PlayerController extends Controller
                 'linked_at' => $link->linked_at?->toIso8601String(),
             ],
         ], 201);
+    }
+
+    public function aiMatch(Request $request, PlaybackSourceItem $item, KalveriAIMediaMatcherService $matcher): JsonResponse
+    {
+        return response()->json(
+            $matcher->matchProviderItem($request->user(), $item)
+        );
+    }
+
+    public function rejectAiMatch(Request $request, PlaybackSourceItem $item, KalveriAIMediaMatcherService $matcher): JsonResponse
+    {
+        $matcher->rejectProviderSuggestion($request->user(), $item);
+
+        return response()->json(null, 204);
     }
 
     public function unlink(Request $request, PlaybackSourceItem $item, PlaybackLibraryService $player): JsonResponse

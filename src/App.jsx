@@ -1510,7 +1510,7 @@ export function DetailModal({
   );
 }
 
-function playerTargetPayload(target) {
+function playerTargetPayload(target, options = {}) {
   if (!target) {
     return {};
   }
@@ -1518,6 +1518,25 @@ function playerTargetPayload(target) {
   return {
     [`${target.type}_id`]: target.id,
     confirm: true,
+    ...(options.aiSuggestion ? { ai_suggestion: true } : {}),
+  };
+}
+
+function aiCandidateToTarget(candidate) {
+  if (!candidate?.type || !candidate?.id) {
+    return null;
+  }
+
+  return {
+    type: candidate.type,
+    id: candidate.id,
+    title: candidate.title || candidate.showTitle || "Suggested item",
+    subtitle: candidate.type === "episode"
+      ? candidate.showTitle || "Episode"
+      : candidate.type === "show" ? "Show" : "Movie",
+    meta: candidate.type === "episode"
+      ? `S${candidate.seasonNumber || "?"} E${candidate.episodeNumber || "?"}`
+      : candidate.year || "",
   };
 }
 
@@ -1551,6 +1570,7 @@ export function PlayerSection({
   const [targets, setTargets] = useState([]);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [confirmLink, setConfirmLink] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState(null);
   const [playback, setPlayback] = useState(null);
   const [progressForm, setProgressForm] = useState({
     positionSeconds: "0",
@@ -1758,7 +1778,29 @@ export function PlayerSection({
     setTargets([]);
     setSelectedTarget(null);
     setConfirmLink(false);
+    setAiSuggestion(null);
     setError("");
+  }
+
+  async function handleAskKalveriAI() {
+    await runPlayerAction(async () => {
+      const payload = await apiClient(`/api/v1/player/items/${linkingItem.id}/ai-match`, { method: "POST" });
+      const suggestion = payload?.suggestion || null;
+      const target = aiCandidateToTarget(suggestion?.candidate);
+
+      setAiSuggestion(suggestion);
+      if (target) {
+        setSelectedTarget(target);
+      }
+    }, "Asking Kalveri AI");
+  }
+
+  async function handleRejectKalveriAI() {
+    await runPlayerAction(async () => {
+      await apiClient(`/api/v1/player/items/${linkingItem.id}/ai-match/reject`, { method: "POST" });
+      setAiSuggestion(null);
+      setSelectedTarget(null);
+    }, "Rejecting suggestion");
   }
 
   async function handleTargetSearch(event) {
@@ -1784,7 +1826,10 @@ export function PlayerSection({
     await runPlayerAction(async () => {
       await apiClient(`/api/v1/player/items/${linkingItem.id}/link`, {
         method: "POST",
-        body: playerTargetPayload(selectedTarget),
+        body: playerTargetPayload(selectedTarget, {
+          aiSuggestion: aiSuggestion?.candidateId === selectedTarget?.id
+            && aiSuggestion?.mediaType === selectedTarget?.type,
+        }),
       });
 
       setLinkingItem(null);
@@ -2161,6 +2206,22 @@ export function PlayerSection({
               <h2>Link source item</h2>
               <span>{linkingItem.title}</span>
             </div>
+            <div className="ai-match-panel">
+              <div>
+                <strong>Kalveri AI match assist</strong>
+                <small>Optional fallback. You still confirm every match.</small>
+              </div>
+              <button className="secondary-action" disabled={busy === "Asking Kalveri AI"} onClick={handleAskKalveriAI} type="button">
+                Ask Kalveri AI
+              </button>
+            </div>
+            {aiSuggestion ? (
+              <div className="ai-suggestion ready">
+                <strong>{aiSuggestion.status === "suggested" ? "Suggested match" : "No confident AI match"}</strong>
+                <small>{aiSuggestion.reason}</small>
+                <button className="text-action danger" onClick={handleRejectKalveriAI} type="button">Reject suggestion</button>
+              </div>
+            ) : null}
             <form className="player-form" onSubmit={handleTargetSearch}>
               <label>
                 <span>Search your library</span>

@@ -82,6 +82,36 @@ Rules:
 - Enrichment must be additive and must not blindly overwrite user/import-owned fields such as current titles or local poster URLs.
 - Public poster/backdrop URLs may be exposed to the authenticated user's dashboard and detail payloads.
 - Metadata payloads must not include stream URLs, playlist URLs, provider credentials, API keys, secrets, or private provider settings.
+
+## Kalveri AI Matching Boundary
+
+Kalveri AI is a fallback matcher, not a source of truth.
+
+MediaHub must run deterministic local matching first. TMDB remains the canonical public metadata source. Kalveri AI may suggest matches for ambiguous provider items and metadata review episodes, but suggestions must be confirmed before creating `media_links` or applying corrected TMDB season/episode mappings.
+
+Allowed Kalveri AI fields:
+
+- normalized title
+- original title
+- media type guess
+- year
+- season number
+- episode number
+- same-user candidate canonical IDs and titles
+- public TMDB IDs when already present
+
+Forbidden Kalveri AI fields:
+
+- stream URLs
+- playlist URLs
+- provider credentials
+- provider settings
+- API keys
+- tokens
+- private notes
+- private watch history
+
+Provider item AI suggestions are temporary metadata on the user-owned source item. Confirming a suggestion still creates the same `media_links` relationship as a manual link. Rejecting a suggestion must not affect canonical media or watch history.
 - Metadata commands must print summary counts only, not titles or private library contents.
 - Metadata enrichment must be scoped by `user_id` when processing a user library.
 

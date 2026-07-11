@@ -141,9 +141,9 @@ Backups are written under ignored private Laravel storage and include canonical 
 
 ## Media Event System
 
-MediaHub records a user-scoped `media_events` timeline for meaningful library activity. Events are the foundation for the activity timeline, better statistics, future OFF AI memory, recommendations, notifications, auditability, and achievements.
+MediaHub records a user-scoped `media_events` timeline for meaningful library activity. Events are the foundation for the activity timeline, better statistics, future Kalveri AI memory, recommendations, notifications, auditability, and achievements.
 
-Current event sources are `manual`, `player`, `import`, `provider`, `metadata`, and `system`. Event metadata is sanitized before storage and strips provider URLs, stream URLs, playlist URLs, passwords, tokens, API keys, secrets, and credentials, including nested metadata keys.
+Current event sources are `manual`, `player`, `import`, `provider`, `metadata`, `ai`, and `system`. Event metadata is sanitized before storage and strips provider URLs, stream URLs, playlist URLs, passwords, tokens, API keys, secrets, and credentials, including nested metadata keys.
 
 API:
 
@@ -157,6 +157,33 @@ Filters for `/api/v1/media-events`: `event_type`, `source`, `subject_type`, `dat
 The dashboard payload includes an additive `timeline` object with recent safe events plus today/this-week counts. The React dashboard renders this as an "Entertainment diary" so normal users see meaningful memories instead of raw event data.
 
 See `docs/mediahub/MEDIA_EVENT_SYSTEM.md`.
+
+## Optional Kalveri AI Media Matcher
+
+Kalveri AI matching is optional and disabled by default. MediaHub uses it only as a fallback assistant for ambiguous provider items and metadata review rows. Deterministic local matching and TMDB remain the canonical path.
+
+Private backend `.env` values:
+
+```dotenv
+KALVERI_AI_ENABLED=false
+KALVERI_AI_BASE_URL=
+KALVERI_AI_API_KEY=
+KALVERI_AI_TIMEOUT=20
+```
+
+Kalveri AI receives only sanitized, structured matching payloads: normalized/original public titles, media type guess, year, season/episode numbers, same-user candidate canonical IDs/titles, and public TMDB IDs when available. MediaHub never sends stream URLs, playlist URLs, provider credentials/settings, notes, tokens, API keys, or watch history. Suggestions are stored as metadata and always require user/admin confirmation.
+
+Routes and commands:
+
+```bash
+POST /api/v1/player/items/{item}/ai-match
+POST /api/v1/player/items/{item}/ai-match/reject
+
+php artisan mediahub:ai-match-review-episode {episode_id}
+php artisan mediahub:apply-review-match {episode_id} --season=1 --episode=2
+```
+
+See `docs/mediahub/KALVERI_AI_MATCHER.md`.
 
 ## Library Browser
 

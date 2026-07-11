@@ -54,6 +54,8 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::post('/player/sources/{source}/items', [PlayerController::class, 'storeItem']);
         Route::get('/player/link-targets', [PlayerController::class, 'linkTargets']);
         Route::post('/player/items/{item}/play', [PlayerController::class, 'play']);
+        Route::post('/player/items/{item}/ai-match', [PlayerController::class, 'aiMatch']);
+        Route::post('/player/items/{item}/ai-match/reject', [PlayerController::class, 'rejectAiMatch']);
         Route::post('/player/items/{item}/link', [PlayerController::class, 'link']);
         Route::delete('/player/items/{item}/link', [PlayerController::class, 'unlink']);
         Route::patch('/player/sessions/{session}', [PlayerController::class, 'updateSession']);

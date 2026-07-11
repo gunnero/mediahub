@@ -4,7 +4,7 @@
 
 Media events are the user-scoped activity memory for MediaHub.
 
-They record meaningful library activity without storing provider secrets, stream URLs, playlist URLs, credentials, or raw private imports. The event stream supports the current dashboard timeline and becomes the future foundation for richer statistics, OFF AI memory, recommendations, notifications, auditability, and achievements.
+They record meaningful library activity without storing provider secrets, stream URLs, playlist URLs, credentials, or raw private imports. The event stream supports the current dashboard timeline and becomes the future foundation for richer statistics, Kalveri AI memory, recommendations, notifications, auditability, and achievements.
 
 ## Philosophy
 
@@ -58,6 +58,7 @@ Stable sources:
 - `import`
 - `provider`
 - `metadata`
+- `ai`
 - `system`
 
 ## Event Types
@@ -87,10 +88,14 @@ Stable event types:
 - `playback.progressed`
 - `playback.completed`
 - `metadata.enriched`
+- `ai.match.requested`
+- `ai.match.suggested`
+- `ai.match.confirmed`
+- `ai.match.rejected`
 - `backup.created`
 - `restore.completed`
 
-Do not rename these casually. Future analytics, OFF AI memory, notifications, and achievements will depend on stable names.
+Do not rename these casually. Future analytics, Kalveri AI memory, notifications, and achievements will depend on stable names.
 
 ## Safety Rules
 
@@ -125,6 +130,7 @@ Current event producers:
 - provider item link/unlink
 - playback start/completion
 - TMDB metadata enrichment success
+- Kalveri AI match request/suggestion/confirmation/rejection
 - user backup creation
 - user restore completion
 
@@ -167,9 +173,9 @@ Timeline items contain safe display fields:
 
 The React dashboard renders a compact "Entertainment diary" panel. Empty users receive a valid empty timeline payload and a quiet user-facing empty state.
 
-## OFF AI Future Use
+## Kalveri AI Future Use
 
-OFF AI may later consume media events through structured APIs for:
+Kalveri AI may later consume media events through structured APIs for:
 
 - memory
 - recommendations
@@ -178,13 +184,13 @@ OFF AI may later consume media events through structured APIs for:
 - recap generation
 - achievement suggestions
 
-MediaHub should continue to own storage and safety. OFF AI should receive sanitized, scoped event payloads only.
+MediaHub should continue to own storage and safety. Kalveri AI should receive sanitized, scoped event payloads only.
 
 ## Non-Goals
 
 This sprint does not add:
 
-- OFF AI
+- Kalveri AI
 - recommendations
 - notification delivery
 - achievement UI

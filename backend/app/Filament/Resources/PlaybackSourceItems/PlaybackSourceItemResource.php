@@ -4,7 +4,9 @@ namespace App\Filament\Resources\PlaybackSourceItems;
 
 use App\Filament\Resources\PlaybackSourceItems\Pages\ManagePlaybackSourceItems;
 use App\Models\PlaybackSourceItem;
+use App\Services\KalveriAIMediaMatcherService;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -35,6 +37,7 @@ class PlaybackSourceItemResource extends Resource
                 TextColumn::make('kind')->badge()->sortable(),
                 TextColumn::make('status')->badge()->sortable(),
                 IconColumn::make('mediaLink.id')->label('Linked')->boolean(),
+                TextColumn::make('metadata.ai_match_suggestion.status')->label('AI match')->badge()->placeholder('none'),
                 TextColumn::make('stream_url_hash')->label('Stream hash')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('last_seen_at')->dateTime()->sortable(),
                 TextColumn::make('updated_at')->dateTime()->sortable(),
@@ -46,7 +49,12 @@ class PlaybackSourceItemResource extends Resource
                     'disabled' => 'Disabled',
                 ]),
             ])
-            ->recordActions([])
+            ->recordActions([
+                Action::make('askAI')
+                    ->label('Ask Kalveri AI')
+                    ->requiresConfirmation()
+                    ->action(fn (PlaybackSourceItem $record): array => app(KalveriAIMediaMatcherService::class)->matchProviderItem($record->user, $record)),
+            ])
             ->toolbarActions([]);
     }
 

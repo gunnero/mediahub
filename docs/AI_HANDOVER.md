@@ -33,11 +33,12 @@ Completed:
 - User-facing canonical library browsers for movies, shows, show seasons/episodes, watch history, and global search.
 - User-facing Player tab for attaching own provider/source records, adding manual source items, linking/unlinking source items to same-user canonical media, starting HTML5/HLS playback, saving progress, and marking playback complete.
 - Optional TMDB metadata foundation: private `.env` config, TMDB client service, additive metadata enrichment service, summary-only Artisan commands, public poster/backdrop use in dashboard/detail payloads, and safe Filament metadata inspection/refresh actions.
-- User-scoped media event system for meaningful activity timeline, future statistics, OFF AI memory, recommendations, notifications, auditability, and achievements. Events sanitize forbidden metadata keys and never store stream/provider URLs or credentials.
+- User-scoped media event system for meaningful activity timeline, future statistics, Kalveri AI memory, recommendations, notifications, auditability, and achievements. Events sanitize forbidden metadata keys and never store stream/provider URLs or credentials.
+- Kalveri AI Media Matcher v1: optional disabled-by-default Kalveri AI client, sanitized provider-item and metadata-review payloads, Player link-modal suggestions, metadata review commands, safe Filament actions, and `ai.match.*` media events. Suggestions require confirmation and never auto-link/apply.
 - Detail APIs for user-owned movies, shows, and episodes plus clear-rating, note update/delete, episode manual watch, and manual unwatch endpoints.
 - Feature tests for canonical watch invariants, ratings/notes, safe backup/restore, provider URL safety, and provider deletion preserving permanent history.
 - Filament admin panel at `/admin`.
-- Filament resources for Users, Invites, Alerts, Shows, Movies, Episode Watches, Movie Watches, Playback Sources, Playback Source Items, Media Events, Analytics Events, Audit Logs.
+- Filament resources for Users, Invites, Alerts, Shows, Movies, Episodes, Episode Watches, Movie Watches, Playback Sources, Playback Source Items, Media Events, Analytics Events, Audit Logs.
 - Feature tests for auth, invite-only flow, dashboard, import, analytics, audit, alert persistence, provider ownership, manual tracking, provider deletion behavior, and cross-user isolation.
 - Staging deployment to `https://ccc.razbudise.mk` on `web01` behind existing Apache Basic Auth.
 - First owner user created on staging and full private SQLite imported for that user.
@@ -281,6 +282,8 @@ Every media/library/player/annotation table is scoped by `user_id`.
 - `PlayerController@storeItem`: `POST /api/v1/player/sources/{source}/items`; creates a manual owned source item with encrypted stream URL.
 - `PlayerController@linkTargets`: `GET /api/v1/player/link-targets`; searches same-user canonical movies, shows, and episodes for manual linking.
 - `PlayerController@play`: `POST /api/v1/player/items/{item}/play`; starts playback for an owned provider item only.
+- `PlayerController@aiMatch`: `POST /api/v1/player/items/{item}/ai-match`; asks Kalveri AI/local matcher for a same-user source-item link suggestion without auto-linking.
+- `PlayerController@rejectAiMatch`: `POST /api/v1/player/items/{item}/ai-match/reject`; rejects the stored AI suggestion and records a safe event.
 - `PlayerController@link`: `POST /api/v1/player/items/{item}/link`; links an owned provider item to one same-user movie/show/episode, requiring explicit confirmation.
 - `PlayerController@unlink`: `DELETE /api/v1/player/items/{item}/link`; removes the current user's link for an owned provider item.
 - `PlayerController@updateSession`: `PATCH /api/v1/player/sessions/{session}`; updates owned playback progress and auto-records completed canonical watches.
@@ -294,6 +297,9 @@ Every media/library/player/annotation table is scoped by `user_id`.
 - `LibraryBrowserService`: builds paginated canonical movie, show, watch-history, and grouped search payloads for the React browser without exposing provider/source URLs.
 - `MediaDetailService`: builds safe per-item detail payloads for the React modal with public metadata fields and without stream URLs or provider secrets.
 - `TMDBClientService`: optional TMDB API client with disabled mode, timeouts, response caching, and no API key logging.
+- `KalveriAIClient`: optional Kalveri AI JSON client with disabled mode, timeout/failure fallback, and no API key logging.
+- `SafeAIMatchingPayloadService`: recursively strips forbidden fields before Kalveri AI requests and before storing suggestions.
+- `KalveriAIMediaMatcherService`: runs local provider-item matching, calls Kalveri AI only as fallback, stores suggestions, records `ai.match.*` events, and applies review matches only after explicit confirmation.
 - `MediaMetadataService`: enriches movies, shows, episodes, and user libraries additively with public metadata while preserving user/import-owned fields.
 - `MediaEventService`: records sanitized user-scoped activity events, strips forbidden metadata keys, exposes recent/timeline payload helpers, and fails softly so event recording never breaks the main user action.
 - `PlaybackLibraryService`: enforces user-owned provider/player access, media links, playback sessions, progress, manual tracking, and provider deletion rules.
@@ -348,6 +354,7 @@ Admin:
 - Movies, shows, and episodes have a safe user-facing detail modal. Movies and episodes can be manually marked watched/unwatched; unwatch removes manual rows only and keeps imported/provider history.
 - Provider-safe backup/restore exports canonical library data and permanent user activity while excluding stream URLs, provider credentials, and secrets.
 - Optional TMDB enrichment adds public canonical identity fields, poster/backdrop paths, genres, runtimes, release dates, overview, status, vote average, and external IDs without requiring TMDB for the app to run.
+- Optional Kalveri AI media matcher helps with ambiguous provider items and metadata review episodes. It is fallback-only, confirmation-first, and never a source of truth.
 - Media events record meaningful user-scoped activity from imports, manual watches, ratings, notes, provider actions, playback completion, metadata enrichment, backup, and restore. Timeline payloads are additive and sanitized.
 - Dashboard stats include manual watch count, auto-tracked watch count, linked/unlinked provider item counts, unsynced source-only progress count, ratings count, and notes count.
 - Analytics and audit log creation.
@@ -400,8 +407,9 @@ Do not change these without explicit product direction: private ignore rules, in
 ## 12. APIs And External Integrations
 
 TMDB: optional Laravel integration exists for public movie/show/episode metadata enrichment. It is disabled by default through `TMDB_ENABLED=false`, requires a private `TMDB_API_KEY` only in runtime `.env`, uses a configurable timeout and Laravel cache TTL, and fails safely without crashing the app.
+Kalveri AI: optional Laravel integration exists for media match suggestions. It is disabled by default through `KALVERI_AI_ENABLED=false`, requires private runtime `KALVERI_AI_BASE_URL` and `KALVERI_AI_API_KEY`, and fails safely without breaking provider linking or metadata review. Payloads are limited to titles, media type guesses, season/episode numbers, same-user candidate IDs/titles, years, and public TMDB IDs.
 TVDB/TVMaze: not implemented yet.
-External APIs: TMDB only. Python importer can cache remote artwork into ignored `public/assets/cache`.
+External APIs: TMDB and optional Kalveri AI. Python importer can cache remote artwork into ignored `public/assets/cache`.
 Caching: TMDB responses are cached through Laravel cache with `TMDB_CACHE_TTL`; no other external product cache strategy yet.
 Rate limiting: no custom rate limits yet; add before public launch if Basic Auth is removed.
 Media event API: internal authenticated `/api/v1/media-events` routes expose only the current user's sanitized timeline data and support simple filters for future activity views.
@@ -422,7 +430,7 @@ Screens:
 - Entertainment diary: compact recent activity grouped by Today, Yesterday, This week, and Earlier with user-readable source labels. Empty users get a quiet personal-memory empty state.
 - Shows view: top watched shows and followed shows with available episodes.
 - Movies view: movies to check out.
-- Player view: shows the attach-source empty state plus attach form for users without providers; emphasizes private user-owned sources; shows provider management, manual source-item creation, source item search, linked and needs-linking source groups, link/unlink modal, HTML5/HLS playback, progress controls, continue watching, and linked/unlinked counts.
+- Player view: shows the attach-source empty state plus attach form for users without providers; emphasizes private user-owned sources; shows provider management, manual source-item creation, source item search, linked and needs-linking source groups, link/unlink modal with Ask Kalveri AI suggestions, HTML5/HLS playback, progress controls, continue watching, and linked/unlinked counts.
 - Alerts view: wide alert list; opening an alert persists read state.
 - Stats view: stats strip and activity chart.
 - Lists/settings placeholders: preserved from original design.

@@ -1340,6 +1340,44 @@ img {
   line-height: 1.45;
 }
 
+.ai-match-panel,
+.ai-suggestion {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+}
+
+.ai-match-panel strong,
+.ai-suggestion strong {
+  color: var(--text);
+  display: block;
+}
+
+.ai-match-panel small,
+.ai-suggestion small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin-top: 0.25rem;
+}
+
+.ai-suggestion {
+  align-items: flex-start;
+  border-color: rgba(255, 205, 90, 0.18);
+  flex-direction: column;
+  margin-top: 0.85rem;
+}
+
+.ai-suggestion.ready {
+  background: rgba(255, 205, 90, 0.07);
+}
+
 .player-row-actions {
   display: flex;
   align-items: center;
