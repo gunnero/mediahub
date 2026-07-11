@@ -84,8 +84,21 @@ class WebV1ApiTest extends TestCase
         $user = $this->member();
         $show = Show::create(['user_id' => $user->id, 'title' => 'Upcoming Show', 'followed' => true]);
         Episode::create(['user_id' => $user->id, 'show_id' => $show->id, 'season_number' => 1, 'episode_number' => 2, 'title' => 'Next', 'air_date' => now()->addDays(2)]);
+        Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'season_number' => 1,
+            'episode_number' => 3,
+            'title' => 'Needs review',
+            'metadata_review_status' => 'pending',
+            'metadata_failure_count' => 1,
+        ]);
 
-        $this->actingAs($user)->getJson('/api/v1/alerts')->assertOk()->assertJsonFragment(['category' => 'upcoming']);
+        $response = $this->actingAs($user)->getJson('/api/v1/alerts')
+            ->assertOk()
+            ->assertJsonFragment(['category' => 'upcoming'])
+            ->assertJsonFragment(['subtitle' => '1 episode need manual review']);
+        $this->assertStringNotContainsString('2 episodes need manual review', $response->getContent());
         $this->actingAs($user)->patchJson('/api/v1/notification-preferences', ['new_episodes' => false, 'email_enabled' => false])
             ->assertOk()->assertJsonPath('preferences.newEpisodes', false)->assertJsonPath('preferences.emailEnabled', false);
     }

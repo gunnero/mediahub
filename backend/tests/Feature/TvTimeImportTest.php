@@ -52,12 +52,12 @@ class TvTimeImportTest extends TestCase
             ->assertJsonPath('stats.episodesWatched', 2)
             ->assertJsonPath('stats.moviesWatched', 1)
             ->assertJsonPath('stats.showsFollowed', 2)
-            ->assertJsonPath('stats.alertsUnread', 3)
+            ->assertJsonPath('stats.alertsUnread', 2)
             ->assertJsonPath('recentlyWatched.0.title', 'Frequency')
             ->assertJsonPath('followedNewEpisodes.0.title', 'Manifest')
             ->assertJsonPath('moviesToCheckOut.0.title', 'Arrival')
             ->assertJsonPath('topShows.0.title', 'Manifest')
-            ->assertJsonCount(4, 'alerts')
+            ->assertJsonCount(3, 'alerts')
             ->assertJsonCount(7, 'activity');
 
         $otherUser = User::factory()->create([

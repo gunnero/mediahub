@@ -151,7 +151,10 @@ class AlertService
                 });
         }
 
-        $reviewCount = Episode::forUser($user)->where('metadata_review_status', 'pending')->count();
+        $reviewCount = Episode::forUser($user)
+            ->where('metadata_review_status', 'pending')
+            ->where('metadata_failure_count', '>', 0)
+            ->count();
         if ($reviewCount > 0) {
             $created += $this->upsertGenerated($user, [
                 'dedupe_key' => 'metadata-review-required',
