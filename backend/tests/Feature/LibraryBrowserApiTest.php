@@ -140,6 +140,129 @@ class LibraryBrowserApiTest extends TestCase
         $this->assertSensitiveKeysHidden($detail->json());
     }
 
+    public function test_show_library_can_sort_recently_added_for_home(): void
+    {
+        $user = $this->member();
+        $older = Show::create(['user_id' => $user->id, 'title' => 'Older Show']);
+        $newer = Show::create(['user_id' => $user->id, 'title' => 'Newer Show']);
+        $older->forceFill(['updated_at' => now()->subDay()])->saveQuietly();
+        $newer->forceFill(['updated_at' => now()])->saveQuietly();
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/library/shows?sort=newest_added&per_page=2')
+            ->assertOk()
+            ->assertJsonPath('items.0.id', $newer->id)
+            ->assertJsonPath('items.1.id', $older->id);
+    }
+
+    public function test_continue_watching_finds_a_later_aired_candidate_without_detail_request_fan_out(): void
+    {
+        $user = $this->member();
+
+        foreach (range(1, 3) as $offset) {
+            $completed = Show::create([
+                'user_id' => $user->id,
+                'title' => 'Completed '.$offset,
+                'seen_episodes' => 1,
+                'aired_episodes' => 2,
+            ]);
+            $watched = Episode::create([
+                'user_id' => $user->id,
+                'show_id' => $completed->id,
+                'season_number' => 1,
+                'episode_number' => 1,
+                'air_date' => now()->subMonth(),
+            ]);
+            EpisodeWatch::create([
+                'user_id' => $user->id,
+                'show_id' => $completed->id,
+                'episode_id' => $watched->id,
+                'watched_at' => now()->subMinutes($offset),
+                'source' => 'manual',
+            ]);
+        }
+
+        $continuable = Show::create([
+            'user_id' => $user->id,
+            'title' => 'Continuable',
+            'seen_episodes' => 1,
+            'aired_episodes' => 2,
+        ]);
+        $watched = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $continuable->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'air_date' => now()->subMonth(),
+        ]);
+        $next = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $continuable->id,
+            'season_number' => 1,
+            'episode_number' => 2,
+            'title' => 'Next Memory',
+            'air_date' => now()->subDay(),
+        ]);
+        Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $continuable->id,
+            'season_number' => 1,
+            'episode_number' => 3,
+            'title' => 'Future Memory',
+            'air_date' => now()->addDay(),
+        ]);
+        Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $continuable->id,
+            'season_number' => 1,
+            'episode_number' => 4,
+            'title' => 'Unknown Air Date',
+        ]);
+        EpisodeWatch::create([
+            'user_id' => $user->id,
+            'show_id' => $continuable->id,
+            'episode_id' => $watched->id,
+            'watched_at' => now()->subDay(),
+            'source' => 'manual',
+        ]);
+
+        $other = $this->member('continue-other@example.test');
+        $otherShow = Show::create(['user_id' => $other->id, 'title' => 'Private Other Show']);
+        $otherWatched = Episode::create([
+            'user_id' => $other->id,
+            'show_id' => $otherShow->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'air_date' => now()->subMonth(),
+        ]);
+        Episode::create([
+            'user_id' => $other->id,
+            'show_id' => $otherShow->id,
+            'season_number' => 1,
+            'episode_number' => 2,
+            'title' => 'Private Other Episode',
+            'air_date' => now()->subDay(),
+        ]);
+        EpisodeWatch::create([
+            'user_id' => $other->id,
+            'show_id' => $otherShow->id,
+            'episode_id' => $otherWatched->id,
+            'watched_at' => now(),
+            'source' => 'manual',
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson('/api/v1/library/continue-watching?limit=3&candidate_limit=30')
+            ->assertOk()
+            ->assertJsonCount(1, 'items')
+            ->assertJsonPath('items.0.episodeId', $next->id)
+            ->assertJsonPath('items.0.showId', $continuable->id)
+            ->assertJsonPath('items.0.code', 'S01E02');
+
+        $this->assertSensitiveKeysHidden($response->json());
+        $this->assertStringNotContainsString('Private Other', $response->getContent());
+    }
+
     public function test_history_endpoint_paginates_and_searches_watched_movies_and_episodes(): void
     {
         $user = $this->member();

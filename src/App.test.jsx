@@ -120,14 +120,16 @@ function stubAppApi() {
 }
 
 describe("Settings page layout", () => {
-  it("removes the diary column entirely from Settings", async () => {
+  it("keeps the diary as a lazy Home section and removes it entirely from Settings", async () => {
     stubAppApi();
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Recently watched" })).toBeInTheDocument();
+    expect(await screen.findByText("Continue Watching")).toBeInTheDocument();
+    expect(container.querySelectorAll(".lazy-home-section").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(container.querySelector(".lazy-home-section")).not.toBeInTheDocument();
     expect(container.querySelector(".dashboard-grid")).toHaveClass("settings-dashboard-grid");
     expect(container.querySelector(".insight-column")).not.toBeInTheDocument();
     expect(container.querySelector(".hero-panel")).not.toBeInTheDocument();
@@ -140,7 +142,7 @@ describe("Settings page layout", () => {
     stubAppApi();
     const { container } = render(<App />);
 
-    await screen.findByRole("heading", { name: "Recently watched" });
+    await screen.findByText("Continue Watching");
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     await screen.findByRole("heading", { name: "Settings" });
 
@@ -151,33 +153,49 @@ describe("Settings page layout", () => {
   });
 });
 
-describe("V1 Home navigation and page-specific hero rules", () => {
-  it("opens History from Recently watched View all", async () => {
+describe("Home page navigation and page-specific hero rules", () => {
+  it("uses the existing app navigation from the new Home experience", async () => {
     stubAppApi();
     render(<App />);
-    const shelf = (await screen.findByRole("heading", { name: "Recently watched" })).closest("section");
-    fireEvent.click(within(shelf).getByRole("button", { name: "View all" }));
+    expect(await screen.findByRole("heading", { name: "Recently Added" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Upcoming" })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
     expect(await screen.findByRole("heading", { name: "Watch history" })).toBeInTheDocument();
     expect(screen.getByLabelText("History type")).toHaveValue("all");
+
+    fireEvent.click(screen.getByRole("button", { name: "Home" }));
+    await screen.findByRole("heading", { name: "Recently Added" });
+    fireEvent.click(screen.getByRole("navigation", { name: "Main navigation" }).querySelector('.nav-item[aria-label="Movies"]'));
+    expect(await screen.findByRole("heading", { name: "Movies" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Movie status")).toHaveValue("all");
   });
 
-  it("opens the watchlist sorted by newest added from Movies to check out", async () => {
+  it("routes Home quick actions without inventing client-side business data", async () => {
     stubAppApi();
     render(<App />);
-    const shelf = (await screen.findByRole("heading", { name: "Movies to check out" })).closest("section");
-    fireEvent.click(within(shelf).getByRole("button", { name: "View all" }));
+    await screen.findByRole("heading", { name: "Quick Actions" });
 
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.getByPlaceholderText("Search shows, movies, episodes...")).toHaveFocus();
+
+    let quickActions = screen.getByRole("heading", { name: "Quick Actions" }).closest("section");
+    fireEvent.click(within(quickActions).getByRole("button", { name: "Movies" }));
     expect(await screen.findByRole("heading", { name: "Movies" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Movie status")).toHaveValue("watchlist");
-    expect(screen.getByLabelText("Sort movies")).toHaveValue("newest_added");
+
+    fireEvent.click(screen.getByRole("button", { name: "Home" }));
+    await screen.findByRole("heading", { name: "Quick Actions" });
+    quickActions = screen.getByRole("heading", { name: "Quick Actions" }).closest("section");
+    fireEvent.click(within(quickActions).getByRole("button", { name: "Calendar" }));
+    expect(await screen.findByRole("heading", { name: "Release calendar" })).toBeInTheDocument();
   });
 
-  it("removes unrelated heroes and keeps the recent-show hero on Shows", async () => {
+  it("uses Continue Watching on Home, no hero on Discover, and a recent-show hero on Shows", async () => {
     stubAppApi();
     const { container } = render(<App />);
-    await screen.findByRole("heading", { name: "Recently watched" });
-    expect(container.querySelector(".hero-panel")).not.toBeInTheDocument();
+    await screen.findByText("Continue Watching");
+    expect(container.querySelectorAll(".home-continue-section")).toHaveLength(1);
+    expect(container.querySelectorAll(".hero-panel")).toHaveLength(0);
 
     fireEvent.click(container.querySelector('.nav-item[aria-label="Discover"]'));
     expect(await screen.findByRole("heading", { name: "Discover" })).toBeInTheDocument();
@@ -186,6 +204,8 @@ describe("V1 Home navigation and page-specific hero rules", () => {
     fireEvent.click(screen.getByRole("button", { name: "Shows" }));
     expect(await screen.findByRole("heading", { name: "Shows" })).toBeInTheDocument();
     expect(screen.getByText("Recent show")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue watching" })).toBeInTheDocument();
+    expect(container.querySelectorAll(".hero-panel")).toHaveLength(1);
   });
 });
 

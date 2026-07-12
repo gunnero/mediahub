@@ -19,6 +19,11 @@ class LibraryBrowserController extends Controller
         return response()->json($library->shows($request->user(), $request->query()));
     }
 
+    public function continueWatching(Request $request, LibraryBrowserService $library): JsonResponse
+    {
+        return response()->json($library->continueWatching($request->user(), $request->query()));
+    }
+
     public function history(Request $request, LibraryBrowserService $library): JsonResponse
     {
         return response()->json($library->history($request->user(), $request->query()));

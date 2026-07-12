@@ -74,6 +74,7 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::get('/media-events/recent', [MediaEventController::class, 'recent']);
         Route::get('/library/movies', [LibraryBrowserController::class, 'movies']);
         Route::get('/library/shows', [LibraryBrowserController::class, 'shows']);
+        Route::get('/library/continue-watching', [LibraryBrowserController::class, 'continueWatching']);
         Route::get('/library/history', [LibraryBrowserController::class, 'history']);
         Route::get('/library/search', [LibraryBrowserController::class, 'search']);
         Route::get('/library/movies/{movie}', [ManualLibraryController::class, 'showMovie']);

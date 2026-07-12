@@ -91,6 +91,79 @@ class LibraryBrowserService
 
     /**
      * @param  array<string, mixed>  $filters
+     * @return array{items: list<array<string, mixed>>}
+     */
+    public function continueWatching(User $user, array $filters = []): array
+    {
+        $limit = max(1, min(12, (int) ($filters['limit'] ?? 3)));
+        $candidateLimit = max($limit, min(60, (int) ($filters['candidate_limit'] ?? 30)));
+        $today = CarbonImmutable::now($user->timezone ?? config('app.timezone'))->toDateString();
+
+        $shows = Show::forUser($user)
+            ->whereExists(fn ($query) => $query
+                ->selectRaw('1')
+                ->from('episode_watches')
+                ->whereColumn('episode_watches.show_id', 'shows.id')
+                ->where('episode_watches.user_id', $user->id))
+            ->addSelect(['latest_watch_at' => EpisodeWatch::selectRaw('max(watched_at)')
+                ->whereColumn('episode_watches.show_id', 'shows.id')
+                ->where('episode_watches.user_id', $user->id)])
+            ->orderByDesc('latest_watch_at')
+            ->limit($candidateLimit)
+            ->get();
+
+        if ($shows->isEmpty()) {
+            return ['items' => []];
+        }
+
+        $episodes = Episode::forUser($user)
+            ->with('show')
+            ->whereIn('show_id', $shows->pluck('id'))
+            ->where('season_number', '>', 0)
+            ->where('episode_number', '>', 0)
+            ->whereNotNull('air_date')
+            ->whereDate('air_date', '<=', $today)
+            ->whereNotExists(fn ($query) => $query
+                ->selectRaw('1')
+                ->from('episode_watches')
+                ->whereColumn('episode_watches.episode_id', 'episodes.id')
+                ->where('episode_watches.user_id', $user->id))
+            ->orderBy('show_id')
+            ->orderBy('season_number')
+            ->orderBy('episode_number')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('show_id');
+
+        $items = $shows
+            ->map(function (Show $show) use ($episodes, $user): ?array {
+                /** @var Episode|null $episode */
+                $episode = $episodes->get($show->id)?->first();
+
+                if (! $episode) {
+                    return null;
+                }
+
+                return [
+                    ...$this->episodeCard($user, $episode),
+                    'showTitle' => $show->title,
+                    'code' => $this->episodeCode($episode),
+                    'latestWatchedAt' => $show->getAttribute('latest_watch_at'),
+                    'progress' => $show->aired_episodes > 0
+                        ? (int) min(100, round(($show->seen_episodes / max(1, $show->aired_episodes)) * 100))
+                        : 0,
+                ];
+            })
+            ->filter()
+            ->take($limit)
+            ->values()
+            ->all();
+
+        return ['items' => $items];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     public function history(User $user, array $filters): array
@@ -347,6 +420,7 @@ class LibraryBrowserService
             'title' => $query->orderBy('title'),
             'rating' => $query->orderByDesc($this->ratingSubquery($user, 'show'))->orderBy('title'),
             'progress' => $query->orderByRaw('CASE WHEN aired_episodes > 0 THEN CAST(seen_episodes AS REAL) / aired_episodes ELSE seen_episodes END DESC')->orderBy('title'),
+            'newest_added' => $query->orderByDesc('updated_at')->orderByDesc('id'),
             default => $query->orderByDesc(EpisodeWatch::selectRaw('max(watched_at)')
                 ->whereColumn('episode_watches.show_id', 'shows.id')
                 ->where('episode_watches.user_id', $user->id))

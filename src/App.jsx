@@ -15,9 +15,10 @@ import {
   TelevisionSimple,
   X,
 } from "@phosphor-icons/react";
-import { filterCollections, getUnreadCount } from "./lib/dashboard.js";
+import { getUnreadCount } from "./lib/dashboard.js";
 import { apiRequest, SessionExpiredError } from "./lib/api.js";
 import { PlayerSection, SettingsSection } from "./components/MediaHubSurfaces.jsx";
+import { HomeExperience } from "./components/HomeExperience.jsx";
 import {
   AlertsSection,
   CalendarSection,
@@ -416,45 +417,6 @@ function Hero({ item, onOpen }) {
             {item.secondaryActionLabel || "View details"}
           </button>
         </div>
-      </div>
-    </section>
-  );
-}
-
-function PosterCard({ item, onOpen, compact = false }) {
-  return (
-    <button
-      className={`poster-card ${compact ? "compact" : ""}`}
-      onClick={() => onOpen(item)}
-      title={item.title}
-      type="button"
-    >
-      <span className="poster-frame">
-        <PosterArtwork item={item} />
-        {item.badge ? <b className={`badge ${item.badge}`}>{item.badge}</b> : null}
-      </span>
-      <span className="poster-copy">
-        <strong>{item.title}</strong>
-        <small>{item.subtitle}</small>
-      </span>
-      <span className="mini-progress">
-        <i style={{ width: `${Math.min(100, item.progress || 0)}%` }} />
-      </span>
-    </button>
-  );
-}
-
-function Shelf({ title, items, onOpen, onViewAll, compact = false }) {
-  return (
-    <section className="shelf">
-      <div className="section-heading">
-        <h2>{title}</h2>
-        <button onClick={onViewAll} type="button">View all</button>
-      </div>
-      <div className={`poster-strip ${compact ? "compact" : ""}`}>
-        {items.length ? items.map((item) => (
-          <PosterCard compact={compact} item={item} key={item.id} onOpen={onOpen} />
-        )) : <div className="empty-strip">No matching titles</div>}
       </div>
     </section>
   );
@@ -1705,11 +1667,6 @@ export function App() {
     [dashboard.alerts, readAlerts],
   );
 
-  const collections = useMemo(
-    () => filterCollections(dashboard, query),
-    [dashboard, query],
-  );
-
   const unreadCount = getUnreadCount(alerts);
   const stats = { ...dashboard.stats, alertsUnread: unreadCount };
   const isEmptyLibrary =
@@ -1847,16 +1804,6 @@ export function App() {
   function handleHomeNavigation(action) {
     if (action === "search") {
       searchInputRef.current?.focus();
-      return;
-    }
-    if (action === "recent-history") {
-      setHistoryIntent((current) => ({ type: "all", key: current.key + 1 }));
-      setActiveSection("history");
-      return;
-    }
-    if (action === "watchlist-movies") {
-      setMovieIntent((current) => ({ status: "watchlist", sort: "newest_added", key: current.key + 1 }));
-      setActiveSection("movies");
       return;
     }
     if (action === "add-movie" || action === "add-show") {
@@ -2061,7 +2008,8 @@ export function App() {
 
   const socialSection = ["profile", "friends", "invite-friends"].includes(activeSection);
   const settingsSection = activeSection === "settings";
-  const singleColumnSection = true;
+  const homeSection = activeSection === "home";
+  const singleColumnSection = !homeSection;
 
   return (
     <div className="app-shell">
@@ -2083,7 +2031,7 @@ export function App() {
         {isEmptyLibrary ? (
           <div className="data-warning">Your library is empty.</div>
         ) : null}
-        <div className={`dashboard-grid${singleColumnSection ? " content-dashboard-grid" : ""}${socialSection ? " social-dashboard-grid" : ""}${settingsSection ? " settings-dashboard-grid" : ""}`}>
+        <div className={`dashboard-grid${singleColumnSection ? " content-dashboard-grid" : ""}${homeSection ? " home-dashboard-grid" : ""}${socialSection ? " social-dashboard-grid" : ""}${settingsSection ? " settings-dashboard-grid" : ""}`}>
           <div className="primary-column">
             {activeSection === "shows" && dashboard.recentShow ? <Hero item={dashboard.recentShow} onOpen={openItem} /> : null}
             {query.trim().length >= 2 && activeSection === "home" ? (
@@ -2096,21 +2044,14 @@ export function App() {
               />
             ) : null}
             {activeSection === "home" ? (
-              <>
-                <Shelf
-                  title="Recently watched"
-                  items={collections.recentlyWatched}
-                  onOpen={openItem}
-                  onViewAll={() => handleHomeNavigation("recent-history")}
-                />
-                <Shelf
-                  compact
-                  title="Movies to check out"
-                  items={collections.moviesToCheckOut}
-                  onOpen={openItem}
-                  onViewAll={() => handleHomeNavigation("watchlist-movies")}
-                />
-              </>
+              <HomeExperience
+                apiClient={apiRequest}
+                dashboard={dashboard}
+                onNavigate={handleHomeNavigation}
+                onOpen={openItem}
+                onRefreshDashboard={refreshDashboard}
+                onSessionExpired={expireSession}
+              />
             ) : (
               <FocusSection
                 activeSection={activeSection}
