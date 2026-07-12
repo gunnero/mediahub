@@ -58,6 +58,39 @@ class TMDBClientService
     /**
      * @return array<string, mixed>|null
      */
+    public function browse(string $category, string $type, int $page = 1): ?array
+    {
+        $paths = [
+            'movie' => [
+                'trending' => '/trending/movie/week',
+                'popular' => '/movie/popular',
+                'now_playing' => '/movie/now_playing',
+                'upcoming' => '/movie/upcoming',
+                'top_rated' => '/movie/top_rated',
+            ],
+            'show' => [
+                'trending' => '/trending/tv/week',
+                'popular' => '/tv/popular',
+                'now_playing' => '/tv/airing_today',
+                'upcoming' => '/tv/on_the_air',
+                'top_rated' => '/tv/top_rated',
+            ],
+        ];
+        $path = $paths[$type][$category] ?? null;
+
+        if (! $path) {
+            return null;
+        }
+
+        return $this->get($path, [
+            'language' => 'en-US',
+            'page' => max(1, $page),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
     public function getMovie(int $tmdbId): ?array
     {
         return $this->get('/movie/'.$tmdbId, [

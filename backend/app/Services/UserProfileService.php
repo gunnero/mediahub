@@ -21,6 +21,7 @@ class UserProfileService
 
     public function __construct(
         private readonly MediaLibraryService $mediaLibrary,
+        private readonly UserAvatarService $avatars,
     ) {}
 
     public function ensureProfile(User $user): User
@@ -51,8 +52,12 @@ class UserProfileService
     {
         $this->ensureProfile($user);
         $updates = collect($data)->only([
-            'username', 'display_name', 'bio', 'profile_slug', 'country', 'favorite_genres',
+            'username', 'display_name', 'full_name', 'bio', 'profile_slug', 'country', 'favorite_genres',
         ])->all();
+
+        if (array_key_exists('country', $updates)) {
+            $updates['country'] = filled($updates['country']) ? Str::upper((string) $updates['country']) : null;
+        }
 
         if (array_key_exists('favorite_genres', $updates)) {
             $updates['favorite_genres'] = collect($updates['favorite_genres'] ?? [])
@@ -87,6 +92,7 @@ class UserProfileService
     {
         $user->fill(collect($data)->only([
             'public_profile_enabled',
+            'show_avatar',
             'profile_visibility',
             'show_statistics',
             'show_favorite_movies',
@@ -110,9 +116,11 @@ class UserProfileService
             'profile' => [
                 'username' => $user->username,
                 'displayName' => $user->display_name,
+                'fullName' => $user->full_name,
                 'email' => $user->email,
                 'bio' => $user->bio,
                 'avatar' => $user->avatar_path,
+                'avatarVariants' => $this->avatars->urls($user->avatar_variants),
                 'slug' => $user->profile_slug,
                 'country' => $user->country,
                 'favoriteGenres' => $user->favorite_genres ?? [],
@@ -254,7 +262,7 @@ class UserProfileService
             'slug' => (string) $user->profile_slug,
             'username' => (string) $user->username,
             'displayName' => (string) ($user->display_name ?: $user->username),
-            'avatar' => $user->avatar_path,
+            'avatar' => $user->show_avatar ? $user->avatar_path : null,
         ];
     }
 
@@ -297,6 +305,7 @@ class UserProfileService
     {
         return [
             'publicProfileEnabled' => $user->public_profile_enabled,
+            'showAvatar' => $user->show_avatar,
             'profileVisibility' => $user->profile_visibility->value,
             'showStatistics' => $user->show_statistics,
             'showFavoriteMovies' => $user->show_favorite_movies,

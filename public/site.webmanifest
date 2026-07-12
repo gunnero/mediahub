@@ -1,0 +1,16 @@
+{
+  "name": "MediaHub",
+  "short_name": "MediaHub",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0e10",
+  "theme_color": "#0c0e10",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

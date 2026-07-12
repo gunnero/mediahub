@@ -591,18 +591,14 @@ class PlaybackLibraryService
             throw new ModelNotFoundException;
         }
 
-        $watch = MovieWatch::firstOrNew([
+        $watch = MovieWatch::create([
             'user_id' => $user->id,
             'movie_id' => $movie->id,
-            'source' => 'manual',
-        ]);
-
-        $watch->forceFill([
             'watched_at' => $data['watched_at'] ?? now(),
             'runtime' => $data['runtime'] ?? $movie->runtime,
             'watch_count' => 1,
             'source' => 'manual',
-        ])->save();
+        ]);
 
         $this->mediaEvents->record($user, MediaEventType::MovieWatched, $movie, [
             'title' => $movie->title,
@@ -625,18 +621,14 @@ class PlaybackLibraryService
             throw new ModelNotFoundException;
         }
 
-        $watch = EpisodeWatch::firstOrNew([
+        $watch = EpisodeWatch::create([
             'user_id' => $user->id,
-            'episode_id' => $episode->id,
-            'source' => 'manual',
-        ]);
-
-        $watch->forceFill([
             'show_id' => $episode->show_id,
+            'episode_id' => $episode->id,
             'watched_at' => $data['watched_at'] ?? now(),
             'runtime' => $data['runtime'] ?? $episode->runtime,
             'source' => 'manual',
-        ])->save();
+        ]);
 
         $this->mediaEvents->record($user, MediaEventType::EpisodeWatched, $episode, [
             'title' => $episode->title ?: $episode->show?->title,
@@ -655,12 +647,15 @@ class PlaybackLibraryService
             throw new ModelNotFoundException;
         }
 
-        $deleted = MovieWatch::forUser($user)
+        $watch = MovieWatch::forUser($user)
             ->where('movie_id', $movie->id)
             ->where('source', 'manual')
-            ->delete();
+            ->latest('watched_at')
+            ->latest('id')
+            ->first();
 
-        if ($deleted > 0) {
+        if ($watch) {
+            $watch->delete();
             $this->mediaEvents->record($user, MediaEventType::MovieUnwatched, $movie, [
                 'title' => $movie->title,
                 'media_type' => 'movie',
@@ -676,12 +671,15 @@ class PlaybackLibraryService
             throw new ModelNotFoundException;
         }
 
-        $deleted = EpisodeWatch::forUser($user)
+        $watch = EpisodeWatch::forUser($user)
             ->where('episode_id', $episode->id)
             ->where('source', 'manual')
-            ->delete();
+            ->latest('watched_at')
+            ->latest('id')
+            ->first();
 
-        if ($deleted > 0) {
+        if ($watch) {
+            $watch->delete();
             $this->mediaEvents->record($user, MediaEventType::EpisodeUnwatched, $episode, [
                 'title' => $episode->title ?: $episode->show?->title,
                 'media_type' => 'episode',
@@ -700,13 +698,19 @@ class PlaybackLibraryService
             ->orderBy('episode_number')
             ->get();
 
-        DB::transaction(function () use ($episodes, $user): void {
+        $watched = 0;
+        DB::transaction(function () use ($episodes, $user, &$watched): void {
             foreach ($episodes as $episode) {
+                if (EpisodeWatch::forUser($user)->where('episode_id', $episode->id)->exists()) {
+                    continue;
+                }
+
                 $this->manuallyTrackEpisode($user, $episode, []);
+                $watched++;
             }
         });
 
-        return ['episodes' => $episodes->count(), 'watched' => $episodes->count()];
+        return ['episodes' => $episodes->count(), 'watched' => $watched];
     }
 
     /** @return array{episodes:int,unwatched:int} */

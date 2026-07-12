@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Camera,
   CaretDown,
   Check,
   Copy,
@@ -11,11 +12,14 @@ import {
   UserCircle,
   UserPlus,
   UsersThree,
+  X,
 } from "@phosphor-icons/react";
-import { apiRequest, SessionExpiredError } from "../lib/api.js";
+import { apiRequest, apiUpload, SessionExpiredError } from "../lib/api.js";
+import { countries } from "../data/countries.js";
 
 const privacyDefaults = {
   publicProfileEnabled: false,
+  showAvatar: false,
   profileVisibility: "private",
   showStatistics: false,
   showFavoriteMovies: false,
@@ -144,11 +148,16 @@ export function AccountMenu({ onLogout, onNavigate, profile = {} }) {
   </div>;
 }
 
-export function OwnProfileSection({ apiClient = apiRequest, editInitially = false, onOpenPrivacy, onSessionExpired }) {
+export function OwnProfileSection({ apiClient = apiRequest, editInitially = false, onOpenPrivacy, onSessionExpired, uploadClient = apiUpload }) {
   const [state, setState] = useState({ loading: true, error: "", profile: null, privacy: null, options: null });
   const [editing, setEditing] = useState(editInitially);
-  const [form, setForm] = useState({ username: "", display_name: "", profile_slug: "", bio: "", country: "", favorite_genres: "", favorite_movie_ids: [], favorite_show_ids: [], featured_list_ids: [] });
+  const [form, setForm] = useState({ username: "", display_name: "", full_name: "", profile_slug: "", bio: "", country: "", public_profile_enabled: false, profile_visibility: "private", show_avatar: false, favorite_genres: "", favorite_movie_ids: [], favorite_show_ids: [], featured_list_ids: [] });
   const [status, setStatus] = useState("");
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState("");
+  const [avatarProgress, setAvatarProgress] = useState(0);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
 
   async function load() {
     setState((current) => ({ ...current, loading: true, error: "" }));
@@ -162,9 +171,13 @@ export function OwnProfileSection({ apiClient = apiRequest, editInitially = fals
       setForm({
         username: profile.username || "",
         display_name: profile.displayName || "",
+        full_name: profile.fullName || "",
         profile_slug: profile.slug || "",
         bio: profile.bio || "",
         country: profile.country || "",
+        public_profile_enabled: Boolean(payload.privacy?.publicProfileEnabled),
+        profile_visibility: payload.privacy?.profileVisibility || "private",
+        show_avatar: Boolean(payload.privacy?.showAvatar),
         favorite_genres: (profile.favoriteGenres || []).join(", "),
         favorite_movie_ids: profile.favoriteMovieIds || [],
         favorite_show_ids: profile.favoriteShowIds || [],
@@ -178,6 +191,9 @@ export function OwnProfileSection({ apiClient = apiRequest, editInitially = fals
 
   useEffect(() => { load(); }, []);
   useEffect(() => setEditing(editInitially), [editInitially]);
+  useEffect(() => () => {
+    if (avatarPreview.startsWith("blob:")) URL.revokeObjectURL(avatarPreview);
+  }, [avatarPreview]);
 
   function toggleSelection(key, id) {
     setForm((current) => ({ ...current, [key]: current[key].includes(id) ? current[key].filter((value) => value !== id) : [...current[key], id] }));
@@ -187,12 +203,17 @@ export function OwnProfileSection({ apiClient = apiRequest, editInitially = fals
     event.preventDefault();
     setStatus("Saving profile...");
     try {
+      const { profile_visibility, public_profile_enabled, show_avatar, ...identity } = form;
       await apiClient("/api/v1/profile", {
         method: "PATCH",
         body: {
-          ...form,
+          ...identity,
           favorite_genres: form.favorite_genres.split(",").map((value) => value.trim()).filter(Boolean),
         },
+      });
+      await apiClient("/api/v1/profile/privacy", {
+        method: "PATCH",
+        body: { profile_visibility, public_profile_enabled, show_avatar },
       });
       setStatus("Profile saved.");
       setEditing(false);
@@ -200,6 +221,61 @@ export function OwnProfileSection({ apiClient = apiRequest, editInitially = fals
     } catch (error) {
       setStatus("");
       setState((current) => ({ ...current, error: loadFailure(error, "Profile could not be saved.") }));
+    }
+  }
+
+  function chooseAvatar(file) {
+    setAvatarError("");
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setAvatarError("Choose a JPG, PNG, or WEBP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError("Avatar images must be 5 MB or smaller.");
+      return;
+    }
+    if (avatarPreview.startsWith("blob:")) URL.revokeObjectURL(avatarPreview);
+    setAvatarFile(file);
+    setAvatarPreview(typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "");
+    setAvatarProgress(0);
+  }
+
+  async function uploadAvatar() {
+    if (!avatarFile) return;
+    setAvatarBusy(true);
+    setAvatarError("");
+    try {
+      const body = new FormData();
+      body.append("avatar", avatarFile);
+      await uploadClient("/api/v1/profile/avatar", body, setAvatarProgress);
+      setAvatarFile(null);
+      setAvatarPreview("");
+      setStatus("Avatar saved.");
+      await load();
+    } catch (error) {
+      if (error instanceof SessionExpiredError) onSessionExpired?.();
+      else setAvatarError(error.message || "Avatar could not be uploaded.");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function removeAvatar() {
+    setAvatarBusy(true);
+    setAvatarError("");
+    try {
+      await apiClient("/api/v1/profile/avatar", { method: "DELETE" });
+      setAvatarFile(null);
+      setAvatarPreview("");
+      setAvatarProgress(0);
+      setStatus("Default avatar restored.");
+      await load();
+    } catch (error) {
+      if (error instanceof SessionExpiredError) onSessionExpired?.();
+      else setAvatarError(error.message || "Avatar could not be removed.");
+    } finally {
+      setAvatarBusy(false);
     }
   }
 
@@ -220,8 +296,9 @@ export function OwnProfileSection({ apiClient = apiRequest, editInitially = fals
   return <section className="web-v1-screen social-screen profile-screen">
     <header className="screen-intro"><span className="eyebrow">Your identity</span><h2>Profile</h2><p>Choose the identity people can see. Your email and private media data are never public.</p></header>
     {state.error ? <div className="detail-error">{state.error}</div> : null}{status ? <div className="settings-status">{status}</div> : null}
-    {!editing ? <div className="profile-overview"><Avatar profile={profile} /><div><h3>{profile.displayName}</h3><span>@{profile.username}</span><p>{profile.bio || "Add a short bio when you are ready."}</p><div className="profile-actions"><button className="primary-action" onClick={() => setEditing(true)} type="button"><PencilSimple /> Edit profile</button><a className="secondary-action" href={`/u/${profile.slug}?preview=public`}>View profile as public</a>{state.privacy?.publicProfileEnabled && state.privacy?.allowProfileSharing ? <button className="text-action" onClick={copyProfileLink} type="button"><Copy /> Copy profile link</button> : null}<button className="text-action" onClick={onOpenPrivacy} type="button"><ShieldCheck /> Privacy</button></div></div></div> : <form className="profile-form" onSubmit={save}>
-      <div className="profile-form-grid"><label><span>Display name</span><input aria-label="Display name" maxLength="80" onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))} value={form.display_name} /></label><label><span>Username</span><input aria-label="Username" maxLength="40" onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} value={form.username} /></label><label><span>Profile address</span><input aria-label="Profile address" maxLength="60" onChange={(event) => setForm((current) => ({ ...current, profile_slug: event.target.value.toLowerCase() }))} value={form.profile_slug} /></label><label><span>Country</span><input aria-label="Country" maxLength="80" onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))} value={form.country} /></label></div>
+    {!editing ? <div className="profile-overview"><Avatar profile={profile} /><div><h3>{profile.displayName}</h3><span>@{profile.username}</span>{profile.fullName ? <small>{profile.fullName}</small> : null}<p>{profile.bio || "Add a short bio when you are ready."}</p><div className="profile-actions"><button className="primary-action" onClick={() => setEditing(true)} type="button"><PencilSimple /> Edit profile</button><a className="secondary-action" href={`/u/${profile.slug}?preview=public`}>View profile as public</a>{state.privacy?.publicProfileEnabled && state.privacy?.allowProfileSharing ? <button className="text-action" onClick={copyProfileLink} type="button"><Copy /> Copy profile link</button> : null}<button className="text-action" onClick={onOpenPrivacy} type="button"><ShieldCheck /> Privacy</button></div></div></div> : <form className="profile-form" onSubmit={save}>
+      <AvatarEditor busy={avatarBusy} current={profile.avatar} error={avatarError} file={avatarFile} onChoose={chooseAvatar} onRemove={removeAvatar} onUpload={uploadAvatar} preview={avatarPreview} progress={avatarProgress} />
+      <div className="profile-form-grid"><label><span>Display name</span><input aria-label="Display name" maxLength="80" onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))} value={form.display_name} /></label><label><span>Username</span><input aria-label="Username" maxLength="40" onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} value={form.username} /></label><label><span>Full name</span><input aria-label="Full name" maxLength="120" onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} value={form.full_name} /></label><label><span>Email</span><input aria-label="Email" readOnly type="email" value={profile.email || ""} /></label><label><span>Profile address</span><input aria-label="Profile address" maxLength="60" onChange={(event) => setForm((current) => ({ ...current, profile_slug: event.target.value.toLowerCase() }))} value={form.profile_slug} /></label><CountryPicker onChange={(country) => setForm((current) => ({ ...current, country }))} value={form.country} /><label><span>Profile visibility</span><select aria-label="Profile visibility" onChange={(event) => setForm((current) => ({ ...current, profile_visibility: event.target.value }))} value={form.profile_visibility}><option value="private">Private</option><option value="friends">Friends only</option><option value="public">Public</option></select></label><label className="profile-checkbox"><span>Public profile</span><input checked={form.public_profile_enabled} onChange={(event) => setForm((current) => ({ ...current, public_profile_enabled: event.target.checked }))} type="checkbox" /></label><label className="profile-checkbox"><span>Allow avatar on visible profile</span><input checked={form.show_avatar} onChange={(event) => setForm((current) => ({ ...current, show_avatar: event.target.checked }))} type="checkbox" /></label></div>
       <label><span>Bio</span><textarea aria-label="Bio" maxLength="500" onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))} value={form.bio} /></label>
       <label><span>Favorite genres</span><input aria-label="Favorite genres" onChange={(event) => setForm((current) => ({ ...current, favorite_genres: event.target.value }))} placeholder="Drama, Comedy, Science Fiction" value={form.favorite_genres} /></label>
       <FavoritePicker label="Favorite movies" items={state.options?.movies || []} selected={form.favorite_movie_ids} onToggle={(id) => toggleSelection("favorite_movie_ids", id)} />
@@ -229,6 +306,35 @@ export function OwnProfileSection({ apiClient = apiRequest, editInitially = fals
       <FavoritePicker label="Featured public lists" items={state.options?.publicLists || []} selected={form.featured_list_ids} onToggle={(id) => toggleSelection("featured_list_ids", id)} />
       <div className="modal-actions"><button className="primary-action" type="submit">Save profile</button><button className="text-action" onClick={() => setEditing(false)} type="button">Cancel</button></div>
     </form>}
+  </section>;
+}
+
+function CountryPicker({ onChange, value }) {
+  const selected = countries.find((country) => country.code === value);
+  const [query, setQuery] = useState(selected ? `${selected.name} (${selected.code})` : "");
+
+  useEffect(() => {
+    const current = countries.find((country) => country.code === value);
+    setQuery(current ? `${current.name} (${current.code})` : "");
+  }, [value]);
+
+  function change(event) {
+    const next = event.target.value;
+    const match = countries.find((country) => next === `${country.name} (${country.code})` || next.toUpperCase() === country.code);
+    setQuery(next);
+    if (match) onChange(match.code);
+    else if (next === "") onChange("");
+  }
+
+  return <label><span>Country</span><input aria-label="Country" autoComplete="country-name" list="mediahub-countries" onBlur={() => { const current = countries.find((country) => country.code === value); setQuery(current ? `${current.name} (${current.code})` : ""); }} onChange={change} placeholder="Search countries" value={query} /><datalist id="mediahub-countries">{countries.map((country) => <option key={country.code} value={`${country.name} (${country.code})`} />)}</datalist></label>;
+}
+
+function AvatarEditor({ busy, current, error, file, onChoose, onRemove, onUpload, preview, progress }) {
+  function receive(files) { onChoose(files?.[0] || null); }
+
+  return <section className="avatar-editor">
+    <div className="avatar-preview"><Avatar profile={{ avatar: preview || current }} /></div>
+    <div className="avatar-editor-copy"><span className="eyebrow">Profile avatar</span><h3>Choose a square portrait</h3><p>JPG, PNG, or WEBP up to 5 MB. MediaHub crops and removes embedded metadata automatically.</p><label className="avatar-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); receive(event.dataTransfer.files); }}><Camera size={22} /><span>{file ? file.name : "Drop an image here or click to upload"}</span><input accept="image/jpeg,image/png,image/webp" aria-label="Choose avatar" disabled={busy} onChange={(event) => receive(event.target.files)} type="file" /></label>{error ? <div className="detail-error">{error}</div> : null}{busy || progress > 0 ? <div className="avatar-progress"><progress max="100" value={progress} /><span>{busy ? `${progress}%` : "Ready"}</span></div> : null}<div className="modal-actions">{file ? <button className="secondary-action" disabled={busy} onClick={onUpload} type="button">Upload avatar</button> : null}{current ? <button className="text-action danger" disabled={busy} onClick={onRemove} type="button"><X /> Remove avatar</button> : <span className="avatar-default-note">Default avatar is active</span>}</div></div>
   </section>;
 }
 
@@ -262,6 +368,7 @@ export function PrivacyControls({ apiClient = apiRequest, onSessionExpired }) {
     try {
       await apiClient("/api/v1/profile/privacy", { method: "PATCH", body: {
         public_profile_enabled: privacy.publicProfileEnabled,
+        show_avatar: privacy.showAvatar,
         profile_visibility: privacy.profileVisibility,
         show_statistics: privacy.showStatistics,
         show_favorite_movies: privacy.showFavoriteMovies,
@@ -279,6 +386,7 @@ export function PrivacyControls({ apiClient = apiRequest, onSessionExpired }) {
   if (state.loading) return <div className="empty-strip compact">Loading privacy...</div>;
   const toggles = [
     ["publicProfileEnabled", "Enable public profile"],
+    ["showAvatar", "Show avatar when profile visibility allows"],
     ["showStatistics", "Show statistics"],
     ["showFavoriteMovies", "Show favorite movies"],
     ["showFavoriteShows", "Show favorite shows"],

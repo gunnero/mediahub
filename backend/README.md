@@ -73,8 +73,13 @@ Current routes:
 - `PATCH /api/v1/library/notes/{note}`
 - `DELETE /api/v1/library/notes/{note}`
 - `GET /api/v1/discover/search`
+- `GET /api/v1/discover/browse`
 - `POST /api/v1/discover/movies/{tmdbId}/add`
 - `POST /api/v1/discover/shows/{tmdbId}/add`
+- `GET|PATCH /api/v1/profile`
+- `GET /api/v1/profile/options`
+- `POST|DELETE /api/v1/profile/avatar`
+- `PATCH /api/v1/profile/privacy`
 - `GET /api/v1/providers`
 - `POST /api/v1/providers/test`
 - `POST /api/v1/providers`
@@ -158,7 +163,17 @@ The frontend Movies, Shows, History, global search, and show season browser use 
 
 ## Discovery And Catalog Import
 
-Discovery is separate from canonical library search. `GET /api/v1/discover/search` queries optional TMDB metadata through the backend, while the add routes create/reuse canonical same-user records and can set watchlist/watched state. Duplicate TMDB IDs do not create duplicate media. When TMDB is disabled or unavailable, discovery returns a safe empty status and the existing library remains fully usable.
+Discovery is separate from canonical library search. `GET /api/v1/discover/search` queries optional TMDB metadata through the backend, while `GET /api/v1/discover/browse` returns safe Trending, Popular, Now Playing, Upcoming, and Top Rated shelves. The add routes create/reuse canonical same-user records and can set watchlist/watched state. Duplicate TMDB IDs do not create duplicate media. When TMDB is disabled or unavailable, discovery returns a safe empty status and the existing library remains fully usable.
+
+## Repeat Watches
+
+Movie and episode watch rows are events, not booleans. A manual watch request always appends a new same-user watch row, including when the item was already watched. Manual unwatch removes only the most recent manual row. Player completion continues to use its existing session-aware deduplication rules, and bulk season completion skips previously watched episodes. Detail/history/statistics payloads expose repeat counts without collapsing or overwriting earlier dates.
+
+## Profile Avatars
+
+`POST /api/v1/profile/avatar` accepts one authenticated multipart `avatar` upload. Validation limits files to 5 MB and decoded JPEG, PNG, or WebP images. `UserAvatarService` rejects oversized pixel dimensions, center-crops and re-encodes the source to strip EXIF/embedded metadata, and creates 512, 128, 64, and 32 pixel JPEG variants with random names on the public disk. Replacement and deletion are restricted to the current user's avatar prefix. `DELETE /api/v1/profile/avatar` removes the variants and restores the generated default avatar behavior.
+
+The public profile allowlist includes an avatar only when the viewer may see the profile and `show_avatar` is enabled. Email, upload paths, storage metadata, and avatar variant maps are never returned by public profile endpoints.
 
 Provider configuration is handled by `ProviderService`; imported catalog refresh is handled by `ProviderCatalogService` and `ProviderConnectionService`. Supported first-pass adapters are Xtream-compatible API, M3U, XMLTV, and manual source. Type-specific connection details are required at creation, stored in encrypted `playback_sources.settings`, and represented in API summaries only as configuration booleans.
 
@@ -320,7 +335,9 @@ The feature tests cover status readiness, invite acceptance, login/logout, `/me`
 
 ## Deployment Checklist
 
-Do not deploy private files. The staging login page is public, private routes use Laravel authentication, and Apache must retain the `noindex` header without a `WWW-Authenticate` challenge. After code is reviewed on the server, configure `.env`, run migrations with `php artisan migrate --force`, run `php artisan filament:assets` if Composer did not publish Filament assets, build frontend assets from the repo root, then sync only React `dist/index.html` and `dist/assets/*` into `backend/public`. Preserve Laravel `index.php`, `.htaccess`, `robots.txt`, favicon, and Laravel/Filament/Livewire assets. Smoke test `/api/v1/status`, unauthenticated `/api/v1/me`, login, `/api/v1/dashboard`, alert read actions, and `/admin`.
+Do not deploy private files. The staging login page is public, private routes use Laravel authentication, and Apache must retain the `noindex` header without a `WWW-Authenticate` challenge. After code is reviewed on the server, configure `.env`, run migrations with `php artisan migrate --force`, run `php artisan filament:assets` if Composer did not publish Filament assets, build frontend assets from the repo root, then sync React `dist/index.html`, `dist/assets/*`, and only the allowlisted browser identity files into `backend/public`. Preserve Laravel `index.php`, `.htaccess`, `robots.txt`, `favicon.ico`, and Laravel/Filament/Livewire assets. Smoke test `/api/v1/status`, unauthenticated `/api/v1/me`, login, `/api/v1/dashboard`, alert read actions, and `/admin`.
+
+The future `mediahub.razbudise.mk` cutover is documentation-only until separately approved. See `../docs/infrastructure/MEDIAHUB_DOMAIN_MIGRATION.md`; do not redirect or remove `ccc.razbudise.mk` during a normal application deploy.
 
 ## Staging Deployment 2026-07-05
 

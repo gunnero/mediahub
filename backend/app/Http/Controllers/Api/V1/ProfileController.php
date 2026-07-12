@@ -6,6 +6,7 @@ use App\Enums\ProfileVisibility;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\UserProfileService;
+use App\Support\CountryCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -31,6 +32,7 @@ class ProfileController extends Controller
                 Rule::unique('users', 'username')->ignore($user->id),
             ],
             'display_name' => ['sometimes', 'nullable', 'string', 'max:80'],
+            'full_name' => ['sometimes', 'nullable', 'string', 'max:120'],
             'bio' => ['sometimes', 'nullable', 'string', 'max:500'],
             'profile_slug' => [
                 'sometimes', 'string', 'min:3', 'max:60', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/',
@@ -41,7 +43,7 @@ class ProfileController extends Controller
                     }
                 },
             ],
-            'country' => ['sometimes', 'nullable', 'string', 'max:80'],
+            'country' => ['sometimes', 'nullable', 'string', 'size:2', Rule::in(CountryCatalog::codes())],
             'favorite_genres' => ['sometimes', 'array', 'max:12'],
             'favorite_genres.*' => ['string', 'max:40'],
             'favorite_movie_ids' => ['sometimes', 'array', 'max:20'],
@@ -61,6 +63,7 @@ class ProfileController extends Controller
     {
         $data = $request->validate([
             'public_profile_enabled' => ['sometimes', 'boolean'],
+            'show_avatar' => ['sometimes', 'boolean'],
             'profile_visibility' => ['sometimes', Rule::enum(ProfileVisibility::class)],
             'show_statistics' => ['sometimes', 'boolean'],
             'show_favorite_movies' => ['sometimes', 'boolean'],

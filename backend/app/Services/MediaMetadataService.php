@@ -479,7 +479,7 @@ class MediaMetadataService
             'runtime' => $this->runtimeValue($show->runtime, $this->firstRuntime($details['episode_run_time'] ?? [])),
             'status' => $this->stringOrNull($details['status'] ?? null),
             'vote_average' => $this->floatOrNull($details['vote_average'] ?? null),
-            'metadata' => $this->metadata($show->metadata ?? [], $match, 'show'),
+            'metadata' => $this->showMetadata($show->metadata ?? [], $match, $details),
             'metadata_refreshed_at' => now(),
         ])->save();
     }
@@ -563,6 +563,35 @@ class MediaMetadataService
                 'refreshed_at' => now()->toIso8601String(),
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $existing
+     * @param  array<string, mixed>|null  $match
+     * @param  array<string, mixed>  $details
+     * @return array<string, mixed>
+     */
+    private function showMetadata(array $existing, ?array $match, array $details): array
+    {
+        $metadata = $this->metadata($existing, $match, 'show');
+        $nextEpisode = is_array($details['next_episode_to_air'] ?? null)
+            ? $details['next_episode_to_air']
+            : null;
+
+        $metadata['release'] = [
+            'next_episode' => $nextEpisode ? [
+                'tmdb_id' => $this->intOrNull($nextEpisode['id'] ?? null),
+                'season_number' => $this->intOrNull($nextEpisode['season_number'] ?? null),
+                'episode_number' => $this->intOrNull($nextEpisode['episode_number'] ?? null),
+                'name' => $this->stringOrNull($nextEpisode['name'] ?? null),
+                'air_date' => $this->stringOrNull($nextEpisode['air_date'] ?? null),
+                'overview' => $this->stringOrNull($nextEpisode['overview'] ?? null),
+                'runtime' => $this->intOrNull($nextEpisode['runtime'] ?? null),
+                'still_path' => $this->stringOrNull($nextEpisode['still_path'] ?? null),
+            ] : null,
+        ];
+
+        return $metadata;
     }
 
     /**

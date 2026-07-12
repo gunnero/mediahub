@@ -53,6 +53,7 @@ class DeploymentToolingTest(unittest.TestCase):
             'cp "$SERVER_APP_DIR/dist/index.html" "$FRONTEND_PUBLIC_DIR/index.html"',
             'mkdir -p "$FRONTEND_PUBLIC_DIR/assets"',
             'cp -a "$SERVER_APP_DIR/dist/assets/." "$FRONTEND_PUBLIC_DIR/assets/"',
+            "for public_asset in favicon.svg mediahub-pinned-tab.svg site.webmanifest",
             '[[ -f "$FRONTEND_PUBLIC_DIR/index.php" ]]',
             '[[ -f "$FRONTEND_PUBLIC_DIR/.htaccess" ]]',
             '[[ -f "$FRONTEND_PUBLIC_DIR/index.html" ]]',
@@ -64,6 +65,23 @@ class DeploymentToolingTest(unittest.TestCase):
             self.assertIn(phrase, script)
 
         self.assertNotIn('find "$FRONTEND_PUBLIC_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +', script)
+
+    def test_browser_identity_and_domain_migration_are_prepared_without_cutover(self):
+        index = self.read("index.html")
+        self.assertIn("<title>MediaHub</title>", index)
+        self.assertIn('href="/favicon.svg"', index)
+        self.assertIn('href="/mediahub-pinned-tab.svg"', index)
+        self.assertNotIn("Prototype", index)
+
+        migration = self.read("docs/infrastructure/MEDIAHUB_DOMAIN_MIGRATION.md")
+        vhost = self.read("deploy/mediahub-domain/mediahub.razbudise.mk.conf.example")
+        redirect = self.read("deploy/mediahub-domain/ccc-redirect.conf.example")
+        for phrase in ["mediahub.razbudise.mk", "TLS", "canonical", "sitemap", "Search Console", "Rollback"]:
+            self.assertIn(phrase, migration)
+        self.assertIn("X-Robots-Tag", vhost)
+        self.assertIn("SSLCertificateFile", vhost)
+        self.assertIn("ccc.razbudise.mk", redirect)
+        self.assertIn("R=308", redirect)
 
     def test_rollback_script_restores_latest_backup_and_verifies(self):
         script = self.read("rollback-mediahub.sh")

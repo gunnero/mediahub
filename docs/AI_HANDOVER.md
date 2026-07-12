@@ -5,6 +5,21 @@ Repository: `/Users/aleksandardimovski/Sites/tvtime/dashboard`
 Remote: `https://github.com/gunnero/Tvtime.git`
 Staging: `https://ccc.razbudise.mk` with a public login page, Laravel-authenticated private routes, and Apache `noindex`
 
+## 2026-07-12 Web V1 Bugfix Sprint 002 Addendum
+
+This working tree contains local, uncommitted, and undeployed usability fixes. It also retains the immediately preceding local Settings layout fix that removes the Entertainment Diary only from Settings.
+
+- Home shelf actions now open canonical History (movie and episode events, newest first) and the Movies watchlist (newest added first).
+- Discover no longer uses the shared recent-movie hero and can browse Trending, Popular, Now Playing, Upcoming, and Top Rated through the optional TMDB client.
+- Manual movie and episode watches are append-only repeat events. Detail/history payloads preserve every date and expose numbered watch history; manual unwatch removes only the latest manual event.
+- Shows owns a latest-watched-show hero. History, Alerts, Stats, Lists, Discover, and Settings open directly into their page content without the Home hero.
+- Calendar release output is restricted to followed/show episode metadata and watchlist movie releases, includes the user's timezone, and has a friendly empty state. Alerts now distinguish new episodes, upcoming episodes/movies, watchlist releases, and continue-watching reminders.
+- Profile editing adds full name, ISO country selection, and privacy-controlled avatars. The backend decodes and re-encodes JPEG/PNG/WebP uploads, strips embedded metadata, creates 512/128/64/32 square variants, and restricts replacement/deletion to the current user.
+- Browser identity is MediaHub with an SVG favicon, pinned-tab mark, and manifest.
+- The `mediahub.razbudise.mk` virtual host, certificate, canonical/noindex, deployment-variable, and rollback sequence is prepared in documentation/templates only. No DNS, Apache, certificate, redirect, or deployment change has been made.
+
+No subscription, native player, recommendation, or broad redesign work is included.
+
 ## 2026-07-12 Profiles And Friends Addendum
 
 This local, uncommitted V1 bugfix replaces the inert top-right account control with an accessible account menu and adds the first private-by-default social foundation.
@@ -54,7 +69,7 @@ Project name: MediaHub.
 
 Purpose: provider-independent personal media operating system for movies and TV shows. The TV Time archive/importer is one data source, not the product identity.
 
-Current version: frontend `package.json` is `0.0.0`; UI footer says `v1.0.0`. The working tree includes the uncommitted Sprint 009 Kalveri AI matcher naming work and Sprint 010 Discovery, Cinematic Details, Settings Providers, and private Provider Catalog implementation. Sprint 010 has not been committed or deployed.
+Current version: frontend `package.json` is `0.0.0`; UI footer says `v1.0.0`. The latest working tree is the uncommitted and undeployed Web V1 Bugfix Sprint 002 described above.
 
 Completed:
 
@@ -95,10 +110,9 @@ Completed:
 
 Still planned:
 
-- Review, commit, and deploy Sprint 006 after the full verification gate stays green.
-- Production hardening beyond the current Basic-Auth-protected staging deployment.
-- Review and commit the current Sprint 009/010 working tree after the full verification gate stays green.
-- Deploy Sprint 010 only after explicit approval.
+- Review and commit the current Web V1 bugfix working tree only after the full validation and screenshot gate stays green.
+- Deploy the bugfix only after explicit approval.
+- Verify `mediahub.razbudise.mk` independently before separately approving any redirect from `ccc.razbudise.mk`.
 - User-facing import upload flow.
 - Background jobs/scheduler for future alert checks.
 - Metadata conflict resolution and manual metadata correction.

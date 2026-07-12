@@ -49,16 +49,28 @@ function useSafeLoad(loader, dependencies, onSessionExpired) {
   return [state, setState];
 }
 
-export function DiscoverSection({ apiClient = apiRequest, onLibraryChanged, onOpen, onSessionExpired }) {
+export function DiscoverSection({ apiClient = apiRequest, initialType = "all", navigationKey = 0, onLibraryChanged, onOpen, onSessionExpired }) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState("discover");
-  const [type, setType] = useState("all");
-  const [state, setState] = useState({ loading: false, error: "", items: [] });
+  const [type, setType] = useState(initialType);
+  const [category, setCategory] = useState("trending");
+  const [state, setState] = useState({ loading: true, error: "", items: [] });
   const [adding, setAdding] = useState("");
+  const categories = [
+    ["trending", "Trending"],
+    ["popular", "Popular"],
+    ["now_playing", "Now Playing"],
+    ["upcoming", "Upcoming"],
+    ["top_rated", "Top Rated"],
+  ];
+
+  useEffect(() => {
+    setType(initialType);
+  }, [initialType, navigationKey]);
 
   useEffect(() => {
     const safeQuery = query.trim();
-    if (safeQuery.length < 2) {
+    if (mode === "library" && safeQuery.length < 2) {
       setState({ loading: false, error: "", items: [] });
       return undefined;
     }
@@ -66,7 +78,9 @@ export function DiscoverSection({ apiClient = apiRequest, onLibraryChanged, onOp
       setState((current) => ({ ...current, loading: true, error: "" }));
       try {
         const endpoint = mode === "discover"
-          ? `/api/v1/discover/search?${encodeQuery({ query: safeQuery, type, page: 1 })}`
+          ? safeQuery.length >= 2
+            ? `/api/v1/discover/search?${encodeQuery({ query: safeQuery, type, page: 1 })}`
+            : `/api/v1/discover/browse?${encodeQuery({ category, type, page: 1 })}`
           : `/api/v1/library/search?${encodeQuery({ query: safeQuery, type, limit: 30 })}`;
         const payload = await apiClient(endpoint);
         const items = mode === "discover" ? payload.items || [] : [
@@ -81,7 +95,7 @@ export function DiscoverSection({ apiClient = apiRequest, onLibraryChanged, onOp
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [apiClient, mode, onSessionExpired, query, type]);
+  }, [apiClient, category, mode, onSessionExpired, query, type]);
 
   async function add(item, action) {
     setAdding(`${item.media_type}-${item.tmdb_id}-${action}`);
@@ -101,9 +115,11 @@ export function DiscoverSection({ apiClient = apiRequest, onLibraryChanged, onOp
     <header className="screen-intro"><span className="eyebrow">Find your next story</span><h2>Discover</h2><p>Search your entertainment memory or explore movies and shows beyond your library.</p></header>
     <div className="segmented-control" aria-label="Search source"><button className={mode === "library" ? "active" : ""} onClick={() => setMode("library")} type="button">My Library</button><button className={mode === "discover" ? "active" : ""} onClick={() => setMode("discover")} type="button">Discover</button></div>
     <div className="discovery-search-row"><label><MagnifyingGlass size={20} /><input aria-label="Search movies and shows" autoFocus onChange={(event) => setQuery(event.target.value)} placeholder={mode === "discover" ? "Search TMDB movies and shows" : "Search your movies, shows, and episodes"} type="search" value={query} /></label><select aria-label="Media type" onChange={(event) => setType(event.target.value)} value={type}><option value="all">Movies and shows</option><option value="movie">Movies</option><option value="show">Shows</option>{mode === "library" ? <option value="episode">Episodes</option> : null}</select></div>
+    {mode === "discover" && query.trim().length < 2 ? <div className="discovery-categories" role="tablist" aria-label="Discovery categories">{categories.map(([id, label]) => <button aria-selected={category === id} className={category === id ? "active" : ""} key={id} onClick={() => setCategory(id)} role="tab" type="button">{label}</button>)}</div> : null}
     {state.error ? <div className="detail-error">{state.error}</div> : null}
     {state.loading ? <div className="empty-strip compact">Searching...</div> : null}
-    {!state.loading && query.trim().length < 2 ? <div className="empty-strip compact">Type at least two characters to begin</div> : null}
+    {!state.loading && mode === "library" && query.trim().length < 2 ? <div className="empty-strip compact">Type at least two characters to search your library</div> : null}
+    {!state.loading && mode === "discover" && query.trim().length < 2 && !state.items.length && !state.error ? <div className="empty-strip compact">No titles are available in this category right now</div> : null}
     {!state.loading && query.trim().length >= 2 && !state.items.length && !state.error ? <div className="empty-strip compact">No results found</div> : null}
     <div className="discovery-results-grid">{state.items.map((item) => {
       const mediaType = item.media_type || item.kind;
@@ -150,14 +166,34 @@ export function CalendarSection({ apiClient = apiRequest, onOpen, onSessionExpir
   const days = [];
   for (let day = new Date(range.from); day <= range.to; day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1)) days.push(new Date(day));
 
-  return <section className="web-v1-screen calendar-screen"><header className="screen-intro"><span className="eyebrow">What is coming</span><h2>Release calendar</h2><p>Upcoming episodes and movie releases already connected to your library.</p></header><div className="calendar-toolbar"><div><button aria-label="Previous period" className="icon-action" onClick={() => move(-1)} type="button"><CaretLeft /></button><strong>{range.from.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong><button aria-label="Next period" className="icon-action" onClick={() => move(1)} type="button"><CaretRight /></button><button className="text-action" onClick={() => setCursor(new Date())} type="button">Today</button></div><div className="segmented-control">{["day", "week", "month"].map((option) => <button className={view === option ? "active" : ""} key={option} onClick={() => setView(option)} type="button">{option[0].toUpperCase() + option.slice(1)}</button>)}</div><select aria-label="Calendar media type" onChange={(event) => setType(event.target.value)} value={type}><option value="all">All releases</option><option value="movies">Movies</option><option value="episodes">Episodes</option></select></div>{state.error ? <div className="detail-error">{state.error}</div> : null}{state.loading ? <div className="empty-strip compact">Loading calendar...</div> : null}{!state.loading ? <div className={`calendar-grid ${view}`}>{days.map((day) => { const key = isoDate(day); const items = state.data?.days?.[key] || []; return <section className={`calendar-day ${key === isoDate(new Date()) ? "today" : ""}`} key={key}><header><span>{day.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{day.getDate()}</strong></header>{items.map((item) => <button key={item.id} onClick={() => onOpen?.(item)} type="button"><i className={item.kind} /><span><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}</section>; })}</div> : null}{!state.loading && !(state.data?.items || []).length ? <div className="empty-strip compact">Nothing scheduled in this period</div> : null}</section>;
+  const isEmpty = !state.loading && !(state.data?.items || []).length;
+
+  return <section className="web-v1-screen calendar-screen">
+    <header className="screen-intro"><span className="eyebrow">What is coming</span><h2>Release calendar</h2><p>Upcoming episodes from followed shows and movie releases from your watchlist.</p></header>
+    <div className="calendar-toolbar"><div><button aria-label="Previous period" className="icon-action" onClick={() => move(-1)} type="button"><CaretLeft /></button><strong>{range.from.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong><button aria-label="Next period" className="icon-action" onClick={() => move(1)} type="button"><CaretRight /></button><button className="text-action" onClick={() => setCursor(new Date())} type="button">Today</button></div><div className="segmented-control">{["day", "week", "month"].map((option) => <button className={view === option ? "active" : ""} key={option} onClick={() => setView(option)} type="button">{option[0].toUpperCase() + option.slice(1)}</button>)}</div><select aria-label="Calendar media type" onChange={(event) => setType(event.target.value)} value={type}><option value="all">All releases</option><option value="movies">Movies</option><option value="episodes">Episodes</option></select></div>
+    {state.data?.range?.timezone ? <p className="calendar-timezone">Dates use {state.data.range.timezone}.</p> : null}
+    {state.error ? <div className="detail-error">{state.error}</div> : null}
+    {state.loading ? <div className="empty-strip compact">Loading calendar...</div> : null}
+    {isEmpty ? <div className="empty-strip compact">No releases are scheduled here yet. Follow a show or add a movie to your watchlist and upcoming dates will appear automatically.</div> : null}
+    {!state.loading ? <div className={`calendar-grid ${view}`}>{days.map((day) => { const key = isoDate(day); const items = state.data?.days?.[key] || []; return <section className={`calendar-day ${key === isoDate(new Date()) ? "today" : ""}`} key={key}><header><span>{day.toLocaleDateString("en-US", { weekday: "short" })}</span><strong>{day.getDate()}</strong></header>{items.map((item) => <button key={item.id} onClick={() => onOpen?.(item)} type="button"><i className={item.releaseKind || item.kind} /><span><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}</section>; })}</div> : null}
+  </section>;
+}
+
+function alertMatchesFilter(alert, filter) {
+  if (filter === "all") return true;
+  const type = alert.payload?.alert_type;
+  if (filter === "upcoming") return alert.category === "upcoming" || ["upcoming_episode", "upcoming_movie"].includes(type);
+  if (filter === "movies") return alert.category === "movies" || ["upcoming_movie", "watchlist_release"].includes(type);
+  if (filter === "new-episodes") return alert.category === "new-episodes" || type === "new_episode";
+  if (filter === "reminders") return alert.category === "reminders" || type === "continue_watching";
+  return alert.category === filter;
 }
 
 export function AlertsSection({ apiClient = apiRequest, onOpen, onSessionExpired }) {
   const [reload, setReload] = useState(0);
   const [filter, setFilter] = useState("all");
   const [state] = useSafeLoad(() => apiClient("/api/v1/alerts"), [apiClient, reload], onSessionExpired);
-  const items = (state.data?.alerts || []).filter((item) => filter === "all" || item.category === filter);
+  const items = (state.data?.alerts || []).filter((item) => alertMatchesFilter(item, filter));
   async function read(alert) { await apiClient(`/api/v1/alerts/${alert.id}/read`, { method: "POST" }); setReload((value) => value + 1); }
   async function readAll() { await apiClient("/api/v1/alerts/read-all", { method: "POST" }); setReload((value) => value + 1); }
   return <section className="web-v1-screen alerts-screen"><header className="screen-intro"><span className="eyebrow">Stay current</span><h2>Alerts</h2><p>Release reminders and library issues that deserve your attention.</p></header><div className="alerts-toolbar"><div className="segmented-control">{[["all", "All"], ["new-episodes", "New episodes"], ["upcoming", "Upcoming"], ["movies", "Movies"], ["reminders", "Reminders"]].map(([id, label]) => <button className={filter === id ? "active" : ""} key={id} onClick={() => setFilter(id)} type="button">{label}</button>)}</div><button className="text-action" onClick={readAll} type="button">Mark all read</button></div>{state.error ? <div className="detail-error">{state.error}</div> : null}{state.loading ? <div className="empty-strip compact">Loading alerts...</div> : null}<div className="alerts-list">{items.map((alert) => <article className={alert.unread ? "unread" : ""} key={alert.id}><button onClick={() => onOpen?.({ ...alert, ...alert.payload })} type="button"><Bell size={22} /><span><strong>{alert.title}</strong><small>{alert.subtitle}</small></span><em>{alert.dueText}</em></button>{alert.unread ? <button aria-label={`Mark ${alert.title} read`} className="text-action" onClick={() => read(alert)} type="button">Mark read</button> : null}</article>)}</div>{!state.loading && !items.length ? <div className="empty-strip compact">No alerts in this view</div> : null}</section>;
@@ -223,10 +259,12 @@ export function ListsSection({ apiClient = apiRequest, onOpen, onSessionExpired 
   const [rename, setRename] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [query, setQuery] = useState("");
+  const [listQuery, setListQuery] = useState("");
   const [search, setSearch] = useState([]);
   const [error, setError] = useState("");
   const [state] = useSafeLoad(() => apiClient("/api/v1/lists"), [apiClient, reload], onSessionExpired);
   const lists = state.data?.lists || [];
+  const visibleLists = lists.filter((list) => list.name.toLowerCase().includes(listQuery.trim().toLowerCase()));
   const selected = lists.find((list) => list.id === selectedId) || lists[0] || null;
 
   useEffect(() => { if (!selectedId && lists[0]) setSelectedId(lists[0].id); }, [lists, selectedId]);
@@ -240,7 +278,7 @@ export function ListsSection({ apiClient = apiRequest, onOpen, onSessionExpired 
   async function remove(item) { await apiClient(`/api/v1/lists/${selected.id}/items/${item.id}`, { method: "DELETE" }); setReload((value) => value + 1); }
   async function move(item, direction) { const items = [...selected.items]; const index = items.findIndex((candidate) => candidate.id === item.id); const target = index + direction; if (target < 0 || target >= items.length) return; [items[index], items[target]] = [items[target], items[index]]; await apiClient(`/api/v1/lists/${selected.id}/reorder`, { method: "PATCH", body: { item_ids: items.map((candidate) => candidate.id) } }); setReload((value) => value + 1); }
 
-  return <section className="web-v1-screen lists-screen"><header className="screen-intro"><span className="eyebrow">Your collections</span><h2>Lists</h2><p>Private, hand-built collections for the stories you want to remember together.</p></header>{error || state.error ? <div className="detail-error">{error || state.error}</div> : null}<div className="lists-layout"><aside><form onSubmit={create}><label><span>New list</span><input aria-label="New list name" onChange={(event) => setName(event.target.value)} placeholder="Watch with family" value={name} /></label><button aria-label="Create list" className="icon-action" type="submit"><Plus /></button></form>{lists.map((list) => <button className={selected?.id === list.id ? "active" : ""} key={list.id} onClick={() => setSelectedId(list.id)} type="button"><ListBullets /><span><strong>{list.name}</strong><small>{list.itemsCount} items · Private</small></span></button>)}</aside><div className="list-detail">{selected ? <><header><div><span className="eyebrow">Private list</span>{renaming ? <form className="list-rename-form" onSubmit={renameList}><input aria-label="Rename list" autoFocus onChange={(event) => setRename(event.target.value)} value={rename} /><button className="secondary-action" type="submit">Save</button><button className="text-action" onClick={() => setRenaming(false)} type="button">Cancel</button></form> : <h3>{selected.name}</h3>}</div><div className="list-header-actions"><button aria-label="Rename list" className="icon-action" onClick={() => setRenaming(true)} type="button"><PencilSimple /></button><button aria-label="Delete list" className="icon-action danger" onClick={removeList} type="button"><Trash /></button></div></header><div className="list-items">{selected.items.map((item, index) => <article key={item.id}><button className="list-item-main" onClick={() => onOpen?.({ ...item, kind: item.mediaType, movieId: item.mediaType === "movie" ? item.mediaId : undefined, showId: item.mediaType === "show" ? item.mediaId : undefined })} type="button"><span className="list-position">{index + 1}</span><span className="list-art"><Artwork item={item} /></span><span><strong>{item.title}</strong><small>{item.mediaType} · {item.year || "Year unavailable"}</small></span></button><div><button aria-label={`Move ${item.title} up`} className="icon-action" disabled={index === 0} onClick={() => move(item, -1)} type="button"><CaretLeft /></button><button aria-label={`Move ${item.title} down`} className="icon-action" disabled={index === selected.items.length - 1} onClick={() => move(item, 1)} type="button"><CaretRight /></button><button aria-label={`Remove ${item.title}`} className="icon-action danger" onClick={() => remove(item)} type="button"><Trash /></button></div></article>)}</div><form className="list-search" onSubmit={searchLibrary}><label><MagnifyingGlass /><input aria-label="Search library for list" onChange={(event) => setQuery(event.target.value)} placeholder="Find a movie or show" value={query} /></label><button className="secondary-action" type="submit">Search library</button></form><div className="list-search-results">{search.map((item) => <button key={`${item.kind}-${item.id}`} onClick={() => add(item)} type="button"><Plus /><span><strong>{item.title}</strong><small>{item.kind}</small></span></button>)}</div></> : <div className="empty-strip compact">Create your first private list</div>}</div></div></section>;
+  return <section className="web-v1-screen lists-screen"><header className="screen-intro"><span className="eyebrow">Your collections</span><h2>Your Lists</h2><p>Private, hand-built collections for the stories you want to remember together.</p></header>{error || state.error ? <div className="detail-error">{error || state.error}</div> : null}<div className="lists-layout"><aside><form onSubmit={create}><label><span>Create List</span><input aria-label="New list name" onChange={(event) => setName(event.target.value)} placeholder="Watch with family" value={name} /></label><button aria-label="Create list" className="icon-action" type="submit"><Plus /></button></form><label className="list-filter"><span>Search Lists</span><input aria-label="Search lists" onChange={(event) => setListQuery(event.target.value)} placeholder="Find a list" type="search" value={listQuery} /></label>{visibleLists.map((list) => <button className={selected?.id === list.id ? "active" : ""} key={list.id} onClick={() => setSelectedId(list.id)} type="button"><ListBullets /><span><strong>{list.name}</strong><small>{list.itemsCount} items · Private</small></span></button>)}{lists.length > 0 && visibleLists.length === 0 ? <div className="empty-strip compact">No lists match your search</div> : null}</aside><div className="list-detail">{selected ? <><header><div><span className="eyebrow">Private list</span>{renaming ? <form className="list-rename-form" onSubmit={renameList}><input aria-label="Rename list" autoFocus onChange={(event) => setRename(event.target.value)} value={rename} /><button className="secondary-action" type="submit">Save</button><button className="text-action" onClick={() => setRenaming(false)} type="button">Cancel</button></form> : <h3>{selected.name}</h3>}</div><div className="list-header-actions"><button aria-label="Rename list" className="icon-action" onClick={() => setRenaming(true)} type="button"><PencilSimple /></button><button aria-label="Delete list" className="icon-action danger" onClick={removeList} type="button"><Trash /></button></div></header><div className="list-items">{selected.items.map((item, index) => <article key={item.id}><button className="list-item-main" onClick={() => onOpen?.({ ...item, kind: item.mediaType, movieId: item.mediaType === "movie" ? item.mediaId : undefined, showId: item.mediaType === "show" ? item.mediaId : undefined })} type="button"><span className="list-position">{index + 1}</span><span className="list-art"><Artwork item={item} /></span><span><strong>{item.title}</strong><small>{item.mediaType} · {item.year || "Year unavailable"}</small></span></button><div><button aria-label={`Move ${item.title} up`} className="icon-action" disabled={index === 0} onClick={() => move(item, -1)} type="button"><CaretLeft /></button><button aria-label={`Move ${item.title} down`} className="icon-action" disabled={index === selected.items.length - 1} onClick={() => move(item, 1)} type="button"><CaretRight /></button><button aria-label={`Remove ${item.title}`} className="icon-action danger" onClick={() => remove(item)} type="button"><Trash /></button></div></article>)}</div><form className="list-search" onSubmit={searchLibrary}><label><MagnifyingGlass /><input aria-label="Search library for list" onChange={(event) => setQuery(event.target.value)} placeholder="Find a movie or show" value={query} /></label><button className="secondary-action" type="submit">Search library</button></form><div className="list-search-results">{search.map((item) => <button key={`${item.kind}-${item.id}`} onClick={() => add(item)} type="button"><Plus /><span><strong>{item.title}</strong><small>{item.kind}</small></span></button>)}</div></> : <div className="empty-strip compact">Create your first private list</div>}</div></div></section>;
 }
 
 export function WebSettingsSection({ apiClient = apiRequest, initialSection = "profile", onSessionExpired }) {

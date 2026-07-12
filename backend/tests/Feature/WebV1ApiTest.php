@@ -37,6 +37,74 @@ class WebV1ApiTest extends TestCase
         $this->assertStringNotContainsString('Other Show', $response->getContent());
     }
 
+    public function test_calendar_uses_safe_tmdb_next_episode_hints_for_followed_shows(): void
+    {
+        $user = $this->member();
+        $show = Show::create([
+            'user_id' => $user->id,
+            'title' => 'Returning Show',
+            'followed' => true,
+            'metadata' => ['release' => ['next_episode' => [
+                'season_number' => 2,
+                'episode_number' => 4,
+                'name' => 'Homecoming',
+                'air_date' => now()->addDays(3)->toDateString(),
+            ]]],
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/calendar?date_from='.now()->toDateString().'&date_to='.now()->addWeek()->toDateString())
+            ->assertOk()
+            ->assertJsonPath('items.0.showId', $show->id)
+            ->assertJsonPath('items.0.releaseKind', 'episode')
+            ->assertJsonPath('items.0.subtitle', 'S02E04 · Homecoming')
+            ->assertJsonPath('range.timezone', config('app.timezone'));
+    }
+
+    public function test_calendar_respects_the_users_local_date_boundary(): void
+    {
+        config(['app.timezone' => 'Pacific/Kiritimati']);
+        $user = $this->member();
+        $localDate = now('Pacific/Kiritimati')->toDateString();
+        $show = Show::create(['user_id' => $user->id, 'title' => 'Local Day Show', 'followed' => true]);
+        $episode = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'air_date' => $localDate,
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/calendar?date_from={$localDate}&date_to={$localDate}")
+            ->assertOk()
+            ->assertJsonPath('range.from', $localDate)
+            ->assertJsonPath('range.to', $localDate)
+            ->assertJsonPath('range.timezone', 'Pacific/Kiritimati')
+            ->assertJsonPath('items.0.episodeId', $episode->id);
+    }
+
+    public function test_calendar_ignores_missing_release_metadata_without_fabricating_dates(): void
+    {
+        $user = $this->member();
+        Show::create([
+            'user_id' => $user->id,
+            'title' => 'Unknown Return',
+            'followed' => true,
+            'metadata' => ['release' => ['next_episode' => null]],
+        ]);
+        Movie::create([
+            'user_id' => $user->id,
+            'title' => 'Undated Watchlist Movie',
+            'is_to_watch' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/calendar?date_from='.now()->toDateString().'&date_to='.now()->addWeek()->toDateString())
+            ->assertOk()
+            ->assertJsonCount(0, 'items');
+    }
+
     public function test_statistics_match_user_watch_rows(): void
     {
         $user = $this->member();
@@ -49,7 +117,7 @@ class WebV1ApiTest extends TestCase
 
         $this->actingAs($user)->getJson('/api/v1/stats')
             ->assertOk()
-            ->assertJsonPath('summary.moviesWatched', 1)
+            ->assertJsonPath('summary.moviesWatched', 2)
             ->assertJsonPath('summary.episodesWatched', 1)
             ->assertJsonPath('summary.showsCompleted', 1)
             ->assertJsonPath('summary.totalWatchMinutes', 300)
@@ -93,10 +161,20 @@ class WebV1ApiTest extends TestCase
             'metadata_review_status' => 'pending',
             'metadata_failure_count' => 1,
         ]);
+        Movie::create([
+            'user_id' => $user->id,
+            'title' => 'Watchlist Premiere',
+            'is_to_watch' => true,
+            'release_date' => now()->addDays(4),
+        ]);
+        $show->forceFill(['seen_episodes' => 1, 'aired_episodes' => 2])->save();
 
         $response = $this->actingAs($user)->getJson('/api/v1/alerts')
             ->assertOk()
             ->assertJsonFragment(['category' => 'upcoming'])
+            ->assertJsonFragment(['alert_type' => 'upcoming_episode'])
+            ->assertJsonFragment(['alert_type' => 'upcoming_movie'])
+            ->assertJsonFragment(['alert_type' => 'continue_watching'])
             ->assertJsonFragment(['subtitle' => '1 episode need manual review']);
         $this->assertStringNotContainsString('2 episodes need manual review', $response->getContent());
         $this->actingAs($user)->patchJson('/api/v1/notification-preferences', ['new_episodes' => false, 'email_enabled' => false])

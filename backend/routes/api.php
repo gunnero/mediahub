@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V1\ManualLibraryController;
 use App\Http\Controllers\Api\V1\MediaEventController;
 use App\Http\Controllers\Api\V1\MediaListController;
 use App\Http\Controllers\Api\V1\PlayerController;
+use App\Http\Controllers\Api\V1\ProfileAvatarController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\ProviderController;
 use App\Http\Controllers\Api\V1\SettingsController;
@@ -35,6 +36,8 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::get('/profile', [ProfileController::class, 'own']);
         Route::get('/profile/options', [ProfileController::class, 'options']);
         Route::patch('/profile', [ProfileController::class, 'update'])->middleware('throttle:6,60,profile-update');
+        Route::post('/profile/avatar', [ProfileAvatarController::class, 'store'])->middleware('throttle:10,60,profile-avatar');
+        Route::delete('/profile/avatar', [ProfileAvatarController::class, 'destroy'])->middleware('throttle:10,60,profile-avatar');
         Route::patch('/profile/privacy', [ProfileController::class, 'privacy'])->middleware('throttle:30,1,profile-privacy');
         Route::get('/profile/public-preview', [ProfileController::class, 'preview']);
         Route::get('/friends', [FriendshipController::class, 'index']);
@@ -97,6 +100,7 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::post('/library/episodes/{episode}/notes', [ManualLibraryController::class, 'noteEpisode']);
         Route::patch('/library/notes/{note}', [ManualLibraryController::class, 'updateNote']);
         Route::delete('/library/notes/{note}', [ManualLibraryController::class, 'deleteNote']);
+        Route::get('/discover/browse', [DiscoveryController::class, 'browse'])->middleware('throttle:30,1');
         Route::get('/discover/search', [DiscoveryController::class, 'search'])->middleware('throttle:30,1');
         Route::post('/discover/movies/{tmdbId}/add', [DiscoveryController::class, 'addMovie'])->middleware('throttle:30,1');
         Route::post('/discover/shows/{tmdbId}/add', [DiscoveryController::class, 'addShow'])->middleware('throttle:30,1');

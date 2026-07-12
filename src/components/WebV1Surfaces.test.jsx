@@ -9,6 +9,7 @@ afterEach(() => cleanup());
 describe("MediaHub Web V1 surfaces", () => {
   it("discovers a movie and adds it without exposing TMDB configuration", async () => {
     const apiClient = vi.fn(async (path, options = {}) => {
+      if (path.startsWith("/api/v1/discover/browse")) return { status: "ready", items: [] };
       if (path.startsWith("/api/v1/discover/search")) return { status: "ready", items: [{ media_type: "movie", tmdb_id: 949, title: "Heat", year: "1995", overview: "Crime saga.", poster: "" }] };
       if (path === "/api/v1/discover/movies/949/add" && options.method === "POST") return { item: { id: 42 } };
       throw new Error(`Unexpected request: ${path}`);
@@ -21,6 +22,23 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(document.body.textContent).not.toMatch(/api[_ -]?key/i);
   });
 
+  it("browses trending, popular, now playing, upcoming, and top rated without a hero", async () => {
+    const apiClient = vi.fn(async (path) => ({
+      status: "ready",
+      category: new URLSearchParams(path.split("?")[1]).get("category"),
+      items: [{ media_type: "show", tmdb_id: 1, title: "Current Show", overview: "Public metadata." }],
+    }));
+    const { container } = render(<DiscoverSection apiClient={apiClient} />);
+
+    expect(await screen.findByText("Current Show")).toBeInTheDocument();
+    expect(container.querySelector(".hero-panel")).not.toBeInTheDocument();
+    for (const label of ["Trending", "Popular", "Now Playing", "Upcoming", "Top Rated"]) {
+      expect(screen.getByRole("tab", { name: label })).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
+    await waitFor(() => expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("category=upcoming")));
+  });
+
   it("renders the release calendar and opens an episode", async () => {
     const onOpen = vi.fn();
     const today = new Date();
@@ -30,6 +48,16 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(await screen.findByText("Severance")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /severance/i }));
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ episodeId: 1 }));
+  });
+
+  it("shows the calendar empty state before the month grid", async () => {
+    const apiClient = vi.fn().mockResolvedValue({ items: [], days: {}, range: { timezone: "UTC" } });
+    const { container } = render(<CalendarSection apiClient={apiClient} />);
+    const emptyState = await screen.findByText(/no releases are scheduled here yet/i);
+    const grid = container.querySelector(".calendar-grid");
+
+    expect(grid).toBeInTheDocument();
+    expect(emptyState.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders database-backed stats", async () => {
@@ -71,6 +99,18 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(await screen.findByText("Episode coming soon")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /mark episode coming soon read/i }));
     await waitFor(() => expect(apiClient).toHaveBeenCalledWith("/api/v1/alerts/1/read", { method: "POST" }));
+  });
+
+  it("shows upcoming movie alerts in the Upcoming tab", async () => {
+    const apiClient = vi.fn().mockResolvedValue({ alerts: [
+      { id: 1, category: "movies", title: "Released movie", payload: { alert_type: "watchlist_release" }, unread: false },
+      { id: 2, category: "upcoming", title: "Upcoming movie release", payload: { alert_type: "upcoming_movie" }, unread: true },
+    ] });
+    render(<AlertsSection apiClient={apiClient} />);
+    await screen.findByText("Upcoming movie release");
+    fireEvent.click(screen.getByRole("button", { name: "Upcoming" }));
+    expect(screen.getByText("Upcoming movie release")).toBeInTheDocument();
+    expect(screen.queryByText("Released movie")).not.toBeInTheDocument();
   });
 
   it("shows final web settings without provider setup", async () => {

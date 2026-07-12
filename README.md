@@ -41,6 +41,8 @@ Public profile responses use a strict allowlist. Email, private notes, ratings, 
 
 See `docs/mediahub/PROFILES_AND_FRIENDS_SPEC.md`.
 
+Profile editing now also supports full name, a searchable ISO country selector, and a private user avatar pipeline. Avatar uploads accept JPEG, PNG, or WebP up to 5 MB, are decoded and re-encoded to strip embedded metadata, and generate square 512, 128, 64, and 32 pixel variants under ignored user-upload storage. Public profile output includes an avatar only when the profile visibility rules allow access and the user has explicitly enabled avatar publication.
+
 ## Canonical Media Rule
 
 Canonical media and watch history are permanent. Provider items are temporary.
@@ -50,6 +52,8 @@ Canonical media and watch history are permanent. Provider items are temporary.
 - Provider layer: `playback_sources`, `playback_source_items`, `media_links`, `playback_progress`.
 
 Every record is scoped by `user_id`. Deleting or disabling a provider may remove provider rows, links, sessions, and source progress, but it must not delete canonical movies, shows, episodes, watch history, ratings, or notes.
+
+Manual watch history is append-only. Marking an already watched movie or episode as watched creates another dated watch row instead of overwriting the previous row. The detail view numbers those rows as Watch #1, Watch #2, and so on; the remove action deletes only the latest manual row. Bulk season completion still skips episodes that are already watched so it cannot create accidental rewatches.
 
 See `docs/mediahub/CANONICAL_MEDIA_CONTRACT.md`.
 
@@ -222,6 +226,8 @@ Global search now has two explicit modes:
 - **My Library** searches the authenticated user's canonical movies, shows, and episodes.
 - **Discover** queries TMDB through Laravel and can add a movie/show to the canonical library or watchlist without requiring a provider.
 
+When no search is active, Discover uses `GET /api/v1/discover/browse` for the Trending, Popular, Now Playing, Upcoming, and Top Rated shelves. These are transient public TMDB results and remain separate from the user's canonical library until an explicit add action.
+
 When explicitly enabled for compatibility testing, Provider Settings support authorized Xtream-compatible APIs, M3U playlists, XMLTV sources, and manual sources. Credentials and locators remain encrypted; provider summaries expose configuration/status booleans and counts only. The Player can browse Home, Movies, Shows, Live TV, TV Guide, and Search, but none of these surfaces are enabled in normal Web V1.
 
 Catalog list responses never contain raw provider or playback URLs; only the owner-only play endpoint returns the URL required for one active player session. Disabling the web feature flags does not delete existing provider records.
@@ -380,7 +386,7 @@ git diff --check
 5. Run `php artisan migrate --force`.
 6. Run `php artisan filament:assets` if Composer did not publish Filament assets.
 7. Build the React frontend with `npm run build`.
-8. Sync only `dist/index.html` and `dist/assets/*` into `backend/public`; keep `backend/public/index.php`, `.htaccess`, `robots.txt`, favicon, and Laravel/Filament/Livewire assets intact.
+8. Sync `dist/index.html`, `dist/assets/*`, and the deployment script's allowlisted browser identity files (`favicon.svg`, `mediahub-pinned-tab.svg`, and `site.webmanifest`) into `backend/public`; keep `backend/public/index.php`, `.htaccess`, `robots.txt`, `favicon.ico`, and Laravel/Filament/Livewire assets intact.
 9. Confirm `/api/v1/status` still routes through Laravel after the frontend sync.
 10. Smoke test Laravel login, unauthenticated private-route `401` responses, `/api/v1/status`, `/api/v1/dashboard`, and `/admin`.
 
@@ -403,3 +409,7 @@ Imported staging counts for owner user `1`: 92 shows, 7,291 episodes, 7,292 epis
 Smoke results: public login page, Laravel login/logout, unauthenticated `/api/v1/me` returning `401`, `/api/v1/status`, `/api/v1/dashboard`, Player empty state, manual movie detail, rating save/clear, note save/update/delete, mark watched/unwatched, alert read persistence, `/admin`, dashboard sensitive-key scan, and authenticated browser asset/console checks all passed.
 
 Rollback: restore `/etc/apache2/sites-available/ccc.razbudise.mk.conf` from the deployment backup, switch `DocumentRoot` back to the backed-up `public_html` deployment if needed, run `apachectl configtest`, then `systemctl reload apache2`.
+
+## Domain Migration Preparation
+
+The future `mediahub.razbudise.mk` cutover is prepared but has not been applied. Review `docs/infrastructure/MEDIAHUB_DOMAIN_MIGRATION.md` and the templates under `deploy/mediahub-domain/`. The sequence keeps `ccc.razbudise.mk` live while the new virtual host, DNS, certificate, canonical URL, `noindex` policy, deployment variables, and smoke checks are verified. A redirect from `ccc` is intentionally the final, separately approved step.

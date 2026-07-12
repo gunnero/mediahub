@@ -166,6 +166,53 @@ describe("OwnProfileSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Privacy" }));
     expect(onOpenPrivacy).toHaveBeenCalledTimes(1);
   });
+
+  it("edits full profile fields and previews/uploads a responsive avatar", async () => {
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:avatar-preview") });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+    const uploadClient = vi.fn(async (path, body, onProgress) => {
+      onProgress(100);
+      return { profile: { avatar: "/storage/avatars/1/random-512.jpg" } };
+    });
+    const apiClient = vi.fn(async (path, options = {}) => {
+      if (path === "/api/v1/profile/options") return { movies: [], shows: [], publicLists: [] };
+      if (options.method) return {};
+      return {
+        profile: {
+          username: "gunner",
+          displayName: "Gunner",
+          fullName: "Aleksandar Dimovski",
+          email: "gunner@example.test",
+          slug: "gunner",
+          country: "MK",
+          favoriteGenres: [],
+          favoriteMovieIds: [],
+          favoriteShowIds: [],
+          featuredListIds: [],
+        },
+        privacy: { publicProfileEnabled: false, profileVisibility: "private", showAvatar: false },
+      };
+    });
+
+    const { container } = render(<OwnProfileSection apiClient={apiClient} editInitially uploadClient={uploadClient} />);
+    expect(await screen.findByLabelText("Full name")).toHaveValue("Aleksandar Dimovski");
+    expect(screen.getByLabelText("Email")).toHaveValue("gunner@example.test");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Country")).toHaveValue("North Macedonia (MK)");
+    expect(container.querySelectorAll("#mediahub-countries option").length).toBeGreaterThan(240);
+
+    const file = new File(["avatar"], "avatar.webp", { type: "image/webp" });
+    fireEvent.change(screen.getByLabelText("Choose avatar"), { target: { files: [file] } });
+    expect(container.querySelector(".avatar-preview img")).toHaveAttribute("src", "blob:avatar-preview");
+    expect(container.querySelector(".avatar-editor")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Upload avatar" }));
+
+    await waitFor(() => expect(uploadClient).toHaveBeenCalledWith(
+      "/api/v1/profile/avatar",
+      expect.any(FormData),
+      expect.any(Function),
+    ));
+  });
 });
 
 describe("PrivacyControls", () => {
@@ -175,6 +222,7 @@ describe("PrivacyControls", () => {
 
     await screen.findByRole("checkbox", { name: "Enable public profile" });
     fireEvent.click(screen.getByRole("checkbox", { name: "Enable public profile" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show avatar when profile visibility allows" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show statistics" }));
     fireEvent.change(screen.getByLabelText("Profile visibility"), { target: { value: "public" } });
     fireEvent.click(screen.getByRole("button", { name: "Save privacy" }));
@@ -185,6 +233,7 @@ describe("PrivacyControls", () => {
         method: "PATCH",
         body: expect.objectContaining({
           public_profile_enabled: true,
+          show_avatar: true,
           profile_visibility: "public",
           show_statistics: true,
         }),

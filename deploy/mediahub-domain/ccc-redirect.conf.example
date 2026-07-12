@@ -1,0 +1,6 @@
+# Source host: ccc.razbudise.mk
+# Enable only after mediahub.razbudise.mk has passed login, API, admin, asset,
+# upload, noindex, and rollback verification. Preserve the path and query string.
+RewriteEngine On
+RewriteCond %{HTTP_HOST} ^ccc\.razbudise\.mk$ [NC]
+RewriteRule ^ https://mediahub.razbudise.mk%{REQUEST_URI} [R=308,L,NE]

@@ -199,6 +199,19 @@ Discovery search is not a second library and does not create global canonical re
 - Another user's canonical record never satisfies the current user's duplicate check.
 - TMDB being disabled or unavailable cannot block access to existing canonical media.
 
+## Repeat Watch Invariant
+
+A watched state is derived from watch events; it is not a single mutable boolean.
+
+- Every explicit manual movie or episode watch appends a new same-user row.
+- Previous watch dates remain permanent and are numbered chronologically in detail/history output.
+- Removing a manual watched state removes only the latest manual event, never every historical watch.
+- Player completion remains tied to its playback session and must not emit duplicate completion rows for the same completed session.
+- Bulk season completion skips episodes that already have watch history so a bulk command cannot manufacture rewatches.
+- Ratings, notes, provider links, and canonical metadata are independent from the number of watch events.
+
+Provider deletion, metadata refresh, profile changes, and future domain migration must not collapse or renumber canonical watch events.
+
 ## Provider Catalog Lifecycle
 
 An imported provider catalog remains temporary even when it contains rich movie/show metadata.

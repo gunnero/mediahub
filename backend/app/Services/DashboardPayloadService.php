@@ -48,6 +48,7 @@ class DashboardPayloadService
                 'username' => $user->username,
                 'displayName' => $user->display_name,
                 'slug' => $user->profile_slug,
+                'avatar' => $user->avatar_path ?: null,
                 'image' => $user->avatar_path ?: '',
                 'cover' => '',
             ],
@@ -69,6 +70,7 @@ class DashboardPayloadService
                 'kind' => 'library',
                 'eyebrow' => 'Private dashboard',
             ],
+            'recentShow' => $this->recentShow($user),
             'alerts' => $this->alerts($user),
             'recentlyWatched' => $recentlyWatched,
             'followedNewEpisodes' => $this->followedNewEpisodes($user),
@@ -167,6 +169,48 @@ class DashboardPayloadService
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    private function recentShow(User $user): ?array
+    {
+        $watch = EpisodeWatch::forUser($user)
+            ->with(['episode', 'show'])
+            ->whereHas('show', fn ($query) => $query->forUser($user))
+            ->watched()
+            ->latest('watched_at')
+            ->latest('id')
+            ->first();
+        $show = $watch?->show;
+
+        if (! $watch || ! $show) {
+            return null;
+        }
+
+        $episode = $watch->episode;
+        $code = $episode && $episode->season_number && $episode->episode_number
+            ? 'S'.$episode->season_number.' E'.$episode->episode_number
+            : 'Latest episode';
+
+        return [
+            'id' => 'recent-show-'.$show->id,
+            'kind' => 'show',
+            'showId' => $show->id,
+            'title' => $show->title,
+            'subtitle' => trim($code.($episode?->title ? ' · '.$episode->title : '')),
+            'meta' => $show->seen_episodes.'/'.$show->aired_episodes.' watched',
+            'poster' => $this->posterFor($show, $show->poster_url),
+            'backdrop' => $this->backdropFor($show, $show->fanart_url),
+            'watchedAt' => $watch->watched_at?->toIso8601String(),
+            'progress' => $this->progress($show->seen_episodes, $show->aired_episodes),
+            'badge' => 'watched',
+            'eyebrow' => 'Recent show',
+            'primaryActionLabel' => 'Continue watching',
+            'secondaryActionLabel' => 'View details',
+            ...$this->metadataFields($show, $show->first_air_date),
+        ];
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     private function moviesToCheckOut(User $user): array
@@ -253,8 +297,12 @@ class DashboardPayloadService
 
         MovieWatch::forUser($user)
             ->whereBetween('watched_at', [$start, $end])
-            ->get(['watched_at', 'runtime'])
-            ->each(fn (MovieWatch $watch): Collection => $this->addRuntime($minutesByDate, $watch->watched_at, $watch->runtime));
+            ->get(['watched_at', 'runtime', 'watch_count'])
+            ->each(fn (MovieWatch $watch): Collection => $this->addRuntime(
+                $minutesByDate,
+                $watch->watched_at,
+                $watch->runtime * max(1, $watch->watch_count),
+            ));
 
         return collect(range(0, 6))
             ->map(function (int $offset) use ($start, $minutesByDate): array {

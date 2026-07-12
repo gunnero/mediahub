@@ -219,6 +219,11 @@ sync_frontend_build() {
 
   cp "$SERVER_APP_DIR/dist/index.html" "$FRONTEND_PUBLIC_DIR/index.html"
   cp -a "$SERVER_APP_DIR/dist/assets/." "$FRONTEND_PUBLIC_DIR/assets/"
+  for public_asset in favicon.svg mediahub-pinned-tab.svg site.webmanifest; do
+    if [[ -f "$SERVER_APP_DIR/dist/$public_asset" ]]; then
+      cp "$SERVER_APP_DIR/dist/$public_asset" "$FRONTEND_PUBLIC_DIR/$public_asset"
+    fi
+  done
 
   [[ -f "$FRONTEND_PUBLIC_DIR/index.php" ]] || fail "Laravel public index.php is missing after frontend sync"
   [[ -f "$FRONTEND_PUBLIC_DIR/.htaccess" ]] || fail "Laravel public .htaccess is missing after frontend sync"
@@ -283,6 +288,10 @@ php artisan migrate --force
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
+
+if [[ ! -L public/storage && ! -e public/storage ]]; then
+  php artisan storage:link --relative
+fi
 
 if php artisan list --raw | grep -q '^filament:assets$'; then
   php artisan filament:assets

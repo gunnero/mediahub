@@ -76,6 +76,54 @@ class DiscoveryService
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function browse(User $user, string $category = 'trending', string $type = 'all', int $page = 1): array
+    {
+        if (! $this->tmdb->enabled()) {
+            return [...$this->emptySearch('disabled', $page), 'category' => $category, 'type' => $type];
+        }
+
+        $movies = in_array($type, ['movie', 'all'], true)
+            ? $this->tmdb->browse($category, 'movie', $page)
+            : ['results' => [], 'page' => $page, 'total_pages' => 0, 'total_results' => 0];
+        $shows = in_array($type, ['show', 'all'], true)
+            ? $this->tmdb->browse($category, 'show', $page)
+            : ['results' => [], 'page' => $page, 'total_pages' => 0, 'total_results' => 0];
+
+        if ($movies === null || $shows === null) {
+            return [...$this->emptySearch('unavailable', $page), 'category' => $category, 'type' => $type];
+        }
+
+        $movieRows = collect($movies['results'] ?? [])->filter(fn (mixed $row): bool => is_array($row))->values();
+        $showRows = collect($shows['results'] ?? [])->filter(fn (mixed $row): bool => is_array($row))->values();
+        $existingMovies = Movie::forUser($user)
+            ->whereIn('tmdb_id', $movieRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id))
+            ->get()
+            ->keyBy('tmdb_id');
+        $existingShows = Show::forUser($user)
+            ->whereIn('tmdb_id', $showRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id))
+            ->get()
+            ->keyBy('tmdb_id');
+        $items = collect([
+            ...$movieRows->map(fn (array $row): array => $this->searchResult($row, 'movie', $existingMovies->get((int) ($row['id'] ?? 0))))->all(),
+            ...$showRows->map(fn (array $row): array => $this->searchResult($row, 'show', $existingShows->get((int) ($row['id'] ?? 0))))->all(),
+        ])->sortByDesc(fn (array $item): float => (float) ($item['popularity'] ?? 0))->values();
+
+        return [
+            'status' => 'ready',
+            'category' => $category,
+            'type' => $type,
+            'items' => $items->take(40)->all(),
+            'pagination' => [
+                'page' => $page,
+                'totalPages' => max((int) ($movies['total_pages'] ?? 0), (int) ($shows['total_pages'] ?? 0)),
+                'totalResults' => (int) ($movies['total_results'] ?? 0) + (int) ($shows['total_results'] ?? 0),
+            ],
+        ];
+    }
+
     public function addMovie(User $user, int $tmdbId, string $action): Movie
     {
         $details = $this->tmdb->getMovie($tmdbId);
@@ -192,6 +240,7 @@ class DiscoveryService
             'backdrop' => $this->metadata->imageUrl($row['backdrop_path'] ?? null, 'w780'),
             'overview' => (string) ($row['overview'] ?? ''),
             'genres' => collect($row['genre_ids'] ?? [])->map(fn (mixed $id): ?string => $genreMap[(int) $id] ?? null)->filter()->values()->all(),
+            'popularity' => (float) ($row['popularity'] ?? 0),
             'already_in_library' => $existing !== null,
             'existing_library_id' => $existing?->id,
         ];

@@ -29,12 +29,13 @@ class MediaDetailService
     public function movie(User $user, Movie $movie): array
     {
         $movie = Movie::forUser($user)->findOrFail($movie->id);
-        $watches = MovieWatch::forUser($user)
+        $watchQuery = MovieWatch::forUser($user)
             ->where('movie_id', $movie->id)
-            ->latest('watched_at')
-            ->latest('id')
-            ->limit(20)
-            ->get();
+            ->watched();
+        $watchedCount = (int) (clone $watchQuery)->get(['watch_count'])
+            ->sum(fn (MovieWatch $watch): int => max(1, $watch->watch_count));
+        $watches = $watchQuery->latest('watched_at')->latest('id')->limit(100)->get();
+        $nextWatchNumber = $watchedCount;
 
         return [
             'id' => $movie->id,
@@ -47,13 +48,18 @@ class MediaDetailService
             'backdrop' => $this->backdropFor($movie, $movie->poster_url),
             'status' => $movie->is_to_watch ? 'watchlist' : ($watches->isNotEmpty() ? 'watched' : 'library'),
             'watched' => $watches->isNotEmpty(),
-            'watchedCount' => $watches->count(),
+            'watchedCount' => $watchedCount,
             'watchlist' => (bool) $movie->is_to_watch,
             'overview' => $movie->overview,
             'metadata' => $this->metadataFields($movie, $movie->release_date),
             'rating' => $this->rating($user, 'movie', $movie->id),
             'notes' => $this->notes($user, 'movie', $movie->id),
-            'watchHistory' => $watches->map(fn (MovieWatch $watch): array => $this->watchItem($watch))->values()->all(),
+            'watchHistory' => $watches->map(function (MovieWatch $watch) use (&$nextWatchNumber): array {
+                $watchNumber = $nextWatchNumber;
+                $nextWatchNumber -= max(1, $watch->watch_count);
+
+                return $this->watchItem($watch, $watchNumber);
+            })->values()->all(),
             'provider' => $this->providerStatus($user, 'movie', $movie->id),
             'timeline' => $this->events->timeline($user, ['subject_type' => 'movie', 'subject_id' => $movie->id, 'limit' => 8]),
         ];
@@ -107,12 +113,12 @@ class MediaDetailService
     public function episode(User $user, Episode $episode): array
     {
         $episode = Episode::forUser($user)->with('show')->findOrFail($episode->id);
-        $watches = EpisodeWatch::forUser($user)
+        $watchQuery = EpisodeWatch::forUser($user)
             ->where('episode_id', $episode->id)
-            ->latest('watched_at')
-            ->latest('id')
-            ->limit(20)
-            ->get();
+            ->watched();
+        $watchedCount = (clone $watchQuery)->count();
+        $watches = $watchQuery->latest('watched_at')->latest('id')->limit(100)->get();
+        $nextWatchNumber = $watchedCount;
 
         return [
             'id' => $episode->id,
@@ -127,13 +133,15 @@ class MediaDetailService
             'backdrop' => $this->backdropFor($episode, $episode->show?->fanart_url),
             'status' => $watches->isNotEmpty() ? 'watched' : 'library',
             'watched' => $watches->isNotEmpty(),
-            'watchedCount' => $watches->count(),
+            'watchedCount' => $watchedCount,
             'watchlist' => false,
             'overview' => $episode->overview,
             'metadata' => $this->metadataFields($episode, $episode->air_date),
             'rating' => $this->rating($user, 'episode', $episode->id),
             'notes' => $this->notes($user, 'episode', $episode->id),
-            'watchHistory' => $watches->map(fn (EpisodeWatch $watch): array => $this->episodeWatchItem($watch))->values()->all(),
+            'watchHistory' => $watches->map(function (EpisodeWatch $watch) use (&$nextWatchNumber): array {
+                return $this->episodeWatchItem($watch, $nextWatchNumber--);
+            })->values()->all(),
             'provider' => $this->providerStatus($user, 'episode', $episode->id),
             'timeline' => $this->events->timeline($user, ['subject_type' => 'episode', 'subject_id' => $episode->id, 'limit' => 8]),
         ];
@@ -180,10 +188,12 @@ class MediaDetailService
     /**
      * @return array<string, mixed>
      */
-    private function watchItem(MovieWatch|EpisodeWatch $watch): array
+    private function watchItem(MovieWatch|EpisodeWatch $watch, ?int $watchNumber = null): array
     {
         return [
             'id' => $watch->id,
+            'watchNumber' => $watchNumber,
+            'watchCount' => $watch instanceof MovieWatch ? max(1, $watch->watch_count) : 1,
             'watchedAt' => $watch->watched_at?->toIso8601String(),
             'runtime' => $watch->runtime,
             'source' => $watch->source ?: 'archive',
@@ -193,10 +203,10 @@ class MediaDetailService
     /**
      * @return array<string, mixed>
      */
-    private function episodeWatchItem(EpisodeWatch $watch): array
+    private function episodeWatchItem(EpisodeWatch $watch, ?int $watchNumber = null): array
     {
         return [
-            ...$this->watchItem($watch),
+            ...$this->watchItem($watch, $watchNumber),
             'episodeId' => $watch->episode_id,
             'title' => $watch->episode?->title,
             'subtitle' => $watch->episode ? $this->episodeSubtitle($watch->episode) : 'Episode',

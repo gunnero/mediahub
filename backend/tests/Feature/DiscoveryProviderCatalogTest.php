@@ -62,6 +62,30 @@ class DiscoveryProviderCatalogTest extends TestCase
             ->assertJsonPath('items.1.genres.0', 'Drama');
     }
 
+    public function test_discovery_browse_returns_bounded_public_categories_and_same_user_library_state(): void
+    {
+        $user = $this->member();
+        $movie = Movie::create(['user_id' => $user->id, 'title' => 'Heat', 'tmdb_id' => 949]);
+        Http::fake([
+            'api.themoviedb.org/3/trending/movie/week*' => Http::response([
+                'page' => 1, 'total_pages' => 1, 'total_results' => 1,
+                'results' => [['id' => 949, 'title' => 'Heat', 'release_date' => '1995-12-15', 'popularity' => 80]],
+            ]),
+            'api.themoviedb.org/3/trending/tv/week*' => Http::response([
+                'page' => 1, 'total_pages' => 1, 'total_results' => 1,
+                'results' => [['id' => 95396, 'name' => 'Severance', 'first_air_date' => '2022-02-18', 'popularity' => 90]],
+            ]),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/discover/browse?category=trending&type=all')
+            ->assertOk()
+            ->assertJsonPath('status', 'ready')
+            ->assertJsonPath('category', 'trending')
+            ->assertJsonPath('items.0.media_type', 'show')
+            ->assertJsonPath('items.1.existing_library_id', $movie->id);
+    }
+
     public function test_discovered_movie_and_show_are_added_once_and_scoped_to_user(): void
     {
         $user = $this->member();

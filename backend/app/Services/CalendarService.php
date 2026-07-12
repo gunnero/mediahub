@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Models\Episode;
 use App\Models\Movie;
+use App\Models\Show;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class CalendarService
 {
@@ -33,7 +35,8 @@ class CalendarService
             $items = $items->concat(
                 Episode::forUser($user)
                     ->with(['show' => fn ($query) => $query->forUser($user)])
-                    ->whereBetween('air_date', [$start->toDateString(), $end->toDateString()])
+                    ->whereDate('air_date', '>=', $start->toDateString())
+                    ->whereDate('air_date', '<=', $end->toDateString())
                     ->whereHas('show', fn (Builder $query) => $query
                         ->forUser($user)
                         ->where(fn (Builder $showQuery) => $showQuery->where('followed', true)->orWhere('seen_episodes', '>', 0)))
@@ -54,13 +57,16 @@ class CalendarService
                         'released' => $episode->air_date?->isPast() || $episode->air_date?->isToday(),
                     ])
             );
+
+            $items = $items->concat($this->nextEpisodeHints($user, $start, $end));
         }
 
         if ($type !== 'episodes') {
             $items = $items->concat(
                 Movie::forUser($user)
-                    ->whereBetween('release_date', [$start->toDateString(), $end->toDateString()])
-                    ->where(fn (Builder $query) => $query->where('is_to_watch', true)->orWhereHas('watches'))
+                    ->whereDate('release_date', '>=', $start->toDateString())
+                    ->whereDate('release_date', '<=', $end->toDateString())
+                    ->where('is_to_watch', true)
                     ->orderBy('release_date')
                     ->orderBy('title')
                     ->get()
@@ -87,6 +93,54 @@ class CalendarService
             'items' => $sorted->all(),
             'days' => $sorted->groupBy('date')->map->values()->all(),
         ];
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function nextEpisodeHints(User $user, CarbonImmutable $start, CarbonImmutable $end)
+    {
+        return Show::forUser($user)
+            ->where(fn (Builder $query) => $query->where('followed', true)->orWhere('seen_episodes', '>', 0))
+            ->get()
+            ->map(function (Show $show) use ($end, $start, $user): ?array {
+                $hint = data_get($show->metadata, 'release.next_episode');
+
+                if (! is_array($hint) || blank($hint['air_date'] ?? null)) {
+                    return null;
+                }
+
+                $date = CarbonImmutable::parse((string) $hint['air_date']);
+                if ($date->lt($start) || $date->gt($end)) {
+                    return null;
+                }
+
+                $season = (int) ($hint['season_number'] ?? 0);
+                $episode = (int) ($hint['episode_number'] ?? 0);
+                $alreadyLocal = Episode::forUser($user)
+                    ->where('show_id', $show->id)
+                    ->where('season_number', $season)
+                    ->where('episode_number', $episode)
+                    ->exists();
+
+                if ($alreadyLocal) {
+                    return null;
+                }
+
+                return [
+                    'id' => 'show-next-'.$show->id.'-'.$date->toDateString(),
+                    'kind' => 'show',
+                    'releaseKind' => 'episode',
+                    'showId' => $show->id,
+                    'date' => $date->toDateString(),
+                    'title' => $show->title,
+                    'subtitle' => sprintf('S%02dE%02d', max(0, $season), max(0, $episode)).' · '.((string) ($hint['name'] ?? 'Episode')),
+                    'poster' => $this->metadata->imageUrl($show->poster_path) ?: ($show->poster_url ?? ''),
+                    'released' => $date->isPast() || $date->isToday(),
+                ];
+            })
+            ->filter()
+            ->values();
     }
 
     private function episodeCode(Episode $episode): string

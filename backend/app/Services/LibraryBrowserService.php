@@ -166,6 +166,10 @@ class LibraryBrowserService
             ->where('movie_id', $movie->id)
             ->latest('watched_at')
             ->first();
+        $watchedCount = (int) MovieWatch::forUser($user)
+            ->where('movie_id', $movie->id)
+            ->get(['watch_count'])
+            ->sum(fn (MovieWatch $watch): int => max(1, $watch->watch_count));
 
         return [
             'id' => $movie->id,
@@ -177,6 +181,7 @@ class LibraryBrowserService
             'year' => $this->yearFromDate($movie->release_date),
             'runtime' => (int) $movie->runtime,
             'watched' => $latestWatch !== null,
+            'watchedCount' => $watchedCount,
             'status' => $movie->is_to_watch ? 'watchlist' : ($latestWatch ? 'watched' : 'library'),
             'latestWatchedAt' => $latestWatch?->watched_at?->toIso8601String(),
             'rating' => $this->rating($user, 'movie', $movie->id),
@@ -234,6 +239,9 @@ class LibraryBrowserService
             ->where('episode_id', $episode->id)
             ->latest('watched_at')
             ->first();
+        $watchedCount = EpisodeWatch::forUser($user)
+            ->where('episode_id', $episode->id)
+            ->count();
 
         return [
             'id' => $episode->id,
@@ -250,6 +258,7 @@ class LibraryBrowserService
             'episodeNumber' => (int) $episode->episode_number,
             'runtime' => (int) $episode->runtime,
             'watched' => $latestWatch !== null,
+            'watchedCount' => $watchedCount,
             'latestWatchedAt' => $latestWatch?->watched_at?->toIso8601String(),
             'rating' => $this->rating($user, 'episode', $episode->id),
             'hasNote' => $this->hasNote($user, 'episode', $episode->id),
@@ -324,6 +333,7 @@ class LibraryBrowserService
             'title' => $query->orderBy('title'),
             'rating' => $query->orderByDesc($this->ratingSubquery($user, 'movie'))->orderBy('title'),
             'year' => $query->orderByDesc('release_date')->orderBy('title'),
+            'newest_added' => $query->orderByDesc('updated_at')->orderByDesc('id'),
             default => $query->orderByDesc(MovieWatch::selectRaw('max(watched_at)')
                 ->whereColumn('movie_watches.movie_id', 'movies.id')
                 ->where('movie_watches.user_id', $user->id))
@@ -407,6 +417,7 @@ class LibraryBrowserService
                 DB::raw('null as episode_number'),
                 'movie_watches.watched_at as watched_at',
                 'movie_watches.source as source',
+                'movie_watches.watch_count as watch_count',
                 'movie_ratings.rating as rating',
                 'movies.poster_url as poster_url',
                 'movies.poster_path as poster_path',
@@ -454,6 +465,7 @@ class LibraryBrowserService
                 'episodes.episode_number as episode_number',
                 'episode_watches.watched_at as watched_at',
                 'episode_watches.source as source',
+                DB::raw('1 as watch_count'),
                 'episode_ratings.rating as rating',
                 'shows.poster_url as poster_url',
                 DB::raw('coalesce(episodes.poster_path, shows.poster_path) as poster_path'),
@@ -499,6 +511,7 @@ class LibraryBrowserService
                 'subtitle' => 'Movie',
                 'watchedAt' => $this->isoDate($row->watched_at),
                 'source' => $row->source ?: 'archive',
+                'watchCount' => max(1, (int) $row->watch_count),
                 'rating' => $row->rating !== null ? (int) $row->rating : null,
                 'poster' => $this->historyImage($row),
             ];
@@ -518,6 +531,7 @@ class LibraryBrowserService
             'meta' => trim(($row->show_title ? $row->show_title.' - ' : '').$code, ' -'),
             'watchedAt' => $this->isoDate($row->watched_at),
             'source' => $row->source ?: 'archive',
+            'watchCount' => 1,
             'rating' => $row->rating !== null ? (int) $row->rating : null,
             'poster' => $this->historyImage($row),
         ];

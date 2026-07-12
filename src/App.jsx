@@ -12,15 +12,10 @@ import {
   ListBullets,
   MagnifyingGlass,
   Play,
-  SquaresFour,
   TelevisionSimple,
   X,
 } from "@phosphor-icons/react";
-import {
-  buildActivityBars,
-  filterCollections,
-  getUnreadCount,
-} from "./lib/dashboard.js";
+import { filterCollections, getUnreadCount } from "./lib/dashboard.js";
 import { apiRequest, SessionExpiredError } from "./lib/api.js";
 import { PlayerSection, SettingsSection } from "./components/MediaHubSurfaces.jsx";
 import {
@@ -74,19 +69,12 @@ const navItems = [
   { id: "player", label: "Player", icon: Play, feature: "webPlayerEnabled" },
 ];
 
-const alertTabs = [
-  { id: "all", label: "All" },
-  { id: "new-episodes", label: "Episodes" },
-  { id: "upcoming", label: "Upcoming" },
-  { id: "movies", label: "Movies" },
-];
-
 const fallbackData = {
   features: {
     webPlayerEnabled: false,
     webProvidersEnabled: false,
   },
-  profile: { name: "gunner", image: "", cover: "" },
+  profile: { name: "gunner", avatar: "", image: "", cover: "" },
   stats: {
     episodesWatched: 0,
     moviesWatched: 0,
@@ -108,6 +96,7 @@ const fallbackData = {
   recentlyWatched: [],
   followedNewEpisodes: [],
   moviesToCheckOut: [],
+  recentShow: null,
   topShows: [],
   activity: [],
   timeline: {
@@ -376,12 +365,13 @@ function LoginScreen({ error, onLogin, submitting }) {
   );
 }
 
-function Topbar({ onAccountAction, profile, query, onQueryChange, onLogout }) {
+function Topbar({ onAccountAction, profile, query, onQueryChange, onLogout, searchInputRef }) {
   return (
     <header className="topbar">
       <label className="search-box">
         <MagnifyingGlass size={22} />
         <input
+          ref={searchInputRef}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search shows, movies, episodes..."
@@ -420,63 +410,12 @@ function Hero({ item, onOpen }) {
         <div className="hero-actions">
           <button className="primary-action" onClick={() => onOpen(item)} type="button">
             <Play size={18} weight="fill" />
-            Open memory
+            {item.primaryActionLabel || "Open memory"}
           </button>
           <button className="secondary-action" onClick={() => onOpen(item)} type="button">
-            View details
+            {item.secondaryActionLabel || "View details"}
           </button>
         </div>
-      </div>
-    </section>
-  );
-}
-
-function AlertCenter({ alerts, activeTab, onTabChange, onOpen, onMarkAllRead }) {
-  const visibleAlerts =
-    activeTab === "all"
-      ? alerts
-      : alerts.filter((alert) => alert.category === activeTab);
-  const unread = getUnreadCount(alerts);
-
-  return (
-    <section className="alerts-panel">
-      <div className="panel-heading">
-        <div>
-          <span>Alerts</span>
-          <strong>{unread} unread</strong>
-        </div>
-        <button onClick={onMarkAllRead} type="button">
-          Mark read
-        </button>
-      </div>
-      <div className="alert-tabs" role="tablist" aria-label="Alert filters">
-        {alertTabs.map((tab) => (
-          <button
-            className={activeTab === tab.id ? "active" : ""}
-            key={tab.id}
-            onClick={() => onTabChange(tab.id)}
-            type="button"
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <div className="alert-list">
-        {visibleAlerts.slice(0, 6).map((alert) => (
-          <button
-            className={`alert-row ${alert.unread ? "unread" : ""}`}
-            key={alert.id}
-            onClick={() => onOpen(alert)}
-            type="button"
-          >
-            <span className="alert-dot" />
-            <span>
-              <strong>{alert.title}</strong>
-              <small>{alert.subtitle}</small>
-            </span>
-            <em>{alert.dueText}</em>
-          </button>
-        ))}
       </div>
     </section>
   );
@@ -505,21 +444,17 @@ function PosterCard({ item, onOpen, compact = false }) {
   );
 }
 
-function Shelf({ title, items, onOpen, compact = false }) {
+function Shelf({ title, items, onOpen, onViewAll, compact = false }) {
   return (
     <section className="shelf">
       <div className="section-heading">
         <h2>{title}</h2>
-        <button type="button">View all</button>
+        <button onClick={onViewAll} type="button">View all</button>
       </div>
       <div className={`poster-strip ${compact ? "compact" : ""}`}>
-        {items.length ? (
-          items.map((item) => (
-            <PosterCard compact={compact} item={item} key={item.id} onOpen={onOpen} />
-          ))
-        ) : (
-          <div className="empty-strip">No matching titles</div>
-        )}
+        {items.length ? items.map((item) => (
+          <PosterCard compact={compact} item={item} key={item.id} onOpen={onOpen} />
+        )) : <div className="empty-strip">No matching titles</div>}
       </div>
     </section>
   );
@@ -580,7 +515,7 @@ function LibraryToolbar({
 
 function LibraryCard({ item, onOpen, showProviderStatus = false }) {
   const badges = [
-    item.watched ? "Watched" : null,
+    item.watched ? (item.watchedCount > 1 ? `Watched ${item.watchedCount} times` : "Watched") : null,
     ratingLabel(item.rating),
     item.hasNote ? "Private note" : null,
     showProviderStatus && item.providerLinked ? "Linked source" : null,
@@ -628,6 +563,9 @@ function LibraryState({ error, loading, children }) {
 export function MovieLibrary({
   apiClient = apiRequest,
   initialSearch = "",
+  initialSort = "latest_watched",
+  initialStatus = "all",
+  navigationKey = 0,
   onOpen,
   onSessionExpired,
   showProviderStatus = false,
@@ -635,8 +573,8 @@ export function MovieLibrary({
   const [searchDraft, setSearchDraft] = useState(initialSearch);
   const [filters, setFilters] = useState({
     search: initialSearch,
-    status: "all",
-    sort: "latest_watched",
+    status: initialStatus,
+    sort: initialSort,
     page: 1,
     per_page: 24,
   });
@@ -646,10 +584,14 @@ export function MovieLibrary({
 
   useEffect(() => {
     setSearchDraft(initialSearch);
-    setFilters((current) => (
-      current.search === initialSearch ? current : { ...current, search: initialSearch, page: 1 }
-    ));
-  }, [initialSearch]);
+    setFilters((current) => ({
+      ...current,
+      search: initialSearch,
+      status: initialStatus,
+      sort: initialSort,
+      page: 1,
+    }));
+  }, [initialSearch, initialSort, initialStatus, navigationKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -724,6 +666,7 @@ export function MovieLibrary({
         onSortChange={(sort) => setFilters((current) => ({ ...current, sort, page: 1 }))}
         sortOptions={[
           { value: "latest_watched", label: "Latest watched" },
+          { value: "newest_added", label: "Newest added" },
           { value: "title", label: "Title" },
           { value: "rating", label: "Rating" },
           { value: "year", label: "Year" },
@@ -903,14 +846,21 @@ function PaginationControls({ pagination, onPage }) {
 
 export function HistorySection({
   apiClient = apiRequest,
+  initialType = "all",
+  navigationKey = 0,
   onOpen,
   onSessionExpired,
 }) {
   const [searchDraft, setSearchDraft] = useState("");
-  const [filters, setFilters] = useState({ type: "all", search: "", page: 1, per_page: 30 });
+  const [filters, setFilters] = useState({ type: initialType, search: "", page: 1, per_page: 30 });
   const [payload, setPayload] = useState({ items: [], pagination: { page: 1, total: 0, hasMore: false } });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setSearchDraft("");
+    setFilters({ type: initialType, search: "", page: 1, per_page: 30 });
+  }, [initialType, navigationKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1006,7 +956,7 @@ export function HistorySection({
                   <small>{item.subtitle}{item.showTitle ? ` · ${item.showTitle}` : ""}</small>
                 </span>
                 <em>{shortDate(item.watchedAt)}</em>
-                <b>{sourceLabel(item.source)}</b>
+                <b>{item.watchCount > 1 ? `Watched ${item.watchCount} times` : sourceLabel(item.source)}</b>
               </button>
             ))}
           </div>
@@ -1241,55 +1191,6 @@ export function GlobalSearchPanel({
   );
 }
 
-function StatsStrip({ stats }) {
-  const cards = [
-    {
-      label: "Episodes watched",
-      value: stats.episodesWatched,
-      icon: TelevisionSimple,
-    },
-    { label: "Movies watched", value: stats.moviesWatched, icon: FilmSlate },
-    { label: "Hours watched", value: stats.hoursWatched, icon: Clock },
-    { label: "Shows followed", value: stats.showsFollowed, icon: SquaresFour },
-  ];
-
-  return (
-    <section className="stats-strip">
-      {cards.map((card) => {
-        const Icon = card.icon;
-        return (
-          <div className="stat-card" key={card.label}>
-            <Icon size={26} />
-            <strong>{formatNumber(card.value)}</strong>
-            <span>{card.label}</span>
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-function ActivityChart({ activity }) {
-  const bars = buildActivityBars(activity);
-  return (
-    <section className="activity-panel">
-      <div className="section-heading">
-        <h2>Watching activity</h2>
-        <span>Last 7 days</span>
-      </div>
-      <div className="chart-grid">
-        {bars.map((bar) => (
-          <div className="chart-day" key={bar.date || bar.day}>
-            <span>{bar.hours}</span>
-            <i style={{ height: `${bar.height}%` }} />
-            <small>{bar.day}</small>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function TimelinePanel({ timeline }) {
   const events = timeline?.recent || [];
   const grouped = events.reduce((groups, event) => {
@@ -1457,8 +1358,13 @@ export function DetailModal({
                 <button className="primary-action" onClick={() => onPlay?.(detail)} type="button"><Play size={18} weight="fill" /> Play</button>
               ) : null}
               {canManualWatch ? (
-                <button className="secondary-action" disabled={actionPending} onClick={() => hasManualWatch ? onMarkUnwatched?.(detail) : onMarkWatched?.(detail)} type="button">
-                  <CheckCircle size={18} weight="fill" /> {hasManualWatch ? "Remove from Watch History" : "Add to Watch History"}
+                <button className="secondary-action" disabled={actionPending} onClick={() => onMarkWatched?.(detail)} type="button">
+                  <CheckCircle size={18} weight="fill" /> {detail.watched ? "Mark watched again" : "Mark watched"}
+                </button>
+              ) : null}
+              {canManualWatch && hasManualWatch ? (
+                <button className="text-action danger" disabled={actionPending} onClick={() => onMarkUnwatched?.(detail)} type="button">
+                  Remove latest manual watch
                 </button>
               ) : null}
               {detail?.kind === "movie" || detail?.kind === "show" ? (
@@ -1491,7 +1397,7 @@ export function DetailModal({
                     <p>{detail.overview || "No overview is available yet."}</p>
                   </section>
                   <section className="detail-facts">
-                    <div><span>Watched</span><strong>{detail.watched ? "Yes" : "Not yet"}</strong></div>
+                    <div><span>Watched</span><strong>{detail.watched ? `${detail.watchedCount || 1} ${(detail.watchedCount || 1) === 1 ? "time" : "times"}` : "Not yet"}</strong></div>
                     <div><span>Your rating</span><strong>{rating ? `${rating}/10` : "Not rated"}</strong></div>
                     {playerEnabled ? <div><span>Provider</span><strong>{detail.provider?.linked ? "Linked" : "Manual only"}</strong></div> : null}
                     {detail.kind === "show" ? <div><span>Progress</span><strong>{detail.meta}</strong></div> : null}
@@ -1559,7 +1465,7 @@ export function DetailModal({
               ) : null}
 
               {activeTab === "history" ? (
-                <section className="detail-section"><div className="detail-section-heading"><strong>Watch history</strong><span>{detail.watchHistory?.length || 0} entries</span></div><div className="watch-history compact-history">{detail.watchHistory?.length ? detail.watchHistory.map((watch) => <div key={watch.id}><span>{shortDate(watch.watchedAt) || "Unknown date"}</span><strong>{sourceLabel(watch.source)}</strong></div>) : <em>No watch history yet</em>}</div></section>
+                <section className="detail-section"><div className="detail-section-heading"><strong>Watch history</strong><span>{detail.watchedCount || detail.watchHistory?.length || 0} watches</span></div><div className="watch-history compact-history">{detail.watchHistory?.length ? detail.watchHistory.map((watch) => <div key={watch.id}><span><b>{watch.watchNumber ? `Watch #${watch.watchNumber}` : "Watch"}</b>{shortDate(watch.watchedAt) || "Unknown date"}</span><strong>{sourceLabel(watch.source)}</strong></div>) : <em>No watch history yet</em>}</div></section>
               ) : null}
 
               {playerEnabled && activeTab === "provider" ? (
@@ -1607,10 +1513,8 @@ function aiCandidateToTarget(candidate) {
 
 function FocusSection({
   activeSection,
-  activity,
-  alerts,
   apiClient,
-  collections,
+  discoverIntent,
   features,
   globalQuery,
   onOpen,
@@ -1620,8 +1524,9 @@ function FocusSection({
   onSessionExpired,
   player,
   profileMode,
+  historyIntent,
+  movieIntent,
   settingsInitialSection,
-  stats,
 }) {
   if (activeSection === "profile") {
     return <OwnProfileSection apiClient={apiClient} editInitially={profileMode === "edit"} onOpenPrivacy={() => onAccountAction("privacy")} onSessionExpired={onSessionExpired} />;
@@ -1636,7 +1541,7 @@ function FocusSection({
   }
 
   if (activeSection === "discover") {
-    return <DiscoverSection apiClient={apiClient} onLibraryChanged={onPlayerRefresh} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
+    return <DiscoverSection apiClient={apiClient} initialType={discoverIntent.type} navigationKey={discoverIntent.key} onLibraryChanged={onPlayerRefresh} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
   }
 
   if (activeSection === "shows") {
@@ -1656,6 +1561,9 @@ function FocusSection({
       <MovieLibrary
         apiClient={apiClient}
         initialSearch={globalQuery}
+        initialSort={movieIntent.sort}
+        initialStatus={movieIntent.status}
+        navigationKey={movieIntent.key}
         onOpen={onOpen}
         onSessionExpired={onSessionExpired}
         showProviderStatus={Boolean(features?.webPlayerEnabled)}
@@ -1667,6 +1575,8 @@ function FocusSection({
     return (
       <HistorySection
         apiClient={apiClient}
+        initialType={historyIntent.type}
+        navigationKey={historyIntent.key}
         onOpen={onOpen}
         onSessionExpired={onSessionExpired}
       />
@@ -1724,7 +1634,6 @@ export function App() {
   const [appState, setAppState] = useState("checking");
   const [query, setQuery] = useState("");
   const [activeSection, setActiveSection] = useState("home");
-  const [activeAlertTab, setActiveAlertTab] = useState("all");
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1739,6 +1648,10 @@ export function App() {
   const [submittingLogin, setSubmittingLogin] = useState(false);
   const [profileMode, setProfileMode] = useState("view");
   const [settingsInitialSection, setSettingsInitialSection] = useState("profile");
+  const [historyIntent, setHistoryIntent] = useState({ type: "all", key: 0 });
+  const [movieIntent, setMovieIntent] = useState({ status: "all", sort: "latest_watched", key: 0 });
+  const [discoverIntent, setDiscoverIntent] = useState({ type: "all", key: 0 });
+  const searchInputRef = useRef(null);
 
   useEffect(() => {
     if (publicRoute) return undefined;
@@ -1919,7 +1832,49 @@ export function App() {
 
   function selectSection(section) {
     if (section === "settings") setSettingsInitialSection("profile");
+    if (section === "discover") {
+      setDiscoverIntent((current) => ({ type: "all", key: current.key + 1 }));
+    }
+    if (section === "movies") {
+      setMovieIntent((current) => ({ status: "all", sort: "latest_watched", key: current.key + 1 }));
+    }
+    if (section === "history") {
+      setHistoryIntent((current) => ({ type: "all", key: current.key + 1 }));
+    }
     setActiveSection(section);
+  }
+
+  function handleHomeNavigation(action) {
+    if (action === "search") {
+      searchInputRef.current?.focus();
+      return;
+    }
+    if (action === "recent-history") {
+      setHistoryIntent((current) => ({ type: "all", key: current.key + 1 }));
+      setActiveSection("history");
+      return;
+    }
+    if (action === "watchlist-movies") {
+      setMovieIntent((current) => ({ status: "watchlist", sort: "newest_added", key: current.key + 1 }));
+      setActiveSection("movies");
+      return;
+    }
+    if (action === "add-movie" || action === "add-show") {
+      setDiscoverIntent((current) => ({ type: action === "add-movie" ? "movie" : "show", key: current.key + 1 }));
+      setActiveSection("discover");
+      return;
+    }
+    if (action === "import" || action === "export") {
+      setSettingsInitialSection("import-export");
+      setActiveSection("settings");
+      return;
+    }
+    if (action === "profile") {
+      setProfileMode("edit");
+      setActiveSection("profile");
+      return;
+    }
+    selectSection(action);
   }
 
   function expireSession() {
@@ -2068,22 +2023,6 @@ export function App() {
     });
   }
 
-  async function markAllRead() {
-    setReadAlerts(new Set(alerts.map((alert) => alert.id)));
-    setDashboard((current) => ({
-      ...current,
-      alerts: current.alerts.map((alert) => ({ ...alert, unread: false })),
-    }));
-
-    try {
-      await apiRequest("/api/v1/alerts/read-all", { method: "POST" });
-    } catch (error) {
-      if (error instanceof SessionExpiredError) {
-        expireSession();
-      }
-    }
-  }
-
   if (publicRoute?.type === "profile") {
     return <PublicProfilePage preview={new URLSearchParams(window.location.search).get("preview") === "public"} slug={publicRoute.value} />;
   }
@@ -2121,6 +2060,8 @@ export function App() {
   }
 
   const socialSection = ["profile", "friends", "invite-friends"].includes(activeSection);
+  const settingsSection = activeSection === "settings";
+  const singleColumnSection = true;
 
   return (
     <div className="app-shell">
@@ -2137,13 +2078,14 @@ export function App() {
           query={query}
           onLogout={handleLogout}
           onQueryChange={setQuery}
+          searchInputRef={searchInputRef}
         />
         {isEmptyLibrary ? (
           <div className="data-warning">Your library is empty.</div>
         ) : null}
-        <div className={`dashboard-grid${socialSection ? " social-dashboard-grid" : ""}`}>
+        <div className={`dashboard-grid${singleColumnSection ? " content-dashboard-grid" : ""}${socialSection ? " social-dashboard-grid" : ""}${settingsSection ? " settings-dashboard-grid" : ""}`}>
           <div className="primary-column">
-            {!socialSection ? <Hero item={dashboard.hero} onOpen={openItem} /> : null}
+            {activeSection === "shows" && dashboard.recentShow ? <Hero item={dashboard.recentShow} onOpen={openItem} /> : null}
             {query.trim().length >= 2 && activeSection === "home" ? (
               <GlobalSearchPanel
                 apiClient={apiRequest}
@@ -2159,21 +2101,21 @@ export function App() {
                   title="Recently watched"
                   items={collections.recentlyWatched}
                   onOpen={openItem}
+                  onViewAll={() => handleHomeNavigation("recent-history")}
                 />
                 <Shelf
                   compact
                   title="Movies to check out"
                   items={collections.moviesToCheckOut}
                   onOpen={openItem}
+                  onViewAll={() => handleHomeNavigation("watchlist-movies")}
                 />
               </>
             ) : (
               <FocusSection
                 activeSection={activeSection}
-                alerts={alerts}
                 apiClient={apiRequest}
-                activity={dashboard.activity}
-                collections={collections}
+                discoverIntent={discoverIntent}
                 features={dashboard.features}
                 globalQuery={query}
                 onAccountAction={handleAccountAction}
@@ -2183,29 +2125,12 @@ export function App() {
                 onSessionExpired={expireSession}
                 player={dashboard.player}
                 profileMode={profileMode}
+                historyIntent={historyIntent}
+                movieIntent={movieIntent}
                 settingsInitialSection={settingsInitialSection}
-                stats={stats}
               />
             )}
           </div>
-          {!socialSection ? <aside className="insight-column">
-            <TimelinePanel timeline={dashboard.timeline} />
-            <AlertCenter
-              activeTab={activeAlertTab}
-              alerts={alerts}
-              onMarkAllRead={markAllRead}
-              onOpen={openItem}
-              onTabChange={setActiveAlertTab}
-            />
-            <Shelf
-              compact
-              title="Followed shows with new episodes"
-              items={collections.followedNewEpisodes.slice(0, 6)}
-              onOpen={openItem}
-            />
-            <StatsStrip stats={stats} />
-            <ActivityChart activity={dashboard.activity} />
-          </aside> : null}
         </div>
       </main>
       <DetailModal

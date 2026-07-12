@@ -8,6 +8,7 @@ use App\Models\Movie;
 use App\Models\NotificationPreference;
 use App\Models\Show;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -92,6 +93,7 @@ class AlertService
         $today = now()->startOfDay();
 
         if ($preferences->new_episodes) {
+            $scheduledEpisodeKeys = collect();
             Episode::forUser($user)
                 ->with('show')
                 ->whereBetween('air_date', [$today->copy()->subDay(), $today->copy()->addDays(14)])
@@ -99,15 +101,58 @@ class AlertService
                 ->orderBy('air_date')
                 ->limit(50)
                 ->get()
-                ->each(function (Episode $episode) use ($user, &$created, $today): void {
+                ->each(function (Episode $episode) use ($user, &$created, $scheduledEpisodeKeys, $today): void {
                     $released = $episode->air_date?->lte($today);
+                    $scheduledEpisodeKeys->push($episode->show_id.':'.$episode->season_number.':'.$episode->episode_number);
                     $created += $this->upsertGenerated($user, [
                         'dedupe_key' => 'episode-release:'.$episode->id.':'.$episode->air_date?->toDateString(),
                         'category' => $released ? 'new-episodes' : 'upcoming',
                         'title' => $released ? 'New episode available' : 'Episode coming soon',
                         'subtitle' => ($episode->show?->title ?? 'Untitled show').' · '.$this->episodeCode($episode),
                         'due_text' => $this->dueText($episode->air_date),
-                        'payload' => ['kind' => 'episode', 'episode_id' => $episode->id, 'show_id' => $episode->show_id],
+                        'payload' => [
+                            'kind' => 'episode',
+                            'episode_id' => $episode->id,
+                            'show_id' => $episode->show_id,
+                            'alert_type' => $released ? 'new_episode' : 'upcoming_episode',
+                            'release_date' => $episode->air_date?->toDateString(),
+                        ],
+                    ]);
+                });
+
+            Show::forUser($user)
+                ->followed()
+                ->get()
+                ->each(function (Show $show) use ($user, &$created, $scheduledEpisodeKeys, $today): void {
+                    $hint = data_get($show->metadata, 'release.next_episode');
+                    if (! is_array($hint) || blank($hint['air_date'] ?? null)) {
+                        return;
+                    }
+
+                    $airDate = CarbonImmutable::parse((string) $hint['air_date'])->startOfDay();
+                    if ($airDate->lt($today->copy()->subDay()) || $airDate->gt($today->copy()->addDays(14))) {
+                        return;
+                    }
+
+                    $season = (int) ($hint['season_number'] ?? 0);
+                    $episode = (int) ($hint['episode_number'] ?? 0);
+                    if ($scheduledEpisodeKeys->contains($show->id.':'.$season.':'.$episode)) {
+                        return;
+                    }
+
+                    $released = $airDate->lte($today);
+                    $created += $this->upsertGenerated($user, [
+                        'dedupe_key' => 'show-next-release:'.$show->id.':'.$season.':'.$episode.':'.$airDate->toDateString(),
+                        'category' => $released ? 'new-episodes' : 'upcoming',
+                        'title' => $released ? 'New episode available' : 'Episode coming soon',
+                        'subtitle' => $show->title.' · '.sprintf('S%02dE%02d', max(0, $season), max(0, $episode)),
+                        'due_text' => $this->dueText($airDate),
+                        'payload' => [
+                            'kind' => 'show',
+                            'show_id' => $show->id,
+                            'alert_type' => $released ? 'new_episode' : 'upcoming_episode',
+                            'release_date' => $airDate->toDateString(),
+                        ],
                     ]);
                 });
         }
@@ -119,14 +164,20 @@ class AlertService
                 ->orderBy('release_date')
                 ->limit(50)
                 ->get()
-                ->each(function (Movie $movie) use ($user, &$created): void {
+                ->each(function (Movie $movie) use ($user, &$created, $today): void {
+                    $released = $movie->release_date?->lte($today);
                     $created += $this->upsertGenerated($user, [
                         'dedupe_key' => 'movie-release:'.$movie->id.':'.$movie->release_date?->toDateString(),
-                        'category' => 'movies',
-                        'title' => 'Watchlist movie release',
+                        'category' => $released ? 'movies' : 'upcoming',
+                        'title' => $released ? 'Watchlist movie released' : 'Upcoming movie release',
                         'subtitle' => $movie->title,
                         'due_text' => $this->dueText($movie->release_date),
-                        'payload' => ['kind' => 'movie', 'movie_id' => $movie->id],
+                        'payload' => [
+                            'kind' => 'movie',
+                            'movie_id' => $movie->id,
+                            'alert_type' => $released ? 'watchlist_release' : 'upcoming_movie',
+                            'release_date' => $movie->release_date?->toDateString(),
+                        ],
                     ]);
                 });
         }
@@ -146,7 +197,7 @@ class AlertService
                         'title' => 'Continue your show',
                         'subtitle' => $show->title.' · '.$remaining.' '.str('episode')->plural($remaining).' ready',
                         'due_text' => 'When you are ready',
-                        'payload' => ['kind' => 'show', 'show_id' => $show->id],
+                        'payload' => ['kind' => 'show', 'show_id' => $show->id, 'alert_type' => 'continue_watching'],
                     ]);
                 });
         }

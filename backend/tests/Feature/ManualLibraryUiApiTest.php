@@ -182,7 +182,7 @@ class ManualLibraryUiApiTest extends TestCase
         $this->assertDatabaseMissing('notes', ['id' => $noteId]);
     }
 
-    public function test_manual_movie_and_episode_watch_toggles_avoid_duplicates(): void
+    public function test_manual_movie_and_episode_watches_append_rewatches_and_remove_only_the_latest(): void
     {
         $user = $this->member();
         $movie = Movie::create(['user_id' => $user->id, 'title' => 'Manual Movie']);
@@ -202,8 +202,15 @@ class ManualLibraryUiApiTest extends TestCase
                 ->assertCreated();
         }
 
-        $this->assertSame(1, MovieWatch::forUser($user)->where('movie_id', $movie->id)->where('source', 'manual')->count());
-        $this->assertSame(1, EpisodeWatch::forUser($user)->where('episode_id', $episode->id)->where('source', 'manual')->count());
+        $this->assertSame(2, MovieWatch::forUser($user)->where('movie_id', $movie->id)->where('source', 'manual')->count());
+        $this->assertSame(2, EpisodeWatch::forUser($user)->where('episode_id', $episode->id)->where('source', 'manual')->count());
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/library/movies/{$movie->id}")
+            ->assertOk()
+            ->assertJsonPath('item.watchedCount', 2)
+            ->assertJsonPath('item.watchHistory.0.watchNumber', 2)
+            ->assertJsonPath('item.watchHistory.1.watchNumber', 1);
 
         $this->actingAs($user)
             ->deleteJson("/api/v1/library/movies/{$movie->id}/watch")
@@ -212,6 +219,11 @@ class ManualLibraryUiApiTest extends TestCase
             ->deleteJson("/api/v1/library/episodes/{$episode->id}/watch")
             ->assertNoContent();
 
+        $this->assertSame(1, MovieWatch::forUser($user)->where('movie_id', $movie->id)->where('source', 'manual')->count());
+        $this->assertSame(1, EpisodeWatch::forUser($user)->where('episode_id', $episode->id)->where('source', 'manual')->count());
+
+        $this->actingAs($user)->deleteJson("/api/v1/library/movies/{$movie->id}/watch")->assertNoContent();
+        $this->actingAs($user)->deleteJson("/api/v1/library/episodes/{$episode->id}/watch")->assertNoContent();
         $this->assertSame(0, MovieWatch::forUser($user)->where('movie_id', $movie->id)->where('source', 'manual')->count());
         $this->assertSame(0, EpisodeWatch::forUser($user)->where('episode_id', $episode->id)->where('source', 'manual')->count());
     }

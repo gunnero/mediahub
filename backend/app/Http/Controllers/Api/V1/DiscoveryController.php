@@ -11,6 +11,22 @@ use Illuminate\Validation\Rule;
 
 class DiscoveryController extends Controller
 {
+    public function browse(Request $request, DiscoveryService $discovery): JsonResponse
+    {
+        $data = $request->validate([
+            'category' => ['nullable', 'string', Rule::in(['trending', 'popular', 'now_playing', 'upcoming', 'top_rated'])],
+            'type' => ['nullable', 'string', Rule::in(['movie', 'show', 'all'])],
+            'page' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ]);
+
+        return response()->json($discovery->browse(
+            $request->user(),
+            $data['category'] ?? 'trending',
+            $data['type'] ?? 'all',
+            (int) ($data['page'] ?? 1),
+        ));
+    }
+
     public function search(Request $request, DiscoveryService $discovery): JsonResponse
     {
         $data = $request->validate([

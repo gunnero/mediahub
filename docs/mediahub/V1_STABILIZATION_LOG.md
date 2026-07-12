@@ -88,6 +88,50 @@ Stabilization rules:
   2. Observe the two-row difference.
 - **Status:** Monitoring. The deterministic repair intentionally does not lower imported counters because that could destroy preserved history.
 
+### V1-006 - Page-wide Home hero leaked into focused screens
+
+- **Date:** 2026-07-12
+- **Screen:** Discover, History, Alerts, Stats, Lists, and Settings
+- **Expected behavior:** Focused screens open directly into their own controls and content. The entertainment hero and diary remain Home concerns; Shows may use its own latest-show hero.
+- **Actual behavior:** The shared recent-movie hero rendered above unrelated screens, and Settings retained a second diary column.
+- **Severity:** Medium
+- **Reproduction steps:** Open each listed navigation destination in Web V1 and observe the repeated Home composition.
+- **Regression tests:** `App.test.jsx` verifies page-specific hero rules and that Settings has no Entertainment Diary while Home keeps it.
+- **Status:** Fixed locally; not committed or deployed.
+
+### V1-007 - Manual rewatch overwrote the watched state
+
+- **Date:** 2026-07-12
+- **Screen:** Movie and episode detail, History, Stats
+- **Expected behavior:** Every explicit rewatch creates a new dated event and preserves earlier dates.
+- **Actual behavior:** Manual watch handling treated watched as one boolean-like row, preventing a second historical watch event.
+- **Severity:** High
+- **Reproduction steps:** Mark an already watched movie or episode as watched again, then inspect its detail history and Stats.
+- **Regression tests:** `ManualLibraryUiApiTest` verifies append-only rows, chronological watch numbers, repeat-aware counts, and latest-manual-only removal.
+- **Status:** Fixed locally; not committed or deployed.
+
+### V1-008 - Release and alert surfaces lacked useful upcoming data
+
+- **Date:** 2026-07-12
+- **Screen:** Calendar and Alerts
+- **Expected behavior:** Calendar uses followed-show episode dates and watchlist movie releases; Alerts distinguishes release, episode, and continue-watching reasons.
+- **Actual behavior:** Calendar could remain empty despite usable metadata, and the Upcoming alert tab lacked category-specific generated entries.
+- **Severity:** Medium
+- **Reproduction steps:** Use a followed show with next-episode metadata or a watchlist movie with a future release, then open Calendar and Upcoming Alerts.
+- **Regression tests:** `TmdbMetadataTest`, `WebV1ApiTest`, and `WebV1Surfaces.test.jsx` cover next-episode hints, watchlist releases, alert types, and empty states.
+- **Status:** Fixed locally; existing shows may require a metadata refresh before new next-episode hints are available. Not committed or deployed.
+
+### V1-009 - Profile identity fields and avatar controls were incomplete
+
+- **Date:** 2026-07-12
+- **Screen:** Profile and Privacy
+- **Expected behavior:** Users can maintain full name, ISO country, and an explicitly publishable avatar without exposing upload metadata or another user's files.
+- **Actual behavior:** The form lacked full name/country completeness and had no safe avatar upload/remove pipeline.
+- **Severity:** Medium
+- **Reproduction steps:** Open Edit Profile and inspect the available identity/avatar controls.
+- **Regression tests:** `ProfilesAndFriendsTest` and `ProfileSurfaces.test.jsx` cover formats, size/MIME rejection, thumbnail generation, replacement/deletion, privacy, country selection, preview, and upload progress.
+- **Status:** Fixed locally; not committed or deployed.
+
 ## Privacy-Safe Operational Monitoring
 
 The stabilization monitor is intentionally narrow and file-backed.

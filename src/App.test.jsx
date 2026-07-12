@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  App,
   DetailModal,
   GlobalSearchPanel,
   HistorySection,
@@ -74,6 +75,118 @@ function renderDetail(overrides = {}) {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  window.history.replaceState({}, "", "/");
+});
+
+const appDashboard = {
+  features: { webPlayerEnabled: false, webProvidersEnabled: false },
+  profile: { name: "Gunner", username: "gunner", displayName: "Gunner" },
+  stats: { episodesWatched: 1, moviesWatched: 1, hoursWatched: 2, showsFollowed: 1 },
+  hero: { title: "Continue watching", subtitle: "Private library", meta: "Ready", progress: 20, kind: "movie" },
+  recentShow: { id: "recent-show-8", kind: "show", showId: 8, title: "Severance", subtitle: "S02 E03", meta: "3/10 watched", progress: 30, eyebrow: "Recent show", primaryActionLabel: "Continue watching", secondaryActionLabel: "View details" },
+  alerts: [],
+  recentlyWatched: [],
+  followedNewEpisodes: [],
+  moviesToCheckOut: [],
+  topShows: [],
+  activity: [],
+  timeline: { recent: [], todaySummary: { total: 0 }, thisWeekSummary: { total: 0 } },
+  player: { enabled: false, sourceItems: [], linkedItems: [], unlinkedItems: [], continueWatching: [] },
+};
+
+function jsonResponse(payload, status = 200) {
+  return {
+    headers: { get: () => "application/json" },
+    json: async () => payload,
+    ok: status >= 200 && status < 300,
+    status,
+  };
+}
+
+function stubAppApi() {
+  vi.stubGlobal("fetch", vi.fn(async (input) => {
+    const path = typeof input === "string" ? input : input.url;
+    if (path === "/api/v1/me") return jsonResponse({ user: { name: "Gunner" } });
+    if (path === "/api/v1/dashboard") return jsonResponse(appDashboard);
+    if (path === "/api/v1/settings") return jsonResponse({ profile: { name: "Gunner", email: "member@example.test", role: "member" }, metadata: {}, import: {}, export: { csvDatasets: [] }, version: "1.0.0" });
+    if (path === "/api/v1/notification-preferences") return jsonResponse({ preferences: {} });
+    if (path.startsWith("/api/v1/library/history")) return jsonResponse({ items: [], pagination: { page: 1, total: 0, hasMore: false } });
+    if (path.startsWith("/api/v1/library/movies")) return jsonResponse({ items: [], pagination: { page: 1, total: 0, hasMore: false } });
+    if (path.startsWith("/api/v1/library/shows")) return jsonResponse({ items: [], pagination: { page: 1, total: 0, hasMore: false } });
+    if (path.startsWith("/api/v1/discover/browse")) return jsonResponse({ status: "ready", items: [], pagination: {} });
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+}
+
+describe("Settings page layout", () => {
+  it("removes the diary column entirely from Settings", async () => {
+    stubAppApi();
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Recently watched" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(container.querySelector(".dashboard-grid")).toHaveClass("settings-dashboard-grid");
+    expect(container.querySelector(".insight-column")).not.toBeInTheDocument();
+    expect(container.querySelector(".hero-panel")).not.toBeInTheDocument();
+    expect(await screen.findByText("member@example.test")).toBeInTheDocument();
+    expect(container.querySelector(".settings-editorial")).toBeInTheDocument();
+  });
+
+  it("keeps mobile Settings single-column without horizontal overflow or losing the account menu", async () => {
+    vi.stubGlobal("innerWidth", 390);
+    stubAppApi();
+    const { container } = render(<App />);
+
+    await screen.findByRole("heading", { name: "Recently watched" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await screen.findByRole("heading", { name: "Settings" });
+
+    expect(container.querySelector(".dashboard-grid")).toHaveClass("settings-dashboard-grid");
+    expect(container.querySelector(".insight-column")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open account menu" })).toBeInTheDocument();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  });
+});
+
+describe("V1 Home navigation and page-specific hero rules", () => {
+  it("opens History from Recently watched View all", async () => {
+    stubAppApi();
+    render(<App />);
+    const shelf = (await screen.findByRole("heading", { name: "Recently watched" })).closest("section");
+    fireEvent.click(within(shelf).getByRole("button", { name: "View all" }));
+
+    expect(await screen.findByRole("heading", { name: "Watch history" })).toBeInTheDocument();
+    expect(screen.getByLabelText("History type")).toHaveValue("all");
+  });
+
+  it("opens the watchlist sorted by newest added from Movies to check out", async () => {
+    stubAppApi();
+    render(<App />);
+    const shelf = (await screen.findByRole("heading", { name: "Movies to check out" })).closest("section");
+    fireEvent.click(within(shelf).getByRole("button", { name: "View all" }));
+
+    expect(await screen.findByRole("heading", { name: "Movies" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Movie status")).toHaveValue("watchlist");
+    expect(screen.getByLabelText("Sort movies")).toHaveValue("newest_added");
+  });
+
+  it("removes unrelated heroes and keeps the recent-show hero on Shows", async () => {
+    stubAppApi();
+    const { container } = render(<App />);
+    await screen.findByRole("heading", { name: "Recently watched" });
+    expect(container.querySelector(".hero-panel")).not.toBeInTheDocument();
+
+    fireEvent.click(container.querySelector('.nav-item[aria-label="Discover"]'));
+    expect(await screen.findByRole("heading", { name: "Discover" })).toBeInTheDocument();
+    expect(container.querySelector(".hero-panel")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Shows" }));
+    expect(await screen.findByRole("heading", { name: "Shows" })).toBeInTheDocument();
+    expect(screen.getByText("Recent show")).toBeInTheDocument();
+  });
 });
 
 describe("DetailModal", () => {
@@ -254,17 +367,19 @@ describe("DetailModal", () => {
     expect(props.onDeleteNote).toHaveBeenCalledWith(movieDetail, movieDetail.notes[0]);
   });
 
-  it("triggers manual watched and unwatched actions", () => {
+  it("creates rewatches and removes only the latest manual watch", () => {
     const unwatchedDetail = { ...movieDetail, watched: false, watchHistory: [] };
     const unwatchedProps = renderDetail({ detail: unwatchedDetail });
 
-    fireEvent.click(screen.getByRole("button", { name: /add to watch history/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^mark watched$/i }));
     expect(unwatchedProps.onMarkWatched).toHaveBeenCalledWith(unwatchedDetail);
 
     unwatchedProps.unmount();
 
     const watchedProps = renderDetail();
-    fireEvent.click(screen.getByRole("button", { name: /remove from watch history/i }));
+    fireEvent.click(screen.getByRole("button", { name: /mark watched again/i }));
+    expect(watchedProps.onMarkWatched).toHaveBeenCalledWith(movieDetail);
+    fireEvent.click(screen.getByRole("button", { name: /remove latest manual watch/i }));
     expect(watchedProps.onMarkUnwatched).toHaveBeenCalledWith(movieDetail);
   });
 

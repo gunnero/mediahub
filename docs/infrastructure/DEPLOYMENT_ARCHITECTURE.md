@@ -36,9 +36,9 @@ Known staging layout:
 - private imports: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/imports`
 - safe user backups: `/home/razbudise/ccc.razbudise.mk/app/backend/storage/app/private/mediahub-backups`
 
-The frontend build target is configurable with `MEDIAHUB_FRONTEND_PUBLIC_DIR`. The default is `/home/razbudise/ccc.razbudise.mk/app/backend/public`, because Apache serves the Laravel public root. Vite still builds into `/home/razbudise/ccc.razbudise.mk/app/dist`; the deploy script then copies only `dist/index.html` and `dist/assets/*` into `backend/public`.
+The frontend build target is configurable with `MEDIAHUB_FRONTEND_PUBLIC_DIR`. The default is `/home/razbudise/ccc.razbudise.mk/app/backend/public`, because Apache serves the Laravel public root. Vite still builds into `/home/razbudise/ccc.razbudise.mk/app/dist`; the deploy script then copies `dist/index.html`, `dist/assets/*`, and a fixed allowlist of browser identity files (`favicon.svg`, `mediahub-pinned-tab.svg`, and `site.webmanifest`) into `backend/public`.
 
-The frontend sync must preserve Laravel public files. It must not overwrite `backend/public/index.php`, `backend/public/.htaccess`, `robots.txt`, `favicon.ico`, `site.webmanifest`, or existing Laravel/Filament/Livewire public assets.
+The frontend sync must preserve Laravel public files. It must not overwrite `backend/public/index.php`, `backend/public/.htaccess`, `robots.txt`, `favicon.ico`, or existing Laravel/Filament/Livewire public assets. `site.webmanifest` is replaced only because it is on the explicit browser-identity allowlist; the sync does not delete unrelated public files.
 
 ## Apache Contract
 

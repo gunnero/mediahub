@@ -1,0 +1,31 @@
+<VirtualHost *:80>
+    ServerName mediahub.razbudise.mk
+    DocumentRoot /home/razbudise/ccc.razbudise.mk/app/backend/public
+
+    Alias /.well-known/acme-challenge/ /var/www/html/.well-known/acme-challenge/
+    Redirect permanent / https://mediahub.razbudise.mk/
+</VirtualHost>
+
+<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    ServerName mediahub.razbudise.mk
+    DocumentRoot /home/razbudise/ccc.razbudise.mk/app/backend/public
+
+    <Directory /home/razbudise/ccc.razbudise.mk/app/backend/public>
+        AllowOverride All
+        Options FollowSymLinks
+        Require all granted
+    </Directory>
+
+    Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "same-origin"
+
+    ErrorLog ${APACHE_LOG_DIR}/mediahub.razbudise.mk-error.log
+    CustomLog ${APACHE_LOG_DIR}/mediahub.razbudise.mk-access.log combined
+
+    SSLEngine on
+    SSLCertificateFile /etc/letsencrypt/live/mediahub.razbudise.mk/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/mediahub.razbudise.mk/privkey.pem
+</VirtualHost>
+</IfModule>

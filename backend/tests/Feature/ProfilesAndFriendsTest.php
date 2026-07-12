@@ -11,6 +11,8 @@ use App\Models\Movie;
 use App\Models\Show;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ProfilesAndFriendsTest extends TestCase
@@ -275,6 +277,94 @@ class ProfilesAndFriendsTest extends TestCase
         $this->assertSame('Second member', $second->fresh()->display_name);
     }
 
+    public function test_profile_supports_full_name_iso_country_and_private_by_default_avatar_visibility(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->patchJson('/api/v1/profile', [
+            'display_name' => 'Gunner',
+            'full_name' => 'Aleksandar Dimovski',
+            'country' => 'MK',
+        ])->assertOk()
+            ->assertJsonPath('profile.fullName', 'Aleksandar Dimovski')
+            ->assertJsonPath('profile.country', 'MK')
+            ->assertJsonPath('privacy.showAvatar', false);
+
+        $this->patchJson('/api/v1/profile', ['country' => 'XX'])->assertUnprocessable();
+
+        $avatarPath = '/storage/avatars/'.$user->id.'/safe-512.jpg';
+        $user->forceFill(['avatar_path' => $avatarPath])->save();
+        $slug = $this->getJson('/api/v1/profile')->json('profile.slug');
+        auth()->logout();
+        $this->getJson('/api/v1/profiles/'.$slug)->assertOk()->assertJsonPath('profile.avatar', null);
+        $this->actingAs($user)->patchJson('/api/v1/profile/privacy', ['show_avatar' => true])->assertOk();
+        auth()->logout();
+        $this->getJson('/api/v1/profiles/'.$slug)
+            ->assertOk()
+            ->assertJsonPath('profile.avatar', $avatarPath);
+    }
+
+    public function test_avatar_upload_accepts_supported_images_generates_thumbnails_replaces_and_deletes_safely(): void
+    {
+        Storage::fake('public');
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        $this->actingAs($user);
+
+        foreach ([
+            UploadedFile::fake()->image('avatar.jpg', 700, 500),
+            UploadedFile::fake()->image('avatar.png', 500, 700),
+            $this->fakeWebp(),
+        ] as $index => $upload) {
+            $previous = $user->fresh()->avatar_variants ?? [];
+            $this->post('/api/v1/profile/avatar', ['avatar' => $upload, 'user_id' => $other->id], ['Accept' => 'application/json'])
+                ->assertCreated()
+                ->assertJsonPath('profile.avatarVariants.512', fn (string $value): bool => str_contains($value, '-512.jpg'));
+
+            $user->refresh();
+            $this->assertNotNull($user->avatar_path);
+            $this->assertNull($other->fresh()->avatar_path);
+            $this->assertStringNotContainsString('/avatars/'.$user->id.'/', (string) $user->avatar_path);
+            foreach ([512, 128, 64, 32] as $size) {
+                $path = $user->avatar_variants[(string) $size];
+                Storage::disk('public')->assertExists($path);
+                $dimensions = getimagesize(Storage::disk('public')->path($path));
+                $this->assertSame($size, $dimensions[0]);
+                $this->assertSame($size, $dimensions[1]);
+                $this->assertSame('image/jpeg', $dimensions['mime']);
+                $this->assertStringNotContainsString("Exif\0\0", (string) file_get_contents(Storage::disk('public')->path($path)));
+            }
+            if ($index > 0) {
+                foreach ($previous as $path) {
+                    Storage::disk('public')->assertMissing($path);
+                }
+            }
+        }
+
+        $paths = $user->fresh()->avatar_variants;
+        $this->deleteJson('/api/v1/profile/avatar')
+            ->assertOk()
+            ->assertJsonPath('profile.avatar', null);
+        foreach ($paths as $path) {
+            Storage::disk('public')->assertMissing($path);
+        }
+        $this->assertNull($user->fresh()->avatar_path);
+    }
+
+    public function test_avatar_upload_rejects_oversized_and_invalid_files(): void
+    {
+        Storage::fake('public');
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post('/api/v1/profile/avatar', ['avatar' => UploadedFile::fake()->image('large.jpg')->size(5121)], ['Accept' => 'application/json'])
+            ->assertUnprocessable();
+        $this->post('/api/v1/profile/avatar', ['avatar' => UploadedFile::fake()->createWithContent('avatar.jpg', '<?php echo "no";')], ['Accept' => 'application/json'])
+            ->assertUnprocessable();
+
+        $this->assertNull($user->fresh()->avatar_path);
+    }
+
     public function test_self_friendship_is_rejected_and_friend_lists_never_leak_email(): void
     {
         $user = User::factory()->create();
@@ -297,5 +387,18 @@ class ProfilesAndFriendsTest extends TestCase
         }
 
         $this->postJson('/api/v1/friend-invites')->assertCreated();
+    }
+
+    private function fakeWebp(): UploadedFile
+    {
+        $image = imagecreatetruecolor(640, 480);
+        $background = imagecolorallocate($image, 30, 80, 120);
+        imagefill($image, 0, 0, $background);
+        ob_start();
+        imagewebp($image, null, 85);
+        $contents = ob_get_clean();
+        imagedestroy($image);
+
+        return UploadedFile::fake()->createWithContent('avatar.webp', (string) $contents);
     }
 }

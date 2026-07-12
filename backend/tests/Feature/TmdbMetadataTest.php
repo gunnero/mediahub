@@ -219,6 +219,16 @@ class TmdbMetadataTest extends TestCase
                 'status' => 'Returning Series',
                 'vote_average' => 8.4,
                 'external_ids' => ['imdb_id' => 'tt11280740', 'tvdb_id' => 371980],
+                'next_episode_to_air' => [
+                    'id' => 2000001,
+                    'season_number' => 3,
+                    'episode_number' => 1,
+                    'name' => 'The Return',
+                    'air_date' => '2027-01-10',
+                    'overview' => 'A safe public synopsis.',
+                    'runtime' => 52,
+                    'still_path' => '/next.jpg',
+                ],
             ]),
         ]);
 
@@ -231,6 +241,8 @@ class TmdbMetadataTest extends TestCase
         $this->assertSame('/severance-poster.jpg', $show->poster_path);
         $this->assertSame('2022-02-18', $show->first_air_date?->toDateString());
         $this->assertSame(50, $show->runtime);
+        $this->assertSame('2027-01-10', $show->metadata['release']['next_episode']['air_date']);
+        $this->assertSame(3, $show->metadata['release']['next_episode']['season_number']);
         $this->assertSame(1832406, $episode->refresh()->tmdb_id);
         $this->assertSame('tt15047476', $episode->imdb_id);
         $this->assertSame('8304110', $episode->tvdb_id);
