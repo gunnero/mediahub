@@ -290,7 +290,7 @@ php artisan route:cache
 php artisan view:cache
 
 if [[ ! -L public/storage && ! -e public/storage ]]; then
-  php artisan storage:link --relative
+  php artisan storage:link
 fi
 
 if php artisan list --raw | grep -q '^filament:assets$'; then

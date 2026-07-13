@@ -28,6 +28,7 @@ class DeploymentToolingTest(unittest.TestCase):
             "php artisan config:cache",
             "php artisan route:cache",
             "php artisan view:cache",
+            "php artisan storage:link",
             "npm ci",
             "npm run build",
             "apachectl configtest",
@@ -43,6 +44,8 @@ class DeploymentToolingTest(unittest.TestCase):
 
         for phrase in required_phrases:
             self.assertIn(phrase, script)
+
+        self.assertNotIn("storage:link --relative", script)
 
     def test_deploy_script_safely_syncs_react_build_into_laravel_public(self):
         script = self.read("deploy-mediahub.sh")
