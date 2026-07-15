@@ -142,7 +142,7 @@ sync_frontend
 
 apachectl configtest
 systemctl reload apache2
-[[ -z "$(git -C "$SERVER_APP_DIR" status --porcelain)" ]] || fail "Server checkout became dirty"
+[[ -z "$(run_as_site git -C "$SERVER_APP_DIR" status --porcelain)" ]] || fail "Server checkout became dirty"
 printf 'RESTORED_COMMIT=%s\n' "$(git -C "$SERVER_APP_DIR" rev-parse HEAD)"
 printf 'PRE_ROLLBACK_BACKUP=%s\n' "$prebackup"
 REMOTE_ROLLBACK

@@ -105,11 +105,11 @@ for tool in git runuser php composer npm sqlite3 apachectl systemctl; do
   command -v "$tool" >/dev/null || { echo "Missing server tool: $tool" >&2; exit 1; }
 done
 [[ -d "$SERVER_APP_DIR/.git" ]] || { echo 'Server checkout missing' >&2; exit 1; }
-[[ "$(git -C "$SERVER_APP_DIR" rev-parse --abbrev-ref HEAD)" == "$BRANCH" ]] || { echo 'Server branch mismatch' >&2; exit 1; }
-[[ -z "$(git -C "$SERVER_APP_DIR" status --porcelain)" ]] || { echo 'Server checkout is dirty' >&2; exit 1; }
 site_home="$(getent passwd "$SERVER_USER" | cut -d: -f6)"
 [[ -n "$site_home" ]] || { echo 'Server user does not exist' >&2; exit 1; }
 run_as_site() { runuser -u "$SERVER_USER" -- env HOME="$site_home" TMPDIR=/tmp PATH=/usr/local/bin:/usr/bin:/bin "$@"; }
+[[ "$(run_as_site git -C "$SERVER_APP_DIR" rev-parse --abbrev-ref HEAD)" == "$BRANCH" ]] || { echo 'Server branch mismatch' >&2; exit 1; }
+[[ -z "$(run_as_site git -C "$SERVER_APP_DIR" status --porcelain)" ]] || { echo 'Server checkout is dirty' >&2; exit 1; }
 run_as_site test -w "$SERVER_APP_DIR" || { echo 'Server checkout is not writable by site user' >&2; exit 1; }
 run_as_site test -w "$SERVER_APP_DIR/.git/objects" || { echo 'Git objects are not writable by site user' >&2; exit 1; }
 [[ -s "$SERVER_APP_DIR/backend/.env" ]] || { echo 'Laravel environment file missing' >&2; exit 1; }
@@ -207,7 +207,7 @@ run_in_dir "$SERVER_APP_DIR/backend" php artisan route:list --path=api/v1/status
 apachectl configtest
 systemctl reload apache2
 
-[[ -z "$(git -C "$SERVER_APP_DIR" status --porcelain)" ]] || fail "Server checkout became dirty"
+[[ -z "$(run_as_site git -C "$SERVER_APP_DIR" status --porcelain)" ]] || fail "Server checkout became dirty"
 printf 'BACKUP_PATH=%s\n' "$backup"
 printf 'DEPLOYED_COMMIT=%s\n' "$(git -C "$SERVER_APP_DIR" rev-parse HEAD)"
 REMOTE_DEPLOY

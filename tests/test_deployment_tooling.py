@@ -46,6 +46,11 @@ class DeploymentToolingTest(unittest.TestCase):
         self.assertIn("Git objects are not writable by site user", deploy)
         self.assertIn("Build path has files not owned by site user", deploy)
         self.assertIn("TMPDIR=/tmp PATH=/usr/local/bin:/usr/bin:/bin", deploy)
+        self.assertNotIn('$(git -C "$SERVER_APP_DIR" status --porcelain)', deploy)
+        self.assertGreaterEqual(
+            deploy.count('$(run_as_site git -C "$SERVER_APP_DIR" status --porcelain)'),
+            2,
+        )
 
     def test_rollback_is_explicit_and_verified(self):
         rollback = (ROOT / "rollback-mediahub.sh").read_text()
