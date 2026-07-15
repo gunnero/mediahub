@@ -2,15 +2,19 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use JsonException;
 use RuntimeException;
 use SimpleXMLElement;
 use Throwable;
 
 class ProviderConnectionService
 {
+    public function __construct(
+        private readonly ProviderDestinationGuard $destinationGuard,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $settings
      * @return array{reachable:bool,authenticated:bool,catalogAvailable:bool,epgAvailable:bool,errorCode:string|null}
@@ -302,8 +306,11 @@ class ProviderConnectionService
     /** @return array<string, mixed> */
     private function requestJson(string $url, array $query = []): array
     {
-        $response = $this->request($url, $query);
-        $payload = $response->json();
+        try {
+            $payload = json_decode($this->request($url, $query), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new RuntimeException('provider_invalid_response');
+        }
 
         if (! is_array($payload)) {
             throw new RuntimeException('provider_invalid_response');
@@ -314,18 +321,33 @@ class ProviderConnectionService
 
     private function requestText(string $url): string
     {
-        return $this->request($url)->body();
+        return $this->request($url);
     }
 
-    private function request(string $url, array $query = []): Response
+    private function request(string $url, array $query = []): string
     {
+        $destination = $this->destinationGuard->authorize($url);
+        $curlOptions = [];
+        if ($destination['curl_resolve'] !== []) {
+            $curlOptions[CURLOPT_RESOLVE] = $destination['curl_resolve'];
+        }
+        if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTP') && defined('CURLPROTO_HTTPS')) {
+            $curlOptions[CURLOPT_PROTOCOLS] = CURLPROTO_HTTP | CURLPROTO_HTTPS;
+        }
+
         try {
             $request = Http::timeout(max(1, (int) config('mediahub_providers.timeout', 20)))
                 ->retry(2, 200, throw: false)
+                ->withOptions([
+                    'allow_redirects' => false,
+                    'proxy' => '',
+                    'stream' => true,
+                    'curl' => $curlOptions,
+                ])
                 ->accept('*/*');
             $response = $query === []
-                ? $request->get($url)
-                : $request->get($url, $query);
+                ? $request->get($destination['url'])
+                : $request->get($destination['url'], $query);
         } catch (Throwable) {
             throw new RuntimeException('provider_unreachable');
         }
@@ -336,11 +358,31 @@ class ProviderConnectionService
 
         $maxBytes = max(1024, (int) config('mediahub_providers.max_response_bytes', 26214400));
         $contentLength = (int) ($response->header('Content-Length') ?? 0);
-        if ($contentLength > $maxBytes || strlen($response->body()) > $maxBytes) {
+        $stream = $response->toPsrResponse()->getBody();
+        if ($contentLength > $maxBytes) {
+            $stream->close();
             throw new RuntimeException('provider_response_too_large');
         }
 
-        return $response;
+        $body = '';
+        try {
+            while (! $stream->eof()) {
+                $remaining = $maxBytes - strlen($body);
+                $chunk = $stream->read(min(8192, $remaining + 1));
+                if ($chunk === '') {
+                    break;
+                }
+
+                $body .= $chunk;
+                if (strlen($body) > $maxBytes) {
+                    throw new RuntimeException('provider_response_too_large');
+                }
+            }
+        } finally {
+            $stream->close();
+        }
+
+        return $body;
     }
 
     /** @return array<string, array<string, mixed>> */

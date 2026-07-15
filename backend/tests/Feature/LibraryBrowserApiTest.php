@@ -16,6 +16,7 @@ use App\Models\Rating;
 use App\Models\Show;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class LibraryBrowserApiTest extends TestCase
@@ -311,6 +312,55 @@ class LibraryBrowserApiTest extends TestCase
             ->assertJsonPath('pagination.page', 2)
             ->assertJsonPath('pagination.total', 2)
             ->assertJsonPath('pagination.hasMore', false);
+    }
+
+    public function test_continue_watching_selects_the_first_unwatched_episode_per_show_in_sql(): void
+    {
+        $user = $this->member();
+        $show = Show::create([
+            'user_id' => $user->id,
+            'title' => 'Efficient Show',
+            'seen_episodes' => 1,
+            'aired_episodes' => 101,
+        ]);
+        $watched = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'air_date' => now()->subDay(),
+        ]);
+        EpisodeWatch::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'episode_id' => $watched->id,
+            'watched_at' => now(),
+            'source' => 'manual',
+        ]);
+
+        foreach (range(2, 101) as $number) {
+            Episode::create([
+                'user_id' => $user->id,
+                'show_id' => $show->id,
+                'season_number' => 1,
+                'episode_number' => $number,
+                'air_date' => now()->subDay(),
+            ]);
+        }
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $response = $this->actingAs($user)
+            ->getJson('/api/v1/library/continue-watching?limit=3&candidate_limit=30')
+            ->assertOk()
+            ->assertJsonCount(1, 'items')
+            ->assertJsonPath('items.0.episodeNumber', 2);
+
+        $this->assertStringContainsString('row_number() over', implode("\n", $queries));
+        $this->assertSensitiveKeysHidden($response->json());
     }
 
     public function test_global_library_search_returns_movies_shows_and_episodes(): void

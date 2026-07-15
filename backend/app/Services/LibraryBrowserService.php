@@ -99,15 +99,17 @@ class LibraryBrowserService
         $candidateLimit = max($limit, min(60, (int) ($filters['candidate_limit'] ?? 30)));
         $today = CarbonImmutable::now($user->timezone ?? config('app.timezone'))->toDateString();
 
+        $latestWatches = EpisodeWatch::query()
+            ->select('show_id')
+            ->selectRaw('MAX(watched_at) AS latest_watch_at')
+            ->where('user_id', $user->id)
+            ->whereNotNull('show_id')
+            ->groupBy('show_id');
+
         $shows = Show::forUser($user)
-            ->whereExists(fn ($query) => $query
-                ->selectRaw('1')
-                ->from('episode_watches')
-                ->whereColumn('episode_watches.show_id', 'shows.id')
-                ->where('episode_watches.user_id', $user->id))
-            ->addSelect(['latest_watch_at' => EpisodeWatch::selectRaw('max(watched_at)')
-                ->whereColumn('episode_watches.show_id', 'shows.id')
-                ->where('episode_watches.user_id', $user->id)])
+            ->joinSub($latestWatches, 'latest_watches', 'latest_watches.show_id', '=', 'shows.id')
+            ->select('shows.*')
+            ->addSelect('latest_watches.latest_watch_at')
             ->orderByDesc('latest_watch_at')
             ->limit($candidateLimit)
             ->get();
@@ -116,8 +118,9 @@ class LibraryBrowserService
             return ['items' => []];
         }
 
-        $episodes = Episode::forUser($user)
-            ->with('show')
+        $eligibleEpisodes = Episode::forUser($user)
+            ->select(['episodes.id', 'episodes.show_id'])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY episodes.show_id ORDER BY episodes.season_number, episodes.episode_number, episodes.id) AS row_number')
             ->whereIn('show_id', $shows->pluck('id'))
             ->where('season_number', '>', 0)
             ->where('episode_number', '>', 0)
@@ -128,18 +131,23 @@ class LibraryBrowserService
                 ->selectRaw('1')
                 ->from('episode_watches')
                 ->whereColumn('episode_watches.episode_id', 'episodes.id')
-                ->where('episode_watches.user_id', $user->id))
-            ->orderBy('show_id')
-            ->orderBy('season_number')
-            ->orderBy('episode_number')
-            ->orderBy('id')
+                ->where('episode_watches.user_id', $user->id));
+
+        $episodeIds = DB::query()
+            ->fromSub($eligibleEpisodes, 'eligible_episodes')
+            ->where('row_number', 1)
+            ->pluck('id');
+
+        $episodes = Episode::forUser($user)
+            ->with('show')
+            ->whereIn('id', $episodeIds)
             ->get()
-            ->groupBy('show_id');
+            ->keyBy('show_id');
 
         $items = $shows
             ->map(function (Show $show) use ($episodes, $user): ?array {
                 /** @var Episode|null $episode */
-                $episode = $episodes->get($show->id)?->first();
+                $episode = $episodes->get($show->id);
 
                 if (! $episode) {
                     return null;

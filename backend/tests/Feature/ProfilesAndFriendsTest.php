@@ -161,6 +161,14 @@ class ProfilesAndFriendsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('friendship.status', FriendshipStatus::Blocked->value)
             ->json('friendship.id');
+        $this->actingAs($requester)
+            ->postJson('/api/v1/friends/'.$addresseeSlug.'/block')
+            ->assertUnprocessable();
+        $this->assertDatabaseHas('friendships', [
+            'id' => $blockedId,
+            'status' => FriendshipStatus::Blocked->value,
+            'blocked_by_user_id' => $addressee->id,
+        ]);
         $this->actingAs($requester)->deleteJson('/api/v1/friends/'.$blockedId)->assertNotFound();
         $this->actingAs($requester)->postJson('/api/v1/friends/request/'.$addresseeSlug)->assertUnprocessable();
         $this->postJson('/api/v1/friends/request/'.$requesterSlug)->assertUnprocessable();

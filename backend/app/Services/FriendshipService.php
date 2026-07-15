@@ -112,6 +112,10 @@ class FriendshipService
                 ]);
             }
 
+            if ($friendship->status === FriendshipStatus::Blocked && $friendship->blocked_by_user_id !== $user->id) {
+                throw ValidationException::withMessages(['friendship' => 'This action is not available.']);
+            }
+
             $friendship->forceFill([
                 'status' => FriendshipStatus::Blocked,
                 'blocked_by_user_id' => $user->id,
