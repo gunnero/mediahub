@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AddSecurityHeaders;
 use App\Http\Middleware\MonitorApiRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(null);
+        $middleware->append(AddSecurityHeaders::class);
         $middleware->api(append: [MonitorApiRequests::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

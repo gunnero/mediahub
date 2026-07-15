@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->middleware('web')->group(function (): void {
     Route::get('/status', StatusController::class);
     Route::get('/auth/session', [AuthController::class, 'session']);
-    Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
     Route::post('/invites/accept', InviteAcceptanceController::class);
     Route::get('/profiles/{user:profile_slug}/avatar/{size}', ProfileAvatarDisplayController::class)
         ->where('size', '32|64|128|512')

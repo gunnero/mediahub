@@ -15,6 +15,7 @@ use App\Models\PlaybackSourceItem;
 use App\Models\Rating;
 use App\Models\Show;
 use App\Models\User;
+use App\Services\LibraryBrowserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -385,6 +386,83 @@ class LibraryBrowserApiTest extends TestCase
             ->assertJsonPath('episodes.0.showTitle', 'Station Eleven');
     }
 
+    public function test_library_card_endpoints_have_bounded_query_counts(): void
+    {
+        $user = $this->member();
+
+        foreach (range(1, 24) as $number) {
+            $movie = Movie::create(['user_id' => $user->id, 'title' => 'Movie '.$number]);
+            MovieWatch::create([
+                'user_id' => $user->id,
+                'movie_id' => $movie->id,
+                'watched_at' => now()->subMinutes($number),
+                'source' => 'manual',
+            ]);
+
+            $show = Show::create(['user_id' => $user->id, 'title' => 'Show '.$number]);
+            $episode = Episode::create([
+                'user_id' => $user->id,
+                'show_id' => $show->id,
+                'season_number' => 1,
+                'episode_number' => $number,
+                'title' => 'Episode '.$number,
+            ]);
+            EpisodeWatch::create([
+                'user_id' => $user->id,
+                'show_id' => $show->id,
+                'episode_id' => $episode->id,
+                'watched_at' => now()->subMinutes($number),
+                'source' => 'manual',
+            ]);
+        }
+
+        $service = app(LibraryBrowserService::class);
+
+        $this->assertQueryBudget(10, fn () => $service->movies($user, ['per_page' => 24]));
+        $this->assertQueryBudget(12, fn () => $service->shows($user, ['per_page' => 24]));
+        $this->assertQueryBudget(22, fn () => $service->search($user, ['query' => '1']));
+    }
+
+    public function test_continue_watching_query_count_is_bounded_by_batch_not_candidate_count(): void
+    {
+        $user = $this->member();
+
+        foreach (range(1, 20) as $number) {
+            $show = Show::create([
+                'user_id' => $user->id,
+                'title' => 'Continuable '.$number,
+                'seen_episodes' => 1,
+                'aired_episodes' => 2,
+            ]);
+            $watched = Episode::create([
+                'user_id' => $user->id,
+                'show_id' => $show->id,
+                'season_number' => 1,
+                'episode_number' => 1,
+                'air_date' => now()->subDays(2),
+            ]);
+            Episode::create([
+                'user_id' => $user->id,
+                'show_id' => $show->id,
+                'season_number' => 1,
+                'episode_number' => 2,
+                'air_date' => now()->subDay(),
+            ]);
+            EpisodeWatch::create([
+                'user_id' => $user->id,
+                'show_id' => $show->id,
+                'episode_id' => $watched->id,
+                'watched_at' => now()->subMinutes($number),
+                'source' => 'manual',
+            ]);
+        }
+
+        $this->assertQueryBudget(
+            12,
+            fn () => app(LibraryBrowserService::class)->continueWatching($user, ['limit' => 3, 'candidate_limit' => 20]),
+        );
+    }
+
     public function test_user_cannot_access_another_users_show_or_episode_browser_payloads(): void
     {
         $user = $this->member();
@@ -418,6 +496,18 @@ class LibraryBrowserApiTest extends TestCase
             'role' => UserRole::Member,
             'status' => UserStatus::Active,
         ]);
+    }
+
+    private function assertQueryBudget(int $maximum, callable $callback): void
+    {
+        $count = 0;
+        DB::listen(function () use (&$count): void {
+            $count++;
+        });
+
+        $callback();
+
+        $this->assertLessThanOrEqual($maximum, $count, "Expected at most {$maximum} queries, executed {$count}.");
     }
 
     private function sourceItemFor(User $user, string $externalId = 'item-1', string $kind = 'movie'): PlaybackSourceItem

@@ -23,7 +23,26 @@ class BackendFoundationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('app.ready', true)
             ->assertJsonPath('database.ready', true)
-            ->assertJsonPath('queue.connection', 'sync');
+            ->assertJsonPath('queue.connection', 'sync')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('X-Frame-Options', 'DENY')
+            ->assertHeader('Referrer-Policy', 'no-referrer')
+            ->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    }
+
+    public function test_login_is_rate_limited_after_repeated_failures(): void
+    {
+        foreach (range(1, 5) as $attempt) {
+            $this->postJson('/api/v1/auth/login', [
+                'email' => 'rate-limit@example.test',
+                'password' => 'invalid-password-'.$attempt,
+            ])->assertUnprocessable();
+        }
+
+        $this->postJson('/api/v1/auth/login', [
+            'email' => 'rate-limit@example.test',
+            'password' => 'invalid-password-6',
+        ])->assertTooManyRequests();
     }
 
     public function test_invite_only_registration_accepts_valid_invite_and_audits_it(): void

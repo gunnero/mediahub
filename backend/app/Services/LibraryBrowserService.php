@@ -52,7 +52,7 @@ class LibraryBrowserService
         [$items, $pagination] = $this->paginate($query, $filters);
 
         return [
-            'items' => $items->map(fn (Movie $movie): array => $this->movieCard($user, $movie))->values()->all(),
+            'items' => $this->movieCards($user, $items),
             'pagination' => $pagination,
         ];
     }
@@ -84,7 +84,7 @@ class LibraryBrowserService
         [$items, $pagination] = $this->paginate($query, $filters);
 
         return [
-            'items' => $items->map(fn (Show $show): array => $this->showCard($user, $show))->values()->all(),
+            'items' => $this->showCards($user, $items),
             'pagination' => $pagination,
         ];
     }
@@ -144,17 +144,22 @@ class LibraryBrowserService
             ->get()
             ->keyBy('show_id');
 
-        $items = $shows
-            ->map(function (Show $show) use ($episodes, $user): ?array {
+        $selectedShows = $shows
+            ->filter(fn (Show $show): bool => $episodes->has($show->id))
+            ->take($limit)
+            ->values();
+        $selectedEpisodes = new EloquentCollection($selectedShows
+            ->map(fn (Show $show): Episode => $episodes->get($show->id))
+            ->all());
+        $episodeContext = $this->episodeContext($user, $selectedEpisodes);
+
+        $items = $selectedShows
+            ->map(function (Show $show) use ($episodes, $user, $episodeContext): array {
                 /** @var Episode|null $episode */
                 $episode = $episodes->get($show->id);
 
-                if (! $episode) {
-                    return null;
-                }
-
                 return [
-                    ...$this->episodeCard($user, $episode),
+                    ...$this->episodeCard($user, $episode, $episodeContext),
                     'showTitle' => $show->title,
                     'code' => $this->episodeCode($episode),
                     'latestWatchedAt' => $show->getAttribute('latest_watch_at'),
@@ -163,8 +168,6 @@ class LibraryBrowserService
                         : 0,
                 ];
             })
-            ->filter()
-            ->take($limit)
             ->values()
             ->all();
 
@@ -206,52 +209,41 @@ class LibraryBrowserService
             return ['movies' => [], 'shows' => [], 'episodes' => []];
         }
 
+        $movies = Movie::forUser($user)
+            ->where('title', 'like', '%'.$query.'%')
+            ->orderBy('title')
+            ->limit(8)
+            ->get();
+        $shows = Show::forUser($user)
+            ->where('title', 'like', '%'.$query.'%')
+            ->orderBy('title')
+            ->limit(8)
+            ->get();
+        $episodes = Episode::forUser($user)
+            ->with('show')
+            ->where(function (Builder $builder) use ($query): void {
+                $builder->where('title', 'like', '%'.$query.'%')
+                    ->orWhereHas('show', fn (Builder $showQuery) => $showQuery->where('title', 'like', '%'.$query.'%'));
+            })
+            ->orderBy('season_number')
+            ->orderBy('episode_number')
+            ->limit(12)
+            ->get();
+
         return [
-            'movies' => Movie::forUser($user)
-                ->where('title', 'like', '%'.$query.'%')
-                ->orderBy('title')
-                ->limit(8)
-                ->get()
-                ->map(fn (Movie $movie): array => $this->movieCard($user, $movie))
-                ->values()
-                ->all(),
-            'shows' => Show::forUser($user)
-                ->where('title', 'like', '%'.$query.'%')
-                ->orderBy('title')
-                ->limit(8)
-                ->get()
-                ->map(fn (Show $show): array => $this->showCard($user, $show))
-                ->values()
-                ->all(),
-            'episodes' => Episode::forUser($user)
-                ->with('show')
-                ->where(function (Builder $builder) use ($query): void {
-                    $builder->where('title', 'like', '%'.$query.'%')
-                        ->orWhereHas('show', fn (Builder $showQuery) => $showQuery->where('title', 'like', '%'.$query.'%'));
-                })
-                ->orderBy('season_number')
-                ->orderBy('episode_number')
-                ->limit(12)
-                ->get()
-                ->map(fn (Episode $episode): array => $this->episodeCard($user, $episode))
-                ->values()
-                ->all(),
+            'movies' => $this->movieCards($user, $movies),
+            'shows' => $this->showCards($user, $shows),
+            'episodes' => $this->episodeCards($user, $episodes),
         ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function movieCard(User $user, Movie $movie): array
+    public function movieCard(User $user, Movie $movie, ?array $context = null): array
     {
-        $latestWatch = MovieWatch::forUser($user)
-            ->where('movie_id', $movie->id)
-            ->latest('watched_at')
-            ->first();
-        $watchedCount = (int) MovieWatch::forUser($user)
-            ->where('movie_id', $movie->id)
-            ->get(['watch_count'])
-            ->sum(fn (MovieWatch $watch): int => max(1, $watch->watch_count));
+        $context ??= $this->movieContext($user, new EloquentCollection([$movie]));
+        $watch = $context['watches'][$movie->id] ?? null;
 
         return [
             'id' => $movie->id,
@@ -262,29 +254,26 @@ class LibraryBrowserService
             'backdrop' => $this->backdropFor($movie, $movie->poster_url),
             'year' => $this->yearFromDate($movie->release_date),
             'runtime' => (int) $movie->runtime,
-            'watched' => $latestWatch !== null,
-            'watchedCount' => $watchedCount,
-            'status' => $movie->is_to_watch ? 'watchlist' : ($latestWatch ? 'watched' : 'library'),
-            'latestWatchedAt' => $latestWatch?->watched_at?->toIso8601String(),
-            'rating' => $this->rating($user, 'movie', $movie->id),
-            'hasNote' => $this->hasNote($user, 'movie', $movie->id),
-            'providerLinked' => $this->providerLinked($user, 'movie_id', $movie->id),
+            'watched' => $watch !== null,
+            'watchedCount' => (int) ($watch['count'] ?? 0),
+            'status' => $movie->is_to_watch ? 'watchlist' : ($watch ? 'watched' : 'library'),
+            'latestWatchedAt' => $watch['latest'] ?? null,
+            'rating' => $context['ratings'][$movie->id] ?? null,
+            'hasNote' => isset($context['notes'][$movie->id]),
+            'providerLinked' => isset($context['links'][$movie->id]),
             'metadataStatus' => $this->metadataStatus($movie),
             'subtitle' => 'Movie',
             'meta' => $this->movieMeta($movie),
-            'progress' => $latestWatch ? 100 : 0,
+            'progress' => $watch ? 100 : 0,
         ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function showCard(User $user, Show $show): array
+    public function showCard(User $user, Show $show, ?array $context = null): array
     {
-        $latestWatch = EpisodeWatch::forUser($user)
-            ->where('show_id', $show->id)
-            ->latest('watched_at')
-            ->first();
+        $context ??= $this->showContext($user, new EloquentCollection([$show]));
         $progress = $show->aired_episodes > 0
             ? (int) min(100, round(($show->seen_episodes / max(1, $show->aired_episodes)) * 100))
             : ($show->seen_episodes > 0 ? 100 : 0);
@@ -301,10 +290,10 @@ class LibraryBrowserService
             'airedEpisodes' => (int) $show->aired_episodes,
             'watched' => $show->seen_episodes > 0,
             'status' => $show->followed ? 'followed' : ($show->seen_episodes > 0 ? 'watched' : 'library'),
-            'latestWatchedAt' => $latestWatch?->watched_at?->toIso8601String() ?: $show->latest_seen_at?->toIso8601String(),
-            'rating' => $this->rating($user, 'show', $show->id),
-            'hasNote' => $this->hasNote($user, 'show', $show->id),
-            'providerLinked' => $this->showProviderLinked($user, $show),
+            'latestWatchedAt' => ($context['watches'][$show->id] ?? null) ?: $show->latest_seen_at?->toIso8601String(),
+            'rating' => $context['ratings'][$show->id] ?? null,
+            'hasNote' => isset($context['notes'][$show->id]),
+            'providerLinked' => isset($context['links'][$show->id]),
             'metadataStatus' => $this->metadataStatus($show),
             'subtitle' => $show->followed ? 'Followed show' : 'TV show',
             'meta' => ((int) $show->seen_episodes).'/'.((int) $show->aired_episodes).' watched',
@@ -314,16 +303,11 @@ class LibraryBrowserService
     /**
      * @return array<string, mixed>
      */
-    public function episodeCard(User $user, Episode $episode): array
+    public function episodeCard(User $user, Episode $episode, ?array $context = null): array
     {
         $episode->loadMissing('show');
-        $latestWatch = EpisodeWatch::forUser($user)
-            ->where('episode_id', $episode->id)
-            ->latest('watched_at')
-            ->first();
-        $watchedCount = EpisodeWatch::forUser($user)
-            ->where('episode_id', $episode->id)
-            ->count();
+        $context ??= $this->episodeContext($user, new EloquentCollection([$episode]));
+        $watch = $context['watches'][$episode->id] ?? null;
 
         return [
             'id' => $episode->id,
@@ -339,15 +323,150 @@ class LibraryBrowserService
             'seasonNumber' => (int) $episode->season_number,
             'episodeNumber' => (int) $episode->episode_number,
             'runtime' => (int) $episode->runtime,
-            'watched' => $latestWatch !== null,
-            'watchedCount' => $watchedCount,
-            'latestWatchedAt' => $latestWatch?->watched_at?->toIso8601String(),
-            'rating' => $this->rating($user, 'episode', $episode->id),
-            'hasNote' => $this->hasNote($user, 'episode', $episode->id),
-            'providerLinked' => $this->providerLinked($user, 'episode_id', $episode->id),
+            'watched' => $watch !== null,
+            'watchedCount' => (int) ($watch['count'] ?? 0),
+            'latestWatchedAt' => $watch['latest'] ?? null,
+            'rating' => $context['ratings'][$episode->id] ?? null,
+            'hasNote' => isset($context['notes'][$episode->id]),
+            'providerLinked' => isset($context['links'][$episode->id]),
             'metadataStatus' => $this->metadataStatus($episode),
-            'progress' => $latestWatch ? 100 : 0,
+            'progress' => $watch ? 100 : 0,
         ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function movieCards(User $user, EloquentCollection $movies): array
+    {
+        $context = $this->movieContext($user, $movies);
+
+        return $movies->map(fn (Movie $movie): array => $this->movieCard($user, $movie, $context))->values()->all();
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function showCards(User $user, EloquentCollection $shows): array
+    {
+        $context = $this->showContext($user, $shows);
+
+        return $shows->map(fn (Show $show): array => $this->showCard($user, $show, $context))->values()->all();
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function episodeCards(User $user, EloquentCollection $episodes): array
+    {
+        $context = $this->episodeContext($user, $episodes);
+
+        return $episodes->map(fn (Episode $episode): array => $this->episodeCard($user, $episode, $context))->values()->all();
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    private function movieContext(User $user, EloquentCollection $movies): array
+    {
+        $ids = $movies->modelKeys();
+        if ($ids === []) {
+            return $this->emptyCardContext();
+        }
+
+        $watches = MovieWatch::forUser($user)->whereIn('movie_id', $ids)->get(['movie_id', 'watched_at', 'watch_count'])
+            ->groupBy('movie_id')
+            ->map(fn ($rows): array => [
+                'latest' => $rows->max('watched_at')?->toIso8601String(),
+                'count' => $rows->sum(fn (MovieWatch $watch): int => max(1, $watch->watch_count)),
+            ])->all();
+
+        return [
+            'watches' => $watches,
+            'ratings' => $this->ratingsFor($user, 'movie', $ids),
+            'notes' => $this->notesFor($user, 'movie', $ids),
+            'links' => $this->linksFor($user, 'movie_id', $ids),
+        ];
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    private function showContext(User $user, EloquentCollection $shows): array
+    {
+        $ids = $shows->modelKeys();
+        if ($ids === []) {
+            return $this->emptyCardContext();
+        }
+
+        $watches = EpisodeWatch::forUser($user)->whereIn('show_id', $ids)->get(['show_id', 'watched_at'])
+            ->groupBy('show_id')
+            ->map(fn ($rows): ?string => $rows->max('watched_at')?->toIso8601String())
+            ->all();
+        $directLinks = $this->linksFor($user, 'show_id', $ids);
+        $episodeLinkIds = $this->validMediaLinks($user)
+            ->whereHas('episode', fn (Builder $query) => $query->forUser($user)->whereIn('show_id', $ids))
+            ->pluck('episode_id');
+        $episodeLinkedShows = Episode::forUser($user)
+            ->whereIn('id', $episodeLinkIds)
+            ->pluck('show_id')
+            ->mapWithKeys(fn (int $id): array => [$id => true])
+            ->all();
+
+        return [
+            'watches' => $watches,
+            'ratings' => $this->ratingsFor($user, 'show', $ids),
+            'notes' => $this->notesFor($user, 'show', $ids),
+            'links' => $directLinks + $episodeLinkedShows,
+        ];
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    private function episodeContext(User $user, EloquentCollection $episodes): array
+    {
+        $ids = $episodes->modelKeys();
+        if ($ids === []) {
+            return $this->emptyCardContext();
+        }
+
+        $watches = EpisodeWatch::forUser($user)->whereIn('episode_id', $ids)->get(['episode_id', 'watched_at'])
+            ->groupBy('episode_id')
+            ->map(fn ($rows): array => [
+                'latest' => $rows->max('watched_at')?->toIso8601String(),
+                'count' => $rows->count(),
+            ])->all();
+
+        return [
+            'watches' => $watches,
+            'ratings' => $this->ratingsFor($user, 'episode', $ids),
+            'notes' => $this->notesFor($user, 'episode', $ids),
+            'links' => $this->linksFor($user, 'episode_id', $ids),
+        ];
+    }
+
+    /** @param list<int> $ids @return array<int, int> */
+    private function ratingsFor(User $user, string $mediaType, array $ids): array
+    {
+        return Rating::forUser($user)->where('media_type', $mediaType)->whereIn('media_id', $ids)
+            ->pluck('rating', 'media_id')->map(fn (mixed $rating): int => (int) $rating)->all();
+    }
+
+    /** @param list<int> $ids @return array<int, bool> */
+    private function notesFor(User $user, string $mediaType, array $ids): array
+    {
+        return Note::forUser($user)->where('media_type', $mediaType)->whereIn('media_id', $ids)
+            ->pluck('media_id')->mapWithKeys(fn (int $id): array => [$id => true])->all();
+    }
+
+    /** @param list<int> $ids @return array<int, bool> */
+    private function linksFor(User $user, string $column, array $ids): array
+    {
+        return $this->validMediaLinks($user)->whereIn($column, $ids)->pluck($column)
+            ->mapWithKeys(fn (int $id): array => [$id => true])->all();
+    }
+
+    private function validMediaLinks(User $user): Builder
+    {
+        return MediaLink::forUser($user)
+            ->whereHas('sourceItem', fn (Builder $query) => $query
+                ->forUser($user)
+                ->whereHas('source', fn (Builder $sourceQuery) => $sourceQuery->forUser($user)));
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    private function emptyCardContext(): array
+    {
+        return ['watches' => [], 'ratings' => [], 'notes' => [], 'links' => []];
     }
 
     /**
@@ -618,41 +737,6 @@ class LibraryBrowserService
             'rating' => $row->rating !== null ? (int) $row->rating : null,
             'poster' => $this->historyImage($row),
         ];
-    }
-
-    private function rating(User $user, string $mediaType, int $mediaId): ?int
-    {
-        return Rating::forUser($user)->forMedia($mediaType, $mediaId)->value('rating');
-    }
-
-    private function hasNote(User $user, string $mediaType, int $mediaId): bool
-    {
-        return Note::forUser($user)->forMedia($mediaType, $mediaId)->exists();
-    }
-
-    private function providerLinked(User $user, string $column, int $mediaId): bool
-    {
-        return MediaLink::forUser($user)
-            ->where($column, $mediaId)
-            ->whereHas('sourceItem', fn (Builder $query) => $query
-                ->forUser($user)
-                ->whereHas('source', fn (Builder $sourceQuery) => $sourceQuery->forUser($user)))
-            ->exists();
-    }
-
-    private function showProviderLinked(User $user, Show $show): bool
-    {
-        $episodeIds = Episode::forUser($user)->where('show_id', $show->id)->pluck('id');
-
-        return MediaLink::forUser($user)
-            ->where(function (Builder $query) use ($episodeIds, $show): void {
-                $query->where('show_id', $show->id)
-                    ->orWhereIn('episode_id', $episodeIds);
-            })
-            ->whereHas('sourceItem', fn (Builder $query) => $query
-                ->forUser($user)
-                ->whereHas('source', fn (Builder $sourceQuery) => $sourceQuery->forUser($user)))
-            ->exists();
     }
 
     private function metadataStatus(mixed $media): string
