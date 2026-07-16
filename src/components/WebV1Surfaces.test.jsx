@@ -22,6 +22,23 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(document.body.textContent).not.toMatch(/api[_ -]?key/i);
   });
 
+  it("opens discovery details from both artwork and title and explains library versus watchlist", async () => {
+    const onOpen = vi.fn();
+    const apiClient = vi.fn(async (path) => {
+      if (path.startsWith("/api/v1/discover/browse")) return { status: "ready", items: [] };
+      if (path.startsWith("/api/v1/discover/search")) return { status: "ready", items: [{ media_type: "movie", tmdb_id: 949, title: "Heat", overview: "Crime saga.", already_in_library: true, existing_library_id: 42, watched: true, watched_count: 2 }] };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    render(<DiscoverSection apiClient={apiClient} onOpen={onOpen} />);
+    fireEvent.change(screen.getByLabelText(/search movies and shows/i), { target: { value: "heat" } });
+
+    const title = await screen.findByRole("button", { name: "Open Heat details" });
+    expect(screen.getByText("Watched 2 times")).toBeInTheDocument();
+    fireEvent.click(title);
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ movieId: 42 }));
+    expect(screen.getByText((_, element) => element?.classList.contains("discovery-action-help") && element.textContent.includes("keeps a title"))).toBeInTheDocument();
+  });
+
   it("browses trending, popular, now playing, upcoming, and top rated without a hero", async () => {
     const apiClient = vi.fn(async (path) => ({
       status: "ready",

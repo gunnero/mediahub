@@ -21,6 +21,7 @@ class MediaDetailService
     public function __construct(
         private readonly MediaMetadataService $metadata,
         private readonly MediaEventService $events,
+        private readonly TMDBClientService $tmdb,
     ) {}
 
     /**
@@ -36,6 +37,7 @@ class MediaDetailService
             ->sum(fn (MovieWatch $watch): int => max(1, $watch->watch_count));
         $watches = $watchQuery->latest('watched_at')->latest('id')->limit(100)->get();
         $nextWatchNumber = $watchedCount;
+        $public = $this->publicMetadata($movie, 'movie');
 
         return [
             'id' => $movie->id,
@@ -51,6 +53,10 @@ class MediaDetailService
             'watchedCount' => $watchedCount,
             'watchlist' => (bool) $movie->is_to_watch,
             'overview' => $movie->overview,
+            'tagline' => $public['tagline'],
+            'originalTitle' => $public['original_title'],
+            'people' => ['cast' => $public['cast'], 'directors' => $public['directors']],
+            'production' => ['companies' => $public['companies'], 'countries' => $public['countries'], 'languages' => $public['languages']],
             'metadata' => $this->metadataFields($movie, $movie->release_date),
             'rating' => $this->rating($user, 'movie', $movie->id),
             'notes' => $this->notes($user, 'movie', $movie->id),
@@ -78,6 +84,8 @@ class MediaDetailService
             ->latest('id')
             ->limit(20)
             ->get();
+        $public = $this->publicMetadata($show, 'show');
+        $showState = $this->showState($user, $show);
 
         return [
             'id' => $show->id,
@@ -92,9 +100,14 @@ class MediaDetailService
             'backdrop' => $this->backdropFor($show, $show->fanart_url),
             'status' => $show->followed ? 'followed' : ($watches->isNotEmpty() ? 'watched' : 'library'),
             'watched' => $watches->isNotEmpty() || $show->seen_episodes > 0,
-            'watchedCount' => $watches->count(),
+            'watchedEpisodes' => $showState['watchedEpisodes'],
             'watchlist' => (bool) $show->followed,
             'overview' => $show->overview,
+            'tagline' => $public['tagline'],
+            'originalTitle' => $public['original_title'],
+            'people' => ['cast' => $public['cast'], 'directors' => $public['directors']],
+            'production' => ['companies' => $public['companies'], 'countries' => $public['countries'], 'languages' => $public['languages']],
+            'showState' => $showState,
             'metadata' => $this->metadataFields($show, $show->first_air_date),
             'rating' => $this->rating($user, 'show', $show->id),
             'notes' => $this->notes($user, 'show', $show->id),
@@ -329,11 +342,88 @@ class MediaDetailService
         $episode = Episode::forUser($user)
             ->where('show_id', $show->id)
             ->whereNotIn('id', $watchedIds)
+            ->where('season_number', '>', 0)
+            ->where('episode_number', '>', 0)
+            ->where(function (Builder $query): void {
+                $query->whereNull('air_date')->orWhereDate('air_date', '<=', now()->toDateString());
+            })
             ->orderBy('season_number')
             ->orderBy('episode_number')
             ->first();
 
         return $episode ? $this->episodeRow($user, $episode) : null;
+    }
+
+    /** @return array<string, mixed> */
+    private function showState(User $user, Show $show): array
+    {
+        $airedIds = Episode::forUser($user)
+            ->where('show_id', $show->id)
+            ->where('season_number', '>', 0)
+            ->where('episode_number', '>', 0)
+            ->where(function (Builder $query): void {
+                $query->whereNull('air_date')->orWhereDate('air_date', '<=', now()->toDateString());
+            })
+            ->pluck('id');
+        $watchedEpisodes = EpisodeWatch::forUser($user)
+            ->where('show_id', $show->id)
+            ->whereIn('episode_id', $airedIds)
+            ->distinct('episode_id')
+            ->count('episode_id');
+        $allWatched = $airedIds->isNotEmpty() && $watchedEpisodes >= $airedIds->count();
+        $ended = in_array(strtolower(trim((string) $show->status)), ['ended', 'canceled', 'cancelled'], true);
+        $nextRelease = data_get($show->metadata, 'release.next_episode');
+
+        if ($ended && $allWatched) {
+            return ['code' => 'ended_completed', 'title' => 'SHOW ENDED', 'description' => 'You watched every aired episode.', 'watchedEpisodes' => $watchedEpisodes, 'airedEpisodes' => $airedIds->count(), 'nextEpisode' => null];
+        }
+
+        if ($ended) {
+            $remaining = max(0, $airedIds->count() - $watchedEpisodes);
+
+            return ['code' => 'ended_incomplete', 'title' => 'Show ended', 'description' => $remaining.' '.str('episode')->plural($remaining).' left to watch.', 'watchedEpisodes' => $watchedEpisodes, 'airedEpisodes' => $airedIds->count(), 'nextEpisode' => null];
+        }
+
+        return [
+            'code' => is_array($nextRelease) && filled($nextRelease['air_date'] ?? null) ? 'returning_scheduled' : 'returning',
+            'title' => is_array($nextRelease) && filled($nextRelease['air_date'] ?? null) ? 'Next episode' : 'Returning series',
+            'description' => is_array($nextRelease) && filled($nextRelease['air_date'] ?? null)
+                ? trim(($nextRelease['name'] ?? 'New episode').' · '.$nextRelease['air_date'], ' ·')
+                : 'The next release date has not been announced.',
+            'watchedEpisodes' => $watchedEpisodes,
+            'airedEpisodes' => $airedIds->count(),
+            'nextEpisode' => is_array($nextRelease) ? $nextRelease : null,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function publicMetadata(Movie|Show $media, string $type): array
+    {
+        $public = data_get($media->metadata, 'public');
+        if (! is_array($public) && $media->tmdb_id && $this->tmdb->enabled()) {
+            $details = $type === 'movie'
+                ? $this->tmdb->getMovie((int) $media->tmdb_id)
+                : $this->tmdb->getShow((int) $media->tmdb_id);
+            $public = is_array($details) ? $this->metadata->publicMetadata($details, $type) : null;
+        }
+
+        $public = is_array($public) ? $public : [];
+        $person = fn (mixed $row): ?array => is_array($row) && filled($row['name'] ?? null) ? [
+            'id' => $row['tmdb_id'] ?? null,
+            'name' => (string) $row['name'],
+            'role' => $row['role'] ?? null,
+            'image' => $this->metadata->imageUrl($row['profile_path'] ?? null, 'w185'),
+        ] : null;
+
+        return [
+            'tagline' => $public['tagline'] ?? null,
+            'original_title' => $public['original_title'] ?? $media->original_title,
+            'cast' => collect($public['cast'] ?? [])->map($person)->filter()->values()->all(),
+            'directors' => collect($public['directors'] ?? [])->map($person)->filter()->values()->all(),
+            'companies' => array_values(array_filter($public['companies'] ?? [], 'is_string')),
+            'countries' => array_values(array_filter($public['countries'] ?? [], 'is_string')),
+            'languages' => array_values(array_filter($public['languages'] ?? [], 'is_string')),
+        ];
     }
 
     private function posterFor(mixed $media, ?string $fallback = ''): string

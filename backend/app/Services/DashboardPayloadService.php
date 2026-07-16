@@ -32,7 +32,8 @@ class DashboardPayloadService
         $user = $this->profiles->ensureProfile($user);
         $this->alertService->syncForUser($user);
         $stats = $this->mediaLibrary->statsFor($user);
-        $alertsUnread = Alert::forUser($user)->unread()->count();
+        $visibleAlerts = $this->alertService->visibleForUser($user, 100);
+        $alertsUnread = $visibleAlerts->where('unread', true)->count();
         $recentlyWatched = $this->recentlyWatched($user);
         $avatar = $this->profiles->ownAvatarUrl($user);
 
@@ -88,11 +89,9 @@ class DashboardPayloadService
      */
     private function alerts(User $user): array
     {
-        return Alert::forUser($user)
-            ->orderByDesc('unread')
-            ->latest('id')
-            ->limit(20)
-            ->get()
+        return $this->alertService->visibleForUser($user, 100)
+            ->sortByDesc(fn ($alert): int => $alert->unread ? 1 : 0)
+            ->take(20)
             ->map(fn (Alert $alert): array => [
                 'id' => $alert->id,
                 'category' => $alert->category,

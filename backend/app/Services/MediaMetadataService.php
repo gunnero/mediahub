@@ -504,7 +504,7 @@ class MediaMetadataService
             'runtime' => $this->runtimeValue($movie->runtime, $details['runtime'] ?? null),
             'status' => $this->stringOrNull($details['status'] ?? null),
             'vote_average' => $this->floatOrNull($details['vote_average'] ?? null),
-            'metadata' => $this->metadata($movie->metadata ?? [], $match, 'movie'),
+            'metadata' => $this->metadata($movie->metadata ?? [], $match, 'movie', $details),
             'metadata_refreshed_at' => now(),
         ])->save();
     }
@@ -555,7 +555,7 @@ class MediaMetadataService
             'runtime' => $this->runtimeValue($episode->runtime, $details['runtime'] ?? null),
             'air_date' => $this->stringOrNull($details['air_date'] ?? null) ?: $episode->air_date,
             'vote_average' => $this->floatOrNull($details['vote_average'] ?? null) ?? $episode->vote_average,
-            'metadata' => $this->metadata($episode->metadata ?? [], $match, 'episode'),
+            'metadata' => $this->metadata($episode->metadata ?? [], $match, 'episode', $details),
             'metadata_refreshed_at' => now(),
             'last_metadata_failure_reason' => null,
             'metadata_failed_at' => null,
@@ -605,11 +605,12 @@ class MediaMetadataService
      * @param  array<string, mixed>|null  $match
      * @return array<string, mixed>
      */
-    private function metadata(array $existing, ?array $match, string $type): array
+    private function metadata(array $existing, ?array $match, string $type, array $details = []): array
     {
         return [
             ...$existing,
             'match' => $match,
+            ...($details !== [] ? ['public' => $this->publicMetadata($details, $type)] : []),
             'tmdb' => [
                 'type' => $type,
                 'refreshed_at' => now()->toIso8601String(),
@@ -625,7 +626,7 @@ class MediaMetadataService
      */
     private function showMetadata(array $existing, ?array $match, array $details): array
     {
-        $metadata = $this->metadata($existing, $match, 'show');
+        $metadata = $this->metadata($existing, $match, 'show', $details);
         $nextEpisode = is_array($details['next_episode_to_air'] ?? null)
             ? $details['next_episode_to_air']
             : null;
@@ -644,6 +645,64 @@ class MediaMetadataService
         ];
 
         return $metadata;
+    }
+
+    /**
+     * Keep only display-safe TMDB fields. Raw responses never enter API payloads.
+     *
+     * @param  array<string, mixed>  $details
+     * @return array<string, mixed>
+     */
+    public function publicMetadata(array $details, string $type): array
+    {
+        $credits = is_array($details[$type === 'show' ? 'aggregate_credits' : 'credits'] ?? null)
+            ? $details[$type === 'show' ? 'aggregate_credits' : 'credits']
+            : [];
+        $cast = collect($credits['cast'] ?? [])->filter(fn (mixed $person): bool => is_array($person) && filled($person['name'] ?? null))
+            ->sortBy(fn (array $person): int => (int) ($person['order'] ?? 9999))
+            ->take(12)
+            ->map(function (array $person) use ($type): array {
+                $role = $type === 'show'
+                    ? data_get($person, 'roles.0.character')
+                    : ($person['character'] ?? null);
+
+                return [
+                    'tmdb_id' => $this->intOrNull($person['id'] ?? null),
+                    'name' => (string) $person['name'],
+                    'role' => $this->stringOrNull($role),
+                    'profile_path' => $this->stringOrNull($person['profile_path'] ?? null),
+                ];
+            })->values()->all();
+        $directors = collect($credits['crew'] ?? [])->filter(function (mixed $person): bool {
+            if (! is_array($person) || blank($person['name'] ?? null)) {
+                return false;
+            }
+
+            return ($person['job'] ?? null) === 'Director'
+                || collect($person['jobs'] ?? [])->contains(fn (mixed $job): bool => is_array($job) && ($job['job'] ?? null) === 'Director');
+        })->map(fn (array $person): array => [
+            'tmdb_id' => $this->intOrNull($person['id'] ?? null),
+            'name' => (string) $person['name'],
+            'role' => 'Director',
+            'profile_path' => $this->stringOrNull($person['profile_path'] ?? null),
+        ]);
+        $creators = collect($details['created_by'] ?? [])->filter(fn (mixed $person): bool => is_array($person) && filled($person['name'] ?? null))
+            ->map(fn (array $person): array => [
+                'tmdb_id' => $this->intOrNull($person['id'] ?? null),
+                'name' => (string) $person['name'],
+                'role' => 'Creator',
+                'profile_path' => $this->stringOrNull($person['profile_path'] ?? null),
+            ]);
+
+        return [
+            'tagline' => $this->stringOrNull($details['tagline'] ?? null),
+            'original_title' => $this->stringOrNull($details[$type === 'show' ? 'original_name' : 'original_title'] ?? null),
+            'cast' => $cast,
+            'directors' => $directors->concat($creators)->unique('tmdb_id')->take(8)->values()->all(),
+            'companies' => collect($details['production_companies'] ?? [])->pluck('name')->filter()->take(8)->values()->all(),
+            'countries' => collect($details['production_countries'] ?? [])->pluck('name')->filter()->take(8)->values()->all(),
+            'languages' => collect($details['spoken_languages'] ?? [])->map(fn (mixed $language): mixed => is_array($language) ? ($language['english_name'] ?? $language['name'] ?? null) : null)->filter()->take(8)->values()->all(),
+        ];
     }
 
     /**

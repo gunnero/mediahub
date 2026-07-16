@@ -366,10 +366,10 @@ function LoginScreen({ error, onLogin, submitting }) {
   );
 }
 
-function Topbar({ onAccountAction, profile, query, onQueryChange, onLogout, searchInputRef }) {
+function Topbar({ onAccountAction, profile, query, onQueryChange, onLogout, searchInputRef, showSearch = true }) {
   return (
     <header className="topbar">
-      <label className="search-box">
+      {showSearch ? <label className="search-box">
         <MagnifyingGlass size={22} />
         <input
           ref={searchInputRef}
@@ -377,7 +377,7 @@ function Topbar({ onAccountAction, profile, query, onQueryChange, onLogout, sear
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search shows, movies, episodes..."
         />
-      </label>
+      </label> : <div className="topbar-search-spacer" />}
       <div className="topbar-actions">
         <AccountMenu onLogout={onLogout} onNavigate={onAccountAction} profile={profile} />
       </div>
@@ -477,7 +477,7 @@ function LibraryToolbar({
 
 function LibraryCard({ item, onOpen, showProviderStatus = false }) {
   const badges = [
-    item.watched ? (item.watchedCount > 1 ? `Watched ${item.watchedCount} times` : "Watched") : null,
+    item.watched ? (item.kind === "show" ? `${item.watchedEpisodes || 0} episodes watched` : (item.watchedCount > 1 ? `Watched ${item.watchedCount} times` : "Watched")) : null,
     ratingLabel(item.rating),
     item.hasNote ? "Private note" : null,
     showProviderStatus && item.providerLinked ? "Linked source" : null,
@@ -941,7 +941,7 @@ export function GlobalSearchPanel({
   onSessionExpired,
   query = "",
 }) {
-  const [mode, setMode] = useState("library");
+  const [mode, setMode] = useState("discover");
   const [payload, setPayload] = useState({ movies: [], shows: [], episodes: [] });
   const [discovery, setDiscovery] = useState({ status: "ready", items: [], pagination: {} });
   const [preview, setPreview] = useState(null);
@@ -1107,7 +1107,7 @@ export function GlobalSearchPanel({
                     <small>{item.meta || item.subtitle || [item.year, item.media_type].filter(Boolean).join(" · ")}</small>
                   </span>
                   {mode === "discover" ? (
-                    <b>{item.already_in_library ? "Already Added" : "Preview"}</b>
+                    <b>{item.watched ? (item.watched_count > 1 ? `Watched ${item.watched_count} times` : "Watched") : item.already_in_library ? "In Library" : "Preview"}</b>
                   ) : null}
                 </button>
               ))}
@@ -1130,6 +1130,7 @@ export function GlobalSearchPanel({
             <span className="eyebrow">{preview.media_type}</span>
             <h3>{preview.title}</h3>
             <p>{preview.overview || "No overview is available yet."}</p>
+            {preview.watched ? <p className="discovery-memory-state"><CheckCircle size={17} weight="fill" /> You watched this{preview.watched_count > 1 ? ` ${preview.watched_count} times` : ""}.</p> : null}
             <div className="metadata-strip">
               {[preview.year, ...(preview.genres || [])].filter(Boolean).map((tag) => <span key={tag}>{tag}</span>)}
             </div>
@@ -1146,6 +1147,7 @@ export function GlobalSearchPanel({
                 </>
               )}
             </div>
+            {!preview.already_in_library ? <p className="discovery-action-help"><strong>Library</strong> saves the title to your permanent collection. <strong>Watchlist</strong> saves it and marks it as something you plan to watch.</p> : null}
           </div>
         </div>
       ) : null}
@@ -1284,6 +1286,13 @@ export function DetailModal({
     metadata.runtime ? `${metadata.runtime} min` : null,
     ...(metadata.genres || []),
   ].filter(Boolean);
+  const cast = detail?.people?.cast || [];
+  const directors = detail?.people?.directors || [];
+  const productionFacts = [
+    ...(detail?.production?.companies || []),
+    ...(detail?.production?.countries || []),
+    ...(detail?.production?.languages || []),
+  ];
 
   function submitNote(event) {
     event.preventDefault();
@@ -1313,6 +1322,7 @@ export function DetailModal({
           <div className="cinematic-title">
             <span className="eyebrow">{view.kind || "media"}</span>
             <h2>{view.title}</h2>
+            {detail?.tagline ? <blockquote>{detail.tagline}</blockquote> : null}
             <div className="cinematic-meta">{publicTags.map((tag) => <span key={tag}>{tag}</span>)}</div>
             <p>{view.overview || "This title is part of your permanent MediaHub library."}</p>
             <div className="cinematic-actions">
@@ -1359,11 +1369,35 @@ export function DetailModal({
                     <p>{detail.overview || "No overview is available yet."}</p>
                   </section>
                   <section className="detail-facts">
-                    <div><span>Watched</span><strong>{detail.watched ? `${detail.watchedCount || 1} ${(detail.watchedCount || 1) === 1 ? "time" : "times"}` : "Not yet"}</strong></div>
+                    <div><span>Watched</span><strong>{detail.kind === "show" ? (detail.watched ? `${detail.watchedEpisodes || 0} episodes` : "Not started") : (detail.watched ? `${detail.watchedCount || 1} ${(detail.watchedCount || 1) === 1 ? "time" : "times"}` : "Not yet")}</strong></div>
                     <div><span>Your rating</span><strong>{rating ? `${rating}/10` : "Not rated"}</strong></div>
                     {playerEnabled ? <div><span>Provider</span><strong>{detail.provider?.linked ? "Linked" : "Manual only"}</strong></div> : null}
                     {detail.kind === "show" ? <div><span>Progress</span><strong>{detail.meta}</strong></div> : null}
                   </section>
+                  {detail.kind === "show" && detail.showState ? (
+                    <section className={`show-state-card ${detail.showState.code}`}>
+                      <span className="eyebrow">Series status</span>
+                      <h3>{detail.showState.title}</h3>
+                      <p>{detail.showState.description}</p>
+                    </section>
+                  ) : null}
+                  {cast.length || directors.length ? (
+                    <section className="detail-section people-section">
+                      <div className="detail-section-heading"><strong>Cast & creators</strong><span>{cast.length + directors.length} people</span></div>
+                      <div className="people-grid">
+                        {[...directors, ...cast].map((person, index) => <article key={`${person.id || person.name}-${index}`}>
+                          {person.image ? <img alt="" loading="lazy" src={person.image} /> : <span className="person-placeholder">{posterInitials(person.name)}</span>}
+                          <span><strong>{person.name}</strong><small>{person.role || "Cast"}</small></span>
+                        </article>)}
+                      </div>
+                    </section>
+                  ) : null}
+                  {productionFacts.length ? (
+                    <section className="detail-section production-section">
+                      <div className="detail-section-heading"><strong>Production</strong></div>
+                      <div className="metadata-strip">{productionFacts.map((fact) => <span key={fact}>{fact}</span>)}</div>
+                    </section>
+                  ) : null}
                   {detail.kind === "show" && detail.nextUnwatchedEpisode ? (
                     <button className="next-episode-card" onClick={() => onOpenEpisode?.({ ...detail.nextUnwatchedEpisode, kind: "episode", subtitle: detail.nextUnwatchedEpisode.code, meta: `${detail.title} · ${detail.nextUnwatchedEpisode.code}` })} type="button">
                       <Play size={20} weight="fill" /><span><small>Continue next</small><strong>{detail.nextUnwatchedEpisode.title}</strong><em>{detail.nextUnwatchedEpisode.code}</em></span>
@@ -1802,6 +1836,7 @@ export function App() {
       setDiscoverIntent((current) => ({ type: "all", key: current.key + 1 }));
     }
     if (section === "movies") {
+      setQuery("");
       setMovieIntent((current) => ({ status: "all", sort: "latest_watched", key: current.key + 1 }));
     }
     if (section === "history") {
@@ -2036,6 +2071,7 @@ export function App() {
           onLogout={handleLogout}
           onQueryChange={setQuery}
           searchInputRef={searchInputRef}
+          showSearch={activeSection !== "movies"}
         />
         {isEmptyLibrary ? (
           <div className="data-warning">Your library is empty.</div>

@@ -17,7 +17,9 @@ use App\Models\Show;
 use App\Models\User;
 use App\Services\LibraryBrowserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class LibraryBrowserApiTest extends TestCase
@@ -140,6 +142,81 @@ class LibraryBrowserApiTest extends TestCase
             ->assertJsonPath('item.seasons.0.episodes.1.hasNote', true);
 
         $this->assertSensitiveKeysHidden($detail->json());
+    }
+
+    public function test_media_details_include_curated_people_and_show_lifecycle_data(): void
+    {
+        Config::set('tmdb.enabled', true);
+        Config::set('tmdb.api_key', 'test-key');
+        $user = $this->member();
+        $movie = Movie::create([
+            'user_id' => $user->id,
+            'title' => 'Arrival',
+            'tmdb_id' => 329865,
+            'overview' => 'A linguist works with the military to communicate with alien lifeforms.',
+        ]);
+        $show = Show::create([
+            'user_id' => $user->id,
+            'title' => 'Completed Story',
+            'tmdb_id' => 100,
+            'status' => 'Ended',
+            'seen_episodes' => 1,
+            'aired_episodes' => 1,
+        ]);
+        $episode = Episode::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'season_number' => 1,
+            'episode_number' => 1,
+            'title' => 'Finale',
+            'air_date' => now()->subDay(),
+        ]);
+        EpisodeWatch::create([
+            'user_id' => $user->id,
+            'show_id' => $show->id,
+            'episode_id' => $episode->id,
+            'watched_at' => now(),
+            'source' => 'manual',
+        ]);
+
+        Http::fake([
+            'api.themoviedb.org/3/movie/329865*' => Http::response([
+                'id' => 329865,
+                'title' => 'Arrival',
+                'original_title' => 'Arrival',
+                'tagline' => 'Why are they here?',
+                'credits' => [
+                    'cast' => [['id' => 1, 'name' => 'Amy Adams', 'character' => 'Louise Banks', 'profile_path' => '/amy.jpg', 'order' => 0]],
+                    'crew' => [['id' => 2, 'name' => 'Denis Villeneuve', 'job' => 'Director', 'department' => 'Directing', 'profile_path' => '/denis.jpg']],
+                ],
+                'production_companies' => [['id' => 3, 'name' => 'FilmNation Entertainment']],
+                'production_countries' => [['iso_3166_1' => 'US', 'name' => 'United States of America']],
+                'spoken_languages' => [['iso_639_1' => 'en', 'english_name' => 'English']],
+            ]),
+            'api.themoviedb.org/3/tv/100*' => Http::response([
+                'id' => 100,
+                'name' => 'Completed Story',
+                'status' => 'Ended',
+                'aggregate_credits' => ['cast' => [], 'crew' => []],
+            ]),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/library/movies/{$movie->id}")
+            ->assertOk()
+            ->assertJsonPath('item.people.cast.0.name', 'Amy Adams')
+            ->assertJsonPath('item.people.cast.0.role', 'Louise Banks')
+            ->assertJsonPath('item.people.directors.0.name', 'Denis Villeneuve')
+            ->assertJsonPath('item.production.companies.0', 'FilmNation Entertainment')
+            ->assertJsonPath('item.tagline', 'Why are they here?');
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/library/shows/{$show->id}")
+            ->assertOk()
+            ->assertJsonPath('item.showState.code', 'ended_completed')
+            ->assertJsonPath('item.showState.title', 'SHOW ENDED')
+            ->assertJsonPath('item.watchedEpisodes', 1)
+            ->assertJsonMissingPath('item.watchedCount');
     }
 
     public function test_show_library_can_sort_recently_added_for_home(): void

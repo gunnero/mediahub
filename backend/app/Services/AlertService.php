@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Alert;
 use App\Models\Episode;
+use App\Models\EpisodeWatch;
 use App\Models\Movie;
 use App\Models\NotificationPreference;
 use App\Models\Show;
@@ -11,6 +12,7 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Collection;
 
 class AlertService
 {
@@ -93,12 +95,14 @@ class AlertService
         $today = now()->startOfDay();
 
         if ($preferences->new_episodes) {
+            $startedShowIds = EpisodeWatch::forUser($user)->whereNotNull('show_id')->distinct()->pluck('show_id');
             $scheduledEpisodeKeys = collect();
             Episode::forUser($user)
                 ->with('show')
                 ->whereDate('air_date', '>=', $today->copy()->subDay()->toDateString())
                 ->whereDate('air_date', '<=', $today->copy()->addDays(14)->toDateString())
                 ->whereHas('show', fn ($query) => $query->forUser($user)->followed())
+                ->whereIn('show_id', $startedShowIds)
                 ->orderBy('air_date')
                 ->limit(50)
                 ->get()
@@ -123,6 +127,7 @@ class AlertService
 
             Show::forUser($user)
                 ->followed()
+                ->whereIn('id', $startedShowIds)
                 ->get()
                 ->each(function (Show $show) use ($user, &$created, $scheduledEpisodeKeys, $today): void {
                     $hint = data_get($show->metadata, 'release.next_episode');
@@ -220,6 +225,25 @@ class AlertService
         }
 
         return $created;
+    }
+
+    /** @return Collection<int, Alert> */
+    public function visibleForUser(User $user, int $limit = 100): Collection
+    {
+        $startedShowIds = EpisodeWatch::forUser($user)->whereNotNull('show_id')->distinct()->pluck('show_id')->map(fn (mixed $id): int => (int) $id)->all();
+
+        return Alert::forUser($user)
+            ->latest('created_at')
+            ->latest('id')
+            ->limit(max($limit, 100))
+            ->get()
+            ->filter(function (Alert $alert) use ($startedShowIds): bool {
+                $showId = data_get($alert->payload, 'show_id');
+
+                return ! $showId || in_array((int) $showId, $startedShowIds, true);
+            })
+            ->take($limit)
+            ->values();
     }
 
     /** @param array<string, mixed> $data */

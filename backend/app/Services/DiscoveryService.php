@@ -7,6 +7,7 @@ use App\Enums\MediaEventType;
 use App\Models\Movie;
 use App\Models\Show;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -61,8 +62,8 @@ class DiscoveryService
         $showRows = collect($shows['results'] ?? [])->filter(fn (mixed $row): bool => is_array($row))->values();
         $movieIds = $movieRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id)->all();
         $showIds = $showRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id)->all();
-        $existingMovies = Movie::forUser($user)->whereIn('tmdb_id', $movieIds)->get()->keyBy('tmdb_id');
-        $existingShows = Show::forUser($user)->whereIn('tmdb_id', $showIds)->get()->keyBy('tmdb_id');
+        $existingMovies = $this->existingMovies($user, $movieIds);
+        $existingShows = $this->existingShows($user, $showIds);
 
         $items = [
             ...$movieRows->map(fn (array $row): array => $this->searchResult($row, 'movie', $existingMovies->get((int) ($row['id'] ?? 0))))->all(),
@@ -98,8 +99,8 @@ class DiscoveryService
         $showRows = $rows->filter(fn (array $row): bool => ($row['media_type'] ?? null) === 'tv')->values();
         $movieIds = $movieRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id)->all();
         $showIds = $showRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id)->all();
-        $existingMovies = Movie::forUser($user)->whereIn('tmdb_id', $movieIds)->get()->keyBy('tmdb_id');
-        $existingShows = Show::forUser($user)->whereIn('tmdb_id', $showIds)->get()->keyBy('tmdb_id');
+        $existingMovies = $this->existingMovies($user, $movieIds);
+        $existingShows = $this->existingShows($user, $showIds);
 
         $items = $rows
             ->map(fn (array $row): array => ($row['media_type'] ?? null) === 'movie'
@@ -140,14 +141,8 @@ class DiscoveryService
 
         $movieRows = collect($movies['results'] ?? [])->filter(fn (mixed $row): bool => is_array($row))->values();
         $showRows = collect($shows['results'] ?? [])->filter(fn (mixed $row): bool => is_array($row))->values();
-        $existingMovies = Movie::forUser($user)
-            ->whereIn('tmdb_id', $movieRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id))
-            ->get()
-            ->keyBy('tmdb_id');
-        $existingShows = Show::forUser($user)
-            ->whereIn('tmdb_id', $showRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id))
-            ->get()
-            ->keyBy('tmdb_id');
+        $existingMovies = $this->existingMovies($user, $movieRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id)->all());
+        $existingShows = $this->existingShows($user, $showRows->pluck('id')->filter()->map(fn (mixed $id): int => (int) $id)->all());
         $items = collect([
             ...$movieRows->map(fn (array $row): array => $this->searchResult($row, 'movie', $existingMovies->get((int) ($row['id'] ?? 0))))->all(),
             ...$showRows->map(fn (array $row): array => $this->searchResult($row, 'show', $existingShows->get((int) ($row['id'] ?? 0))))->all(),
@@ -285,7 +280,30 @@ class DiscoveryService
             'popularity' => (float) ($row['popularity'] ?? 0),
             'already_in_library' => $existing !== null,
             'existing_library_id' => $existing?->id,
+            'watched' => (int) ($existing?->getAttribute('watched_count') ?? 0) > 0,
+            'watched_count' => (int) ($existing?->getAttribute('watched_count') ?? 0),
+            'watchlist' => $existing instanceof Movie ? (bool) $existing->is_to_watch : ($existing instanceof Show ? (bool) $existing->followed : false),
         ];
+    }
+
+    /** @param list<int> $tmdbIds */
+    private function existingMovies(User $user, array $tmdbIds): Collection
+    {
+        return Movie::forUser($user)
+            ->whereIn('tmdb_id', $tmdbIds)
+            ->withSum(['watches as watched_count' => fn ($query) => $query->where('user_id', $user->id)->watched()], 'watch_count')
+            ->get()
+            ->keyBy('tmdb_id');
+    }
+
+    /** @param list<int> $tmdbIds */
+    private function existingShows(User $user, array $tmdbIds): Collection
+    {
+        return Show::forUser($user)
+            ->whereIn('tmdb_id', $tmdbIds)
+            ->withCount(['episodeWatches as watched_count' => fn ($query) => $query->where('user_id', $user->id)->watched()])
+            ->get()
+            ->keyBy('tmdb_id');
     }
 
     private function existingMovie(User $user, int $tmdbId, array $details): ?Movie

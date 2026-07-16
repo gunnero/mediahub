@@ -258,6 +258,35 @@ describe("DetailModal", () => {
     expect(screen.queryByText("Linked source")).not.toBeInTheDocument();
   });
 
+  it("renders cast, crew, production details, and completed show state", () => {
+    renderDetail({
+      item: { id: 8, showId: 8, kind: "show", title: "Completed Story" },
+      detail: {
+        id: 8,
+        showId: 8,
+        kind: "show",
+        title: "Completed Story",
+        watched: true,
+        watchedEpisodes: 20,
+        meta: "20/20 watched",
+        showState: { code: "ended_completed", title: "SHOW ENDED", description: "You watched every aired episode." },
+        people: { cast: [{ id: 1, name: "Lead Actor", role: "Lead", image: "" }], directors: [{ id: 2, name: "Series Creator", role: "Creator", image: "" }] },
+        production: { companies: ["Studio One"], countries: ["North Macedonia"], languages: ["Macedonian"] },
+        metadata: {},
+        notes: [],
+        seasons: [],
+        timeline: [],
+      },
+    });
+
+    expect(screen.getByText("SHOW ENDED")).toBeInTheDocument();
+    expect(screen.getByText("20 episodes")).toBeInTheDocument();
+    expect(screen.queryByText("Watched 20 times")).not.toBeInTheDocument();
+    expect(screen.getByText("Lead Actor")).toBeInTheDocument();
+    expect(screen.getByText("Series Creator")).toBeInTheDocument();
+    expect(screen.getByText("Studio One")).toBeInTheDocument();
+  });
+
   it("renders enriched metadata without breaking poster fallback", () => {
     const enrichedDetail = {
       ...movieDetail,
@@ -751,6 +780,7 @@ const showLibraryPayload = {
       hasNote: false,
       providerLinked: false,
       metadataStatus: "enriched",
+      watched: true,
       watchedEpisodes: 2,
       airedEpisodes: 9,
     },
@@ -843,6 +873,8 @@ describe("Library browser", () => {
     expect(await screen.findByRole("heading", { name: /shows/i })).toBeInTheDocument();
     expect(await screen.findByText("Severance")).toBeInTheDocument();
     expect(screen.getByText("2/9 watched")).toBeInTheDocument();
+    expect(screen.getByText("2 episodes watched")).toBeInTheDocument();
+    expect(screen.queryByText("Watched 2 times")).not.toBeInTheDocument();
     expect(screen.getByText("10/10")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/show status/i), { target: { value: "in_progress" } });
@@ -853,6 +885,18 @@ describe("Library browser", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /open severance/i }));
     expect(onOpen).toHaveBeenCalledWith(showLibraryPayload.items[0]);
+  });
+
+  it("uses only the library search inside Movies", async () => {
+    stubAppApi();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Recently Added" });
+
+    fireEvent.click(screen.getByRole("navigation", { name: "Main navigation" }).querySelector('.nav-item[aria-label="Movies"]'));
+
+    expect(await screen.findByRole("heading", { name: "Movies" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search movies")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Search shows, movies, episodes...")).not.toBeInTheDocument();
   });
 });
 
@@ -912,6 +956,7 @@ describe("GlobalSearchPanel", () => {
     const onOpen = vi.fn();
 
     render(<GlobalSearchPanel apiClient={apiClient} onOpen={onOpen} query="heat" />);
+    fireEvent.click(screen.getByRole("tab", { name: /my library/i }));
 
     expect(await screen.findByText("Canonical search")).toBeInTheDocument();
     expect(screen.getByText("Heat")).toBeInTheDocument();
@@ -940,7 +985,6 @@ describe("GlobalSearchPanel", () => {
     });
 
     render(<GlobalSearchPanel apiClient={apiClient} onLibraryChanged={onLibraryChanged} onOpen={vi.fn()} query="discover" />);
-    fireEvent.click(screen.getByRole("tab", { name: /discover/i }));
 
     expect(await screen.findByText("Discovery Film")).toBeInTheDocument();
     expect(screen.getByText("Discovery Show")).toBeInTheDocument();

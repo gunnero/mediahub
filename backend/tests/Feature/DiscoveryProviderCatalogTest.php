@@ -41,6 +41,7 @@ class DiscoveryProviderCatalogTest extends TestCase
     {
         $user = $this->member();
         $movie = Movie::create(['user_id' => $user->id, 'title' => 'Heat', 'tmdb_id' => 949]);
+        MovieWatch::create(['user_id' => $user->id, 'movie_id' => $movie->id, 'watched_at' => now(), 'watch_count' => 2, 'source' => 'manual']);
         Http::fake([
             'api.themoviedb.org/3/search/multi*' => Http::response([
                 'page' => 1, 'total_pages' => 1, 'total_results' => 2,
@@ -59,6 +60,8 @@ class DiscoveryProviderCatalogTest extends TestCase
             ->assertJsonPath('items.0.media_type', 'movie')
             ->assertJsonPath('items.0.already_in_library', true)
             ->assertJsonPath('items.0.existing_library_id', $movie->id)
+            ->assertJsonPath('items.0.watched', true)
+            ->assertJsonPath('items.0.watched_count', 2)
             ->assertJsonPath('items.1.media_type', 'show')
             ->assertJsonPath('items.1.already_in_library', false)
             ->assertJsonPath('items.1.genres.0', 'Drama');

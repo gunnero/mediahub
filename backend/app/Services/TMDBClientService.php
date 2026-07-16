@@ -108,7 +108,7 @@ class TMDBClientService
     public function getMovie(int $tmdbId): ?array
     {
         return $this->get('/movie/'.$tmdbId, [
-            'append_to_response' => 'external_ids',
+            'append_to_response' => 'external_ids,credits',
             'language' => 'en-US',
         ]);
     }
@@ -119,7 +119,7 @@ class TMDBClientService
     public function getShow(int $tmdbId): ?array
     {
         return $this->get('/tv/'.$tmdbId, [
-            'append_to_response' => 'external_ids',
+            'append_to_response' => 'external_ids,aggregate_credits',
             'language' => 'en-US',
         ]);
     }

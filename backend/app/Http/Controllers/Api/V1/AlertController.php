@@ -14,7 +14,7 @@ class AlertController extends Controller
     public function index(Request $request, AlertService $alerts): JsonResponse
     {
         $alerts->syncForUser($request->user());
-        $items = Alert::forUser($request->user())->latest('created_at')->latest('id')->limit(100)->get();
+        $items = $alerts->visibleForUser($request->user(), 100);
 
         return response()->json([
             'alerts' => $items->map(fn (Alert $alert): array => $this->summary($alert))->all(),

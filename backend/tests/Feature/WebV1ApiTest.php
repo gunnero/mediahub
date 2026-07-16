@@ -151,6 +151,8 @@ class WebV1ApiTest extends TestCase
     {
         $user = $this->member();
         $show = Show::create(['user_id' => $user->id, 'title' => 'Upcoming Show', 'followed' => true]);
+        $watchedEpisode = Episode::create(['user_id' => $user->id, 'show_id' => $show->id, 'season_number' => 1, 'episode_number' => 1, 'title' => 'Started', 'air_date' => now()->subDay()]);
+        EpisodeWatch::create(['user_id' => $user->id, 'show_id' => $show->id, 'episode_id' => $watchedEpisode->id, 'watched_at' => now()->subDay(), 'source' => 'manual']);
         Episode::create(['user_id' => $user->id, 'show_id' => $show->id, 'season_number' => 1, 'episode_number' => 2, 'title' => 'Next', 'air_date' => now()->addDays(2)]);
         Episode::create([
             'user_id' => $user->id,
@@ -179,6 +181,23 @@ class WebV1ApiTest extends TestCase
         $this->assertStringNotContainsString('2 episodes need manual review', $response->getContent());
         $this->actingAs($user)->patchJson('/api/v1/notification-preferences', ['new_episodes' => false, 'email_enabled' => false])
             ->assertOk()->assertJsonPath('preferences.newEpisodes', false)->assertJsonPath('preferences.emailEnabled', false);
+    }
+
+    public function test_show_alerts_require_started_watch_history(): void
+    {
+        $user = $this->member();
+        $started = Show::create(['user_id' => $user->id, 'title' => 'Started Show', 'followed' => true, 'seen_episodes' => 1, 'aired_episodes' => 2]);
+        $startedEpisode = Episode::create(['user_id' => $user->id, 'show_id' => $started->id, 'season_number' => 1, 'episode_number' => 1, 'air_date' => now()->subDay()]);
+        EpisodeWatch::create(['user_id' => $user->id, 'show_id' => $started->id, 'episode_id' => $startedEpisode->id, 'watched_at' => now()->subDay(), 'source' => 'manual']);
+        Episode::create(['user_id' => $user->id, 'show_id' => $started->id, 'season_number' => 1, 'episode_number' => 2, 'air_date' => now()->addDay()]);
+
+        $libraryOnly = Show::create(['user_id' => $user->id, 'title' => 'Library Only', 'followed' => true]);
+        Episode::create(['user_id' => $user->id, 'show_id' => $libraryOnly->id, 'season_number' => 1, 'episode_number' => 2, 'air_date' => now()->addDay()]);
+
+        $response = $this->actingAs($user)->getJson('/api/v1/alerts')->assertOk();
+
+        $response->assertJsonFragment(['show_id' => $started->id]);
+        $response->assertJsonMissing(['show_id' => $libraryOnly->id]);
     }
 
     public function test_exports_include_owned_tracking_data_and_exclude_provider_secrets(): void
