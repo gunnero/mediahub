@@ -82,6 +82,77 @@ class DiscoveryService
     }
 
     /**
+     * Return display-safe, read-only TMDB details without adding the title to the library.
+     *
+     * @return array<string, mixed>
+     */
+    public function detail(User $user, string $type, int $tmdbId): array
+    {
+        if (! $this->tmdb->enabled()) {
+            return ['status' => 'disabled', 'item' => null];
+        }
+
+        $details = $type === 'show'
+            ? $this->tmdb->getShow($tmdbId)
+            : $this->tmdb->getMovie($tmdbId);
+
+        if (! is_array($details)) {
+            return ['status' => 'unavailable', 'item' => null];
+        }
+
+        $existing = $type === 'show'
+            ? $this->existingShows($user, [$tmdbId])->get($tmdbId)
+            : $this->existingMovies($user, [$tmdbId])->get($tmdbId);
+        $public = $this->metadata->publicMetadata($details, $type);
+        $date = (string) ($type === 'show' ? ($details['first_air_date'] ?? '') : ($details['release_date'] ?? ''));
+        $runtime = $type === 'show'
+            ? collect($details['episode_run_time'] ?? [])->map(fn (mixed $value): int => (int) $value)->first(fn (int $value): bool => $value > 0)
+            : (int) ($details['runtime'] ?? 0);
+        $person = fn (array $row): array => [
+            'id' => $row['tmdb_id'] ?? null,
+            'name' => (string) ($row['name'] ?? ''),
+            'role' => $row['role'] ?? null,
+            'image' => $this->metadata->imageUrl($row['profile_path'] ?? null, 'w185'),
+        ];
+
+        return [
+            'status' => 'ready',
+            'item' => [
+                'media_type' => $type,
+                'tmdb_id' => $tmdbId,
+                'title' => (string) ($type === 'show' ? ($details['name'] ?? '') : ($details['title'] ?? '')),
+                'original_title' => $public['original_title'],
+                'year' => preg_match('/^\d{4}/', $date, $matches) ? (int) $matches[0] : null,
+                'release_date' => $date ?: null,
+                'poster' => $this->metadata->imageUrl($details['poster_path'] ?? null),
+                'backdrop' => $this->metadata->imageUrl($details['backdrop_path'] ?? null, 'w1280'),
+                'overview' => (string) ($details['overview'] ?? ''),
+                'tagline' => $public['tagline'],
+                'genres' => collect($details['genres'] ?? [])->pluck('name')->filter()->values()->all(),
+                'runtime' => $runtime ?: null,
+                'status' => $details['status'] ?? null,
+                'vote_average' => isset($details['vote_average']) ? round((float) $details['vote_average'], 1) : null,
+                'season_count' => $type === 'show' ? (int) ($details['number_of_seasons'] ?? 0) : null,
+                'episode_count' => $type === 'show' ? (int) ($details['number_of_episodes'] ?? 0) : null,
+                'people' => [
+                    'cast' => collect($public['cast'])->map($person)->values()->all(),
+                    'directors' => collect($public['directors'])->map($person)->values()->all(),
+                ],
+                'production' => [
+                    'companies' => $public['companies'],
+                    'countries' => $public['countries'],
+                    'languages' => $public['languages'],
+                ],
+                'already_in_library' => $existing !== null,
+                'existing_library_id' => $existing?->id,
+                'watched' => (int) ($existing?->getAttribute('watched_count') ?? 0) > 0,
+                'watched_count' => (int) ($existing?->getAttribute('watched_count') ?? 0),
+                'watchlist' => $existing instanceof Movie ? (bool) $existing->is_to_watch : ($existing instanceof Show ? (bool) $existing->followed : false),
+            ],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function searchAll(User $user, string $query, int $page, ?int $year): array

@@ -2637,6 +2637,78 @@ img {
   gap: 30px;
 }
 
+.discovery-preview-expanded {
+  width: min(1080px, calc(100vw - 36px));
+  max-height: min(820px, calc(100vh - 36px));
+  grid-template-columns: 220px minmax(0, 1fr);
+  overflow-x: hidden;
+}
+
+.discovery-preview-backdrop {
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto 28%;
+  height: 330px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.18;
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 96%);
+}
+
+.discovery-preview-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #111518 0%, transparent 38%, transparent 72%, #111518 100%);
+}
+
+.discovery-preview-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.discovery-preview-content,
+.discovery-preview-art,
+.discovery-preview .modal-close {
+  position: relative;
+  z-index: 1;
+}
+
+.discovery-preview-content {
+  min-width: 0;
+}
+
+.discovery-preview-content > .metadata-strip {
+  margin: 14px 0;
+}
+
+.discovery-detail-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.discovery-detail-section > strong,
+.discovery-detail-section .detail-section-heading strong {
+  color: var(--text);
+}
+
+.discovery-detail-section .people-grid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+
+.detail-original-title {
+  display: block;
+  color: var(--muted);
+}
+
+.detail-tagline {
+  margin: 12px 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
 .discovery-preview-art {
   aspect-ratio: 2 / 3;
 }
@@ -5557,6 +5629,16 @@ textarea:disabled {
     padding: 24px;
   }
 
+  .discovery-preview-expanded {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .discovery-preview-backdrop {
+    inset: 0;
+    height: 260px;
+  }
+
   .discovery-preview-art {
     width: min(180px, 52vw);
   }
@@ -6526,7 +6608,8 @@ textarea:disabled {
 }
 
 .people-grid img,
-.person-placeholder {
+.person-placeholder,
+.person-fallback {
   width: 48px;
   height: 48px;
   flex: 0 0 48px;
@@ -6535,7 +6618,8 @@ textarea:disabled {
   background: #25272a;
 }
 
-.person-placeholder {
+.person-placeholder,
+.person-fallback {
   display: grid;
   place-items: center;
   color: var(--muted);

@@ -980,6 +980,25 @@ describe("GlobalSearchPanel", () => {
         ],
         pagination: { page: 1, totalPages: 1 },
       };
+      if (path === "/api/v1/discover/movie/101") return {
+        status: "ready",
+        item: {
+          media_type: "movie",
+          tmdb_id: 101,
+          title: "Discovery Film",
+          original_title: "Discovery Film Original",
+          year: 2026,
+          runtime: 118,
+          status: "Released",
+          vote_average: 8.2,
+          overview: "The complete plot for a newly discovered film.",
+          tagline: "Every discovery changes you.",
+          genres: ["Drama"],
+          people: { cast: [{ id: 1, name: "Discovery Actor", role: "Lead", image: "" }], directors: [{ id: 2, name: "Discovery Director", role: "Director", image: "" }] },
+          production: { companies: ["Discovery Studio"], countries: ["North Macedonia"], languages: ["Macedonian"] },
+          already_in_library: false,
+        },
+      };
       if (path === "/api/v1/discover/movies/101/add" && options.method === "POST") return { item: { id: 77, movieId: 77, title: "Discovery Film" } };
       throw new Error(`Unexpected API call: ${path}`);
     });
@@ -990,6 +1009,11 @@ describe("GlobalSearchPanel", () => {
     expect(screen.getByText("Discovery Show")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /open discovery film/i }));
     expect(screen.getByRole("dialog", { name: /discovery film discovery preview/i })).toBeInTheDocument();
+    expect(await screen.findByText("Discovery Actor")).toBeInTheDocument();
+    expect(screen.getByText("Discovery Director")).toBeInTheDocument();
+    expect(screen.getByText("The complete plot for a newly discovered film.")).toBeInTheDocument();
+    expect(screen.getByText("118 min")).toBeInTheDocument();
+    expect(screen.getByText("Discovery Studio")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /add to library/i }));
 
     await waitFor(() => expect(apiClient).toHaveBeenCalledWith("/api/v1/discover/movies/101/add", { method: "POST", body: { action: "library" } }));

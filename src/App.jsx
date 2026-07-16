@@ -22,6 +22,7 @@ import { HomeExperience } from "./components/HomeExperience.jsx";
 import {
   AlertsSection,
   CalendarSection,
+  DiscoveryPreviewModal,
   DiscoverSection,
   ListsSection,
   StatsSection,
@@ -945,6 +946,8 @@ export function GlobalSearchPanel({
   const [payload, setPayload] = useState({ movies: [], shows: [], episodes: [] });
   const [discovery, setDiscovery] = useState({ status: "ready", items: [], pagination: {} });
   const [preview, setPreview] = useState(null);
+  const [previewError, setPreviewError] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [adding, setAdding] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1067,6 +1070,22 @@ export function GlobalSearchPanel({
     });
   }
 
+  async function openDiscoveryPreview(item) {
+    setPreview(item);
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const response = await apiClient(`/api/v1/discover/${item.media_type}/${item.tmdb_id}`);
+      if (response?.item) setPreview((current) => current?.tmdb_id === item.tmdb_id ? { ...current, ...response.item } : current);
+      else setPreviewError("Complete details are temporarily unavailable.");
+    } catch (previewFailure) {
+      if (previewFailure instanceof SessionExpiredError) onSessionExpired?.();
+      else setPreviewError("Complete details are temporarily unavailable. The basic title information is still shown.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   return (
     <section className="global-search-panel">
       <div className="section-heading">
@@ -1098,7 +1117,7 @@ export function GlobalSearchPanel({
                   aria-label={`Open ${item.title}`}
                   className="search-result-row"
                   key={`${group.id}-${item.id || item.tmdb_id}`}
-                  onClick={() => mode === "discover" ? setPreview(item) : onOpen(item)}
+                  onClick={() => mode === "discover" ? openDiscoveryPreview(item) : onOpen(item)}
                   type="button"
                 >
                   <PosterArtwork item={item} />
@@ -1118,39 +1137,7 @@ export function GlobalSearchPanel({
       {!loading && !error && totalResults === 0 ? (
         <div className="empty-strip compact">{mode === "discover" ? "No discovery matches" : "No canonical matches yet"}</div>
       ) : null}
-      {preview ? (
-        <div className="discovery-preview" role="dialog" aria-modal="true" aria-label={`${preview.title} discovery preview`}>
-          <button className="modal-close" onClick={() => setPreview(null)} type="button" aria-label="Close discovery preview">
-            <X size={18} />
-          </button>
-          <div className="discovery-preview-art">
-            <PosterArtwork item={preview} />
-          </div>
-          <div>
-            <span className="eyebrow">{preview.media_type}</span>
-            <h3>{preview.title}</h3>
-            <p>{preview.overview || "No overview is available yet."}</p>
-            {preview.watched ? <p className="discovery-memory-state"><CheckCircle size={17} weight="fill" /> You watched this{preview.watched_count > 1 ? ` ${preview.watched_count} times` : ""}.</p> : null}
-            <div className="metadata-strip">
-              {[preview.year, ...(preview.genres || [])].filter(Boolean).map((tag) => <span key={tag}>{tag}</span>)}
-            </div>
-            <div className="modal-actions">
-              {preview.already_in_library ? (
-                <button className="primary-action" onClick={() => openExisting(preview)} type="button">Open in My Library</button>
-              ) : (
-                <>
-                  <button className="primary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "library")} type="button">Add to Library</button>
-                  <button className="secondary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watchlist")} type="button">Add to Watchlist</button>
-                  {preview.media_type === "movie" ? (
-                    <button className="text-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watched")} type="button">Mark watched</button>
-                  ) : null}
-                </>
-              )}
-            </div>
-            {!preview.already_in_library ? <p className="discovery-action-help"><strong>Library</strong> saves the title to your permanent collection. <strong>Watchlist</strong> saves it and marks it as something you plan to watch.</p> : null}
-          </div>
-        </div>
-      ) : null}
+      <DiscoveryPreviewModal actions={<div className="modal-actions">{preview?.already_in_library ? <button className="primary-action" onClick={() => openExisting(preview)} type="button">Open in My Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watchlist")} type="button">Add to Watchlist</button>{preview?.media_type === "movie" ? <button className="text-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watched")} type="button">Mark watched</button> : null}</>}</div>} error={previewError} loading={previewLoading} onClose={() => setPreview(null)} preview={preview} />
     </section>
   );
 }

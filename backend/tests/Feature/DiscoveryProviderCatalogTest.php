@@ -94,6 +94,40 @@ class DiscoveryProviderCatalogTest extends TestCase
             ->assertJsonPath('items.1.existing_library_id', $movie->id);
     }
 
+    public function test_discovery_detail_returns_full_safe_movie_information_without_adding_it(): void
+    {
+        $user = $this->member();
+        Http::fake([
+            'api.themoviedb.org/3/movie/949*' => Http::response([
+                ...$this->movieDetails(),
+                'tagline' => 'A Los Angeles crime saga.',
+                'production_companies' => [['name' => 'Forward Pass']],
+                'production_countries' => [['name' => 'United States']],
+                'spoken_languages' => [['english_name' => 'English']],
+                'credits' => [
+                    'cast' => [['id' => 1, 'name' => 'Lead Actor', 'character' => 'Detective', 'profile_path' => '/actor.jpg', 'order' => 0]],
+                    'crew' => [['id' => 2, 'name' => 'Film Director', 'job' => 'Director', 'profile_path' => '/director.jpg']],
+                ],
+            ]),
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/api/v1/discover/movie/949');
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ready')
+            ->assertJsonPath('item.title', 'Heat')
+            ->assertJsonPath('item.runtime', 170)
+            ->assertJsonPath('item.people.cast.0.name', 'Lead Actor')
+            ->assertJsonPath('item.people.cast.0.role', 'Detective')
+            ->assertJsonPath('item.people.directors.0.name', 'Film Director')
+            ->assertJsonPath('item.production.companies.0', 'Forward Pass')
+            ->assertJsonPath('item.already_in_library', false)
+            ->assertJsonMissingPath('item.credits')
+            ->assertJsonMissingPath('item.api_key');
+
+        $this->assertDatabaseCount('movies', 0);
+    }
+
     public function test_discovered_movie_and_show_are_added_once_and_scoped_to_user(): void
     {
         $user = $this->member();

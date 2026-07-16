@@ -78,6 +78,10 @@ Route::prefix('v1')->middleware('web')->group(function (): void {
         Route::get('/exports/csv/{dataset}', [ExportController::class, 'csv'])->middleware('throttle:10,1');
         Route::get('/media-events', [MediaEventController::class, 'index']);
         Route::get('/media-events/recent', [MediaEventController::class, 'recent']);
+        Route::get('/discover/{type}/{tmdbId}', [DiscoveryController::class, 'detail'])
+            ->whereIn('type', ['movie', 'show'])
+            ->whereNumber('tmdbId')
+            ->middleware('throttle:60,1,discovery-detail');
         Route::get('/library/movies', [LibraryBrowserController::class, 'movies']);
         Route::get('/library/shows', [LibraryBrowserController::class, 'shows']);
         Route::get('/library/continue-watching', [LibraryBrowserController::class, 'continueWatching']);

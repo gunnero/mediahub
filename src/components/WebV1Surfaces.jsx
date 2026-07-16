@@ -32,6 +32,47 @@ function Artwork({ item }) {
   return item?.poster ? <img alt="" loading="lazy" src={item.poster} /> : <span className="neutral-poster" role="img" aria-label={`No poster for ${item?.title || "title"}`}><span>{initials(item?.title)}</span></span>;
 }
 
+export function DiscoveryPreviewModal({ actions, error = "", loading = false, onClose, preview }) {
+  if (!preview) return null;
+  const cast = preview.people?.cast || [];
+  const creators = preview.people?.directors || [];
+  const production = [
+    ...(preview.production?.companies || []),
+    ...(preview.production?.countries || []),
+    ...(preview.production?.languages || []),
+  ];
+  const facts = [
+    preview.year,
+    preview.runtime ? `${preview.runtime} min` : null,
+    preview.season_count ? `${preview.season_count} season${preview.season_count === 1 ? "" : "s"}` : null,
+    preview.episode_count ? `${preview.episode_count} episodes` : null,
+    preview.status,
+    preview.vote_average ? `TMDB ${preview.vote_average}/10` : null,
+    ...(preview.genres || []),
+  ].filter(Boolean);
+
+  return <div className="discovery-preview discovery-preview-expanded" role="dialog" aria-modal="true" aria-label={`${preview.title} discovery preview`}>
+    {preview.backdrop ? <div className="discovery-preview-backdrop" aria-hidden="true"><img alt="" src={preview.backdrop} /></div> : null}
+    <button className="modal-close" onClick={onClose} type="button" aria-label="Close discovery preview">×</button>
+    <div className="discovery-preview-art"><Artwork item={preview} /></div>
+    <div className="discovery-preview-content">
+      <span className="eyebrow">{preview.media_type}</span>
+      <h3>{preview.title}</h3>
+      {preview.original_title && preview.original_title !== preview.title ? <small className="detail-original-title">Original title: {preview.original_title}</small> : null}
+      {preview.tagline ? <p className="detail-tagline">“{preview.tagline}”</p> : null}
+      <div className="metadata-strip">{facts.map((tag) => <span key={tag}>{tag}</span>)}</div>
+      {preview.watched ? <p className="discovery-memory-state"><CheckCircle size={17} weight="fill" /> You watched this{preview.watched_count > 1 ? ` ${preview.watched_count} times` : ""}.</p> : null}
+      <section className="discovery-detail-section"><strong>Plot</strong><p>{preview.overview || "No overview is available yet."}</p></section>
+      {loading ? <div className="empty-strip compact">Loading complete movie details...</div> : null}
+      {error ? <div className="detail-error">{error}</div> : null}
+      {cast.length || creators.length ? <section className="discovery-detail-section"><div className="detail-section-heading"><strong>Cast & creators</strong><span>{cast.length + creators.length} people</span></div><div className="people-grid">{[...creators, ...cast].map((person, index) => <article key={`${person.id || person.name}-${index}`}>{person.image ? <img alt="" loading="lazy" src={person.image} /> : <span className="person-fallback">{initials(person.name)}</span>}<span><strong>{person.name}</strong><small>{person.role || "Cast"}</small></span></article>)}</div></section> : null}
+      {production.length ? <section className="discovery-detail-section"><strong>Production</strong><div className="metadata-strip">{production.map((fact) => <span key={fact}>{fact}</span>)}</div></section> : null}
+      {actions}
+      {!preview.already_in_library ? <p className="discovery-action-help"><strong>Library</strong> saves the title to your permanent collection. <strong>Watchlist</strong> saves it and marks it as something you plan to watch.</p> : null}
+    </div>
+  </div>;
+}
+
 function useSafeLoad(loader, dependencies, onSessionExpired) {
   const [state, setState] = useState({ loading: true, error: "", data: null });
   useEffect(() => {
@@ -57,6 +98,8 @@ export function DiscoverSection({ apiClient = apiRequest, initialType = "all", n
   const [state, setState] = useState({ loading: true, error: "", items: [] });
   const [adding, setAdding] = useState("");
   const [preview, setPreview] = useState(null);
+  const [previewError, setPreviewError] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
   const categories = [
     ["trending", "Trending"],
     ["popular", "Popular"],
@@ -118,13 +161,29 @@ export function DiscoverSection({ apiClient = apiRequest, initialType = "all", n
     } finally { setAdding(""); }
   }
 
+  async function openPreview(item) {
+    setPreview(item);
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const payload = await apiClient(`/api/v1/discover/${item.media_type}/${item.tmdb_id}`);
+      if (payload?.item) setPreview((current) => current?.tmdb_id === item.tmdb_id ? { ...current, ...payload.item } : current);
+      else setPreviewError("Complete details are temporarily unavailable.");
+    } catch (error) {
+      if (error instanceof SessionExpiredError) onSessionExpired?.();
+      else setPreviewError("Complete details are temporarily unavailable. The basic title information is still shown.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   function openResult(item, canonicalItem) {
     if (mode === "library" || item.already_in_library) {
       onOpen?.(canonicalItem);
       return;
     }
 
-    setPreview(item);
+    openPreview(item);
   }
 
   return <section className="web-v1-screen discover-screen">
@@ -143,7 +202,7 @@ export function DiscoverSection({ apiClient = apiRequest, initialType = "all", n
       const canonicalItem = { ...item, kind: mediaType, movieId: mediaType === "movie" ? (item.existing_library_id || item.movieId || item.id) : undefined, showId: mediaType === "show" ? (item.existing_library_id || item.showId || item.id) : undefined, episodeId: mediaType === "episode" ? (item.episodeId || item.id) : undefined };
       return <article className="discovery-result" key={`${mediaType}-${item.tmdb_id || item.id}`}><button className="discovery-art" onClick={() => openResult(item, canonicalItem)} type="button"><Artwork item={item} /></button><div><span className="eyebrow">{mediaType}</span><button className="discovery-title" aria-label={`Open ${item.title} details`} onClick={() => openResult(item, canonicalItem)} type="button"><h3>{item.title}</h3></button><small>{item.year || item.releaseYear || "Year unavailable"}</small>{item.watched ? <b className="discovery-watched"><CheckCircle size={15} weight="fill" /> {item.watched_count > 1 ? `Watched ${item.watched_count} times` : "Watched"}</b> : null}<p>{item.overview || item.subtitle || "No overview is available yet."}</p>{mode === "discover" ? <div className="result-actions">{item.already_in_library ? <button className="secondary-action" onClick={() => onOpen?.(canonicalItem)} type="button"><CheckCircle size={17} /> Already in Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => add(item, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => add(item, "watchlist")} type="button">Add to Watchlist</button>{mediaType === "movie" ? <button className="text-action" disabled={Boolean(adding)} onClick={() => add(item, "watched")} type="button">Mark Watched</button> : null}</>}</div> : <button className="secondary-action" onClick={() => onOpen?.(canonicalItem)} type="button">Open details</button>}</div></article>;
     })}</div>
-    {preview ? <div className="discovery-preview" role="dialog" aria-modal="true" aria-label={`${preview.title} discovery preview`}><button className="modal-close" onClick={() => setPreview(null)} type="button" aria-label="Close discovery preview">×</button><div className="discovery-preview-art"><Artwork item={preview} /></div><div><span className="eyebrow">{preview.media_type}</span><h3>{preview.title}</h3><p>{preview.overview || "No overview is available yet."}</p><div className="metadata-strip">{[preview.year, ...(preview.genres || [])].filter(Boolean).map((tag) => <span key={tag}>{tag}</span>)}</div><p className="discovery-action-help"><strong>Library</strong> saves this title permanently. <strong>Watchlist</strong> also marks it as something you plan to watch.</p><div className="modal-actions">{preview.already_in_library ? <button className="primary-action" onClick={() => openResult(preview, { ...preview, kind: preview.media_type, movieId: preview.media_type === "movie" ? preview.existing_library_id : undefined, showId: preview.media_type === "show" ? preview.existing_library_id : undefined })} type="button">Open in My Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => add(preview, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => add(preview, "watchlist")} type="button">Add to Watchlist</button></>}</div></div></div> : null}
+    <DiscoveryPreviewModal actions={<div className="modal-actions">{preview?.already_in_library ? <button className="primary-action" onClick={() => openResult(preview, { ...preview, kind: preview.media_type, movieId: preview.media_type === "movie" ? preview.existing_library_id : undefined, showId: preview.media_type === "show" ? preview.existing_library_id : undefined })} type="button">Open in My Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => add(preview, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => add(preview, "watchlist")} type="button">Add to Watchlist</button></>}</div>} error={previewError} loading={previewLoading} onClose={() => setPreview(null)} preview={preview} />
   </section>;
 }
 

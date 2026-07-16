@@ -11,6 +11,13 @@ use Illuminate\Validation\Rule;
 
 class DiscoveryController extends Controller
 {
+    public function detail(Request $request, string $type, int $tmdbId, DiscoveryService $discovery): JsonResponse
+    {
+        abort_unless(in_array($type, ['movie', 'show'], true), 404);
+
+        return response()->json($discovery->detail($request->user(), $type, $tmdbId));
+    }
+
     public function browse(Request $request, DiscoveryService $discovery): JsonResponse
     {
         $data = $request->validate([

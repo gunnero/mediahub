@@ -39,6 +39,23 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(screen.getByText((_, element) => element?.classList.contains("discovery-action-help") && element.textContent.includes("keeps a title"))).toBeInTheDocument();
   });
 
+  it("loads complete cast, plot, runtime, and production for a discovery title", async () => {
+    const apiClient = vi.fn(async (path) => {
+      if (path.startsWith("/api/v1/discover/browse")) return { status: "ready", items: [{ media_type: "movie", tmdb_id: 949, title: "Heat", overview: "Search overview.", already_in_library: false }] };
+      if (path === "/api/v1/discover/movie/949") return { status: "ready", item: { media_type: "movie", tmdb_id: 949, title: "Heat", runtime: 170, status: "Released", overview: "Complete crime saga plot.", people: { cast: [{ id: 1, name: "Lead Actor", role: "Detective", image: "" }], directors: [{ id: 2, name: "Film Director", role: "Director", image: "" }] }, production: { companies: ["Forward Pass"], countries: ["United States"], languages: ["English"] }, already_in_library: false } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    render(<DiscoverSection apiClient={apiClient} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Heat details" }));
+
+    expect(await screen.findByText("Lead Actor")).toBeInTheDocument();
+    expect(screen.getByText("Film Director")).toBeInTheDocument();
+    expect(screen.getByText("Complete crime saga plot.")).toBeInTheDocument();
+    expect(screen.getByText("170 min")).toBeInTheDocument();
+    expect(screen.getByText("Forward Pass")).toBeInTheDocument();
+  });
+
   it("browses trending, popular, now playing, upcoming, and top rated without a hero", async () => {
     const apiClient = vi.fn(async (path) => ({
       status: "ready",
