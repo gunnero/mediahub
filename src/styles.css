@@ -2568,7 +2568,7 @@ img {
 .modal-layer {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 100;
   background: rgba(0, 0, 0, 0.72);
   display: grid;
   place-items: center;
@@ -2621,7 +2621,7 @@ img {
 
 .discovery-preview {
   position: fixed;
-  z-index: 30;
+  z-index: 100;
   inset: 50% auto auto 50%;
   width: min(820px, calc(100vw - 36px));
   max-height: min(680px, calc(100vh - 48px));
