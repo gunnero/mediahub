@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AlertsSection, CalendarSection, DiscoverSection, ListsSection, StatsSection, WebSettingsSection } from "./WebV1Surfaces.jsx";
 
@@ -54,6 +55,16 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(screen.getByText("Complete crime saga plot.")).toBeInTheDocument();
     expect(screen.getByText("170 min")).toBeInTheDocument();
     expect(screen.getByText("Forward Pass")).toBeInTheDocument();
+  });
+
+  it("keeps discovery preview artwork bounded so details stay visible", () => {
+    const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+
+    expect(css).toMatch(/\.discovery-preview-expanded\s*\{[^}]*overflow-y:\s*hidden/s);
+    expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*max-height:/s);
+    expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(css).toMatch(/\.discovery-preview-art\s*\{[^}]*max-height:/s);
+    expect(css).toMatch(/\.discovery-preview-expanded\s+\.discovery-preview-art\s*\{[^}]*position:\s*sticky/s);
   });
 
   it("browses trending, popular, now playing, upcoming, and top rated without a hero", async () => {
