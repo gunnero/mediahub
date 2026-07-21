@@ -6204,6 +6204,7 @@ textarea:disabled {
   .discovery-preview-expanded {
     width: calc(100vw - 20px);
     max-height: calc(100vh - 20px);
+    grid-template-rows: max-content max-content;
   }
 
   .discovery-preview-backdrop {
@@ -6211,7 +6212,7 @@ textarea:disabled {
     height: 260px;
   }
 
-  .discovery-preview-art {
+  .discovery-preview-expanded .discovery-preview-art {
     grid-column: 1;
     grid-row: auto;
     width: min(180px, 52vw);

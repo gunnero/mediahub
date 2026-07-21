@@ -68,6 +68,8 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*overflow-y:\s*auto/s);
     expect(css).toMatch(/\.discovery-preview-art\s*\{[^}]*max-height:/s);
     expect(css).toMatch(/\.discovery-preview-expanded\s+\.discovery-preview-art\s*\{[^}]*position:\s*sticky/s);
+    expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded\s*\{[^}]*grid-template-rows:\s*max-content max-content/s);
+    expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded \.discovery-preview-art\s*\{[^}]*position:\s*relative/s);
   });
 
   it("browses trending, popular, now playing, upcoming, and top rated without a hero", async () => {
