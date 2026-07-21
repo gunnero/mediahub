@@ -2642,6 +2642,8 @@ img {
   max-height: min(820px, calc(100vh - 36px));
   grid-template-columns: 220px minmax(0, 1fr);
   overflow-x: hidden;
+  overflow-y: hidden;
+  align-items: start;
 }
 
 .discovery-preview-backdrop {
@@ -2677,6 +2679,10 @@ img {
 
 .discovery-preview-content {
   min-width: 0;
+  max-height: calc(min(820px, calc(100vh - 36px)) - 68px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .discovery-preview-content > .metadata-strip {
@@ -2711,13 +2717,25 @@ img {
 
 .discovery-preview-art {
   aspect-ratio: 2 / 3;
+  align-self: start;
+  width: 100%;
+  max-height: calc(min(820px, calc(100vh - 36px)) - 68px);
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .discovery-preview-art > * {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   border-radius: 6px;
+}
+
+.discovery-preview-expanded .discovery-preview-art {
+  position: sticky;
+  top: 0;
 }
 
 .discovery-preview h3 {
@@ -6187,6 +6205,15 @@ textarea:disabled {
 
   .discovery-preview-art {
     width: min(180px, 52vw);
+    max-height: 270px;
+    position: relative;
+    top: auto;
+  }
+
+  .discovery-preview-content {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .cinematic-layer {
