@@ -57,10 +57,13 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(screen.getByText("Forward Pass")).toBeInTheDocument();
   });
 
-  it("keeps discovery preview artwork bounded so details stay visible", () => {
+  it("keeps discovery preview artwork in its column so details stay visible", () => {
     const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
 
     expect(css).toMatch(/\.discovery-preview-expanded\s*\{[^}]*overflow-y:\s*hidden/s);
+    expect(css).toMatch(/\.discovery-preview \.modal-close\s*\{[^}]*position:\s*absolute/s);
+    expect(css).toMatch(/\.discovery-preview-art\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;/s);
+    expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;/s);
     expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*max-height:/s);
     expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*overflow-y:\s*auto/s);
     expect(css).toMatch(/\.discovery-preview-art\s*\{[^}]*max-height:/s);
