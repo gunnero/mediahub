@@ -10,6 +10,10 @@ MediaHub is a movie and television tracking platform built around user-owned his
 
 Media tracking should not depend on one provider or trap a person's viewing history inside one service. MediaHub keeps canonical titles, watch history, ratings, notes, lists, and profile choices separate from optional metadata and playback providers.
 
+## What I built personally
+
+I designed and implemented the public repository: the Laravel API, React product interface, canonical media and viewing-history model, privacy and authorization boundaries, diary, discovery, collections, statistics, import/export workflows, background jobs, local demonstration data, automated tests, and engineering documentation. Product direction, architecture, implementation, and repository documentation are my work unless a file explicitly attributes another source.
+
 ## Core capabilities
 
 - Personal movie and television library
@@ -23,6 +27,10 @@ Media tracking should not depend on one provider or trap a person's viewing hist
 ## Product boundaries
 
 MediaHub is under active development. It is not presented as a public service, does not claim users, customers, or revenue, and does not provide a shared stream catalog. Third-party imports are compatibility features rather than the product identity.
+
+- **Implemented:** user-owned library and diary, ratings, notes, collections, discovery, statistics, imports and exports, opt-in profiles, friendship controls, and administrative review tools.
+- **In development:** product coherence, deterministic demo fixtures, trustworthy import status, accessibility coverage, and operational readiness.
+- **Future ideas:** native clients and optional membership capabilities described in planning documents. Planned work is not an implemented feature or delivery commitment.
 
 ## Architecture overview
 
@@ -82,6 +90,12 @@ composer validate --working-dir=backend --strict
 php backend/artisan test
 backend/vendor/bin/pint --test
 ```
+
+The latest verified `main` CI run passed **152 backend tests**, **76 frontend tests**, and **7 repository-policy tests**, plus 26 public-evidence checks, formatting, builds, dependency audits, configuration caching, route caching, and secret scanning. Counts describe the recorded CI run and may change as coverage evolves; the workflow badge above is the current source of truth.
+
+## Release status
+
+The latest tagged milestone is [`v1.0.0-rc1.1`](https://github.com/gunnero/mediahub/tree/v1.0.0-rc1.1). It is a release-candidate engineering snapshot, not a public launch or production-availability claim.
 
 ## Documentation map
 
