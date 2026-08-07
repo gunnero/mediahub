@@ -174,6 +174,22 @@ describe("Settings page layout", () => {
 });
 
 describe("Home page navigation and page-specific hero rules", () => {
+  it("returns from global search results to Home when Home is clicked", async () => {
+    stubAppApi();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Recently Added" });
+
+    const search = screen.getByPlaceholderText("Search shows, movies, episodes...");
+    fireEvent.change(search, { target: { value: "Something" } });
+    expect(screen.getByRole("heading", { name: "Results for “Something”" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Home" }));
+
+    expect(search).toHaveValue("");
+    expect(screen.queryByRole("heading", { name: "Results for “Something”" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tonight" })).toBeInTheDocument();
+  });
+
   it("uses the existing app navigation from the new Home experience", async () => {
     stubAppApi();
     render(<App />);
