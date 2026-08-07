@@ -7514,3 +7514,50 @@ textarea:disabled {
     grid-column: 1;
   }
 }
+
+/* Keep mobile search and detail views inside the visual viewport. */
+@media (max-width: 820px) {
+  html,
+  body,
+  #root,
+  .app-shell,
+  .dashboard-shell {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .global-search-panel,
+  .global-search-panel .section-heading,
+  .global-search-panel .section-heading > div,
+  .search-result-group,
+  .search-result-group > div,
+  .search-result-row {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .global-search-panel {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .global-search-panel .section-heading h2 {
+    overflow-wrap: anywhere;
+  }
+
+  .global-search-panel .section-heading em {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .search-result-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .search-result-row > b {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
