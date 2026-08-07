@@ -101,7 +101,7 @@ verify_remote_state() {
   command+=" DB_PATH=$(quote "$SERVER_DB_PATH") BRANCH=$(quote "$BRANCH") bash -s"
   ssh "${SSH_ARGS[@]}" "$MEDIAHUB_SSH_TARGET" "$command" <<'REMOTE_CHECK'
 set -Eeuo pipefail
-for tool in git runuser php composer npm sqlite3 apachectl systemctl; do
+for tool in git runuser php composer npm sqlite3 apachectl systemctl crontab; do
   command -v "$tool" >/dev/null || { echo "Missing server tool: $tool" >&2; exit 1; }
 done
 [[ -d "$SERVER_APP_DIR/.git" ]] || { echo 'Server checkout missing' >&2; exit 1; }
@@ -153,6 +153,17 @@ run_in_dir() {
   run_as_site bash -c 'cd "$1"; shift; exec "$@"' _ "$directory" "$@"
 }
 
+install_scheduler() {
+  local cron_file schedule_command
+  cron_file="$(mktemp)"
+  schedule_command="cd $SERVER_APP_DIR/backend && php artisan schedule:run"
+  crontab -l 2>/dev/null | grep -v '# mediahub-scheduler$' > "$cron_file" || true
+  printf '* * * * * runuser -u %q -- env HOME=%q TMPDIR=/tmp PATH=/usr/local/bin:/usr/bin:/bin bash -lc %q >> /dev/null 2>&1 # mediahub-scheduler\n' \
+    "$SERVER_USER" "$site_home" "$schedule_command" >> "$cron_file"
+  crontab "$cron_file"
+  rm -f "$cron_file"
+}
+
 sync_frontend() {
   [[ -f "$SERVER_APP_DIR/dist/index.html" ]] || fail "React index is missing"
   [[ -d "$SERVER_APP_DIR/dist/assets" ]] || fail "React assets are missing"
@@ -189,11 +200,15 @@ run_as_site git -C "$SERVER_APP_DIR" fetch "$REMOTE" "$BRANCH"
 run_as_site git -C "$SERVER_APP_DIR" checkout "$BRANCH"
 run_as_site git -C "$SERVER_APP_DIR" merge --ff-only "$REMOTE/$BRANCH"
 
+chown -R "$SERVER_USER:$SERVER_USER" "$SERVER_APP_DIR/backend/storage" "$SERVER_APP_DIR/backend/bootstrap/cache"
+
 run_in_dir "$SERVER_APP_DIR/backend" composer install --no-dev --optimize-autoloader --no-interaction
 run_in_dir "$SERVER_APP_DIR/backend" php artisan migrate --force --no-interaction
 run_in_dir "$SERVER_APP_DIR/backend" php artisan config:cache
 run_in_dir "$SERVER_APP_DIR/backend" php artisan route:cache
 run_in_dir "$SERVER_APP_DIR/backend" php artisan view:cache
+install_scheduler
+systemctl is-active --quiet cron || fail "Cron service is not active"
 if [[ ! -e "$PUBLIC_DIR/storage" ]]; then run_in_dir "$SERVER_APP_DIR/backend" php artisan storage:link; fi
 if run_in_dir "$SERVER_APP_DIR/backend" php artisan list --raw | grep -q '^filament:assets$'; then
   run_in_dir "$SERVER_APP_DIR/backend" php artisan filament:assets

@@ -80,6 +80,34 @@ class MediaDataQualityTest extends TestCase
         $this->assertSame(0, Episode::forUser($other)->where('show_id', $privateShow->id)->count());
     }
 
+    public function test_episode_catalog_command_can_refresh_every_user(): void
+    {
+        Config::set('tmdb.enabled', true);
+        Config::set('tmdb.api_key', 'test-key');
+        $firstUser = User::factory()->create();
+        $secondUser = User::factory()->create();
+        $firstShow = Show::create(['user_id' => $firstUser->id, 'title' => 'First Show', 'tmdb_id' => 101]);
+        $secondShow = Show::create(['user_id' => $secondUser->id, 'title' => 'Second Show', 'tmdb_id' => 202]);
+
+        Http::fake([
+            'api.themoviedb.org/3/tv/101/season/1*' => Http::response(['episodes' => [
+                ['id' => 10101, 'season_number' => 1, 'episode_number' => 1, 'name' => 'First episode'],
+            ]]),
+            'api.themoviedb.org/3/tv/101*' => Http::response(['id' => 101, 'seasons' => [['season_number' => 1, 'episode_count' => 1]]]),
+            'api.themoviedb.org/3/tv/202/season/1*' => Http::response(['episodes' => [
+                ['id' => 20201, 'season_number' => 1, 'episode_number' => 1, 'name' => 'Second episode'],
+            ]]),
+            'api.themoviedb.org/3/tv/202*' => Http::response(['id' => 202, 'seasons' => [['season_number' => 1, 'episode_count' => 1]]]),
+        ]);
+
+        $this->artisan('mediahub:sync-episode-catalog', ['--all' => true, '--sleep-ms' => 0])
+            ->expectsOutput('users_synced: 2')
+            ->assertSuccessful();
+
+        $this->assertSame(1, Episode::forUser($firstUser)->where('show_id', $firstShow->id)->count());
+        $this->assertSame(1, Episode::forUser($secondUser)->where('show_id', $secondShow->id)->count());
+    }
+
     public function test_manual_movie_match_refreshes_canonical_metadata_without_replacing_imported_title(): void
     {
         Config::set('tmdb.enabled', true);

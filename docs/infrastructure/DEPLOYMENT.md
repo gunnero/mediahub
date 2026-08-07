@@ -36,6 +36,11 @@ installs production dependencies, runs migrations, rebuilds Laravel caches and
 frontend assets, and reloads Apache only after its configuration passes
 validation.
 
+Deployment also repairs Laravel writable-directory ownership and installs an
+idempotent root crontab entry that runs Laravel's scheduler as the configured
+site user once per minute. The application schedule refreshes all users'
+matched TMDB episode catalogs daily, with overlap protection.
+
 The server should use a current stable Composer release compatible with its PHP
 runtime. `/usr/local/bin` takes precedence over distribution packages, and
 deployment commands use `/tmp` rather than inheriting a privileged account's
