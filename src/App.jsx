@@ -1819,6 +1819,7 @@ export function App() {
 
   function selectSection(section) {
     if (section === "settings") setSettingsInitialSection("profile");
+    if (section === "home") setQuery("");
     if (section === "discover") {
       setDiscoverIntent((current) => ({ type: "all", key: current.key + 1 }));
     }
