@@ -7549,6 +7549,10 @@ textarea:disabled {
   .global-search-panel .section-heading em {
     flex: 0 0 auto;
   }
+
+  .production-section .metadata-strip {
+    margin: 4px 0 6px;
+  }
 }
 
 @media (max-width: 560px) {
@@ -7559,5 +7563,18 @@ textarea:disabled {
   .search-result-row > b {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .discovery-result .result-actions {
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .discovery-result .result-actions button {
+    min-height: 46px;
+  }
+
+  .discovery-result .result-actions .text-action {
+    margin-top: 2px;
   }
 }
