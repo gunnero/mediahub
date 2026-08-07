@@ -240,11 +240,15 @@ function ContinueWatching({ apiClient, onItemsLoaded, onNavigate, onOpen, onRefr
 }
 
 function TonightSection({ continueItems, movies, upcoming, onNavigate, onOpen }) {
-  const shortMovie = movies.find((movie) => movie.runtime > 0 && movie.runtime <= 120);
+  const shortMovies = movies.filter((movie) => movie.runtime > 0 && movie.runtime <= 120);
+  const movieCandidates = shortMovies.length ? shortMovies : movies;
+  const today = new Date();
+  const dayNumber = Math.floor(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000);
+  const movie = movieCandidates.length ? movieCandidates[dayNumber % movieCandidates.length] : null;
   const continuation = continueItems[0];
   const release = upcoming[0];
-  const choice = shortMovie
-    ? { ...shortMovie, eyebrow: "From your watchlist", heading: shortMovie.title, meta: `${shortMovie.runtime} min · Under two hours`, reason: "Because it is already in your watchlist and fits a shorter evening.", action: "View movie" }
+  const choice = movie
+    ? { ...movie, eyebrow: "From your watchlist", heading: movie.title, meta: movie.runtime ? `${movie.runtime} min${movie.runtime <= 120 ? " · Under two hours" : " · From your watchlist"}` : "Unwatched movie", reason: movie.runtime > 0 && movie.runtime <= 120 ? "Because it is unwatched, already in your watchlist, and fits a shorter evening." : "Because it is unwatched and already in your watchlist.", action: "View movie" }
     : continuation
       ? { ...continuation, eyebrow: "Your next episode", heading: `Continue ${continuation.showTitle}`, meta: `${continuation.code}${continuation.runtime ? ` · ${continuation.runtime} min` : ""}`, reason: "Because this is the next unfinished episode in your library.", action: "Resume episode" }
       : release

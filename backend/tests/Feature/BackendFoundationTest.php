@@ -6,6 +6,8 @@ use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Models\Alert;
 use App\Models\Invite;
+use App\Models\Movie;
+use App\Models\MovieWatch;
 use App\Models\Show;
 use App\Models\User;
 use App\Services\InviteService;
@@ -177,6 +179,35 @@ class BackendFoundationTest extends TestCase
             'actor_user_id' => $user->id,
             'event_name' => 'dashboard.viewed',
         ]);
+    }
+
+    public function test_dashboard_tonight_movies_exclude_watched_watchlist_titles(): void
+    {
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        $watched = Movie::create(['user_id' => $user->id, 'title' => 'Already Watched', 'runtime' => 90, 'is_to_watch' => true]);
+        $unwatched = Movie::create(['user_id' => $user->id, 'title' => 'Still Unwatched', 'runtime' => 105, 'is_to_watch' => true]);
+
+        MovieWatch::create([
+            'user_id' => $user->id,
+            'movie_id' => $watched->id,
+            'watched_at' => now(),
+            'source' => 'manual',
+        ]);
+        MovieWatch::create([
+            'user_id' => $other->id,
+            'movie_id' => $unwatched->id,
+            'watched_at' => now(),
+            'source' => 'manual',
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson('/api/v1/dashboard')
+            ->assertOk()
+            ->assertJsonCount(1, 'moviesToCheckOut')
+            ->assertJsonPath('moviesToCheckOut.0.title', 'Still Unwatched');
+
+        $this->assertNotContains('Already Watched', array_column($response->json('moviesToCheckOut'), 'title'));
     }
 
     public function test_dashboard_exposes_web_surface_flags_without_disabling_player_apis(): void

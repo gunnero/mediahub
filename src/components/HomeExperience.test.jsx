@@ -55,7 +55,7 @@ describe("HomeExperience", () => {
     expect(screen.getByRole("button", { name: "View episode" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tonight" })).toBeInTheDocument();
-    expect(screen.getByText("Because it is already in your watchlist and fits a shorter evening.")).toBeInTheDocument();
+    expect(screen.getByText("Because it is unwatched, already in your watchlist, and fits a shorter evening.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recently Added" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Upcoming" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Entertainment Diary" })).toBeInTheDocument();
@@ -68,6 +68,38 @@ describe("HomeExperience", () => {
     expect(apiClient.mock.calls.some(([path]) => /^\/api\/v1\/library\/shows\/\d+$/.test(path))).toBe(false);
     expect(apiClient).not.toHaveBeenCalledWith("/api/v1/stats");
     expect(screen.queryByText(/provider_url|stream_url|private watch history/i)).not.toBeInTheDocument();
+  });
+
+  it("rotates Tonight across eligible unwatched watchlist movies by day", () => {
+    const rotatingDashboard = {
+      ...dashboard,
+      moviesToCheckOut: [
+        { id: "watchlist-1", kind: "movie", movieId: 1, title: "First Choice", runtime: 100 },
+        { id: "watchlist-2", kind: "movie", movieId: 2, title: "Second Choice", runtime: 110 },
+      ],
+    };
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-07T12:00:00Z"));
+    const firstDay = render(<HomeExperience apiClient={apiFixture()} dashboard={rotatingDashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
+    const firstTitle = screen.getByText(/Choice$/).textContent;
+    firstDay.unmount();
+
+    vi.setSystemTime(new Date("2026-08-08T12:00:00Z"));
+    render(<HomeExperience apiClient={apiFixture()} dashboard={rotatingDashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
+    expect(screen.getByText(/Choice$/).textContent).not.toBe(firstTitle);
+    vi.useRealTimers();
+  });
+
+  it("uses an unwatched watchlist movie even when none are under two hours", () => {
+    const longMovieDashboard = {
+      ...dashboard,
+      moviesToCheckOut: [{ id: "watchlist-long", kind: "movie", movieId: 3, title: "Long Movie", runtime: 145 }],
+    };
+
+    render(<HomeExperience apiClient={apiFixture()} dashboard={longMovieDashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Long Movie" })).toBeInTheDocument();
+    expect(screen.getByText("Because it is unwatched and already in your watchlist.")).toBeInTheDocument();
   });
 
   it("marks the next episode finished through canonical watch history", async () => {

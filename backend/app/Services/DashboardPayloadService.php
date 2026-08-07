@@ -217,6 +217,9 @@ class DashboardPayloadService
     {
         return Movie::forUser($user)
             ->toWatch()
+            ->whereDoesntHave('watches', fn ($query) => $query
+                ->where('user_id', $user->id)
+                ->whereNotNull('watched_at'))
             ->orderByDesc('updated_at')
             ->orderBy('title')
             ->limit(10)
