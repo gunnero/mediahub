@@ -282,6 +282,22 @@ function Logo() {
 }
 
 export function Sidebar({ activeSection, alertsCount, features = {}, onSelect }) {
+  const activeItemRef = useRef(null);
+
+  useEffect(() => {
+    const activeItem = activeItemRef.current;
+    const isMobileNavigation = window.matchMedia?.("(max-width: 820px)")?.matches;
+
+    if (!activeItem || !isMobileNavigation) return;
+
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    activeItem.scrollIntoView?.({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [activeSection]);
+
   return (
     <aside className="sidebar">
       <Logo />
@@ -295,6 +311,7 @@ export function Sidebar({ activeSection, alertsCount, features = {}, onSelect })
               className={`nav-item ${active ? "active" : ""}`}
               key={item.id}
               onClick={() => onSelect(item.id)}
+              ref={active ? activeItemRef : null}
               type="button"
             >
               <Icon size={24} />

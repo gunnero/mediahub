@@ -493,6 +493,32 @@ describe("Web navigation feature flags", () => {
     rerender(<Sidebar activeSection="home" alertsCount={0} features={{ webPlayerEnabled: true }} onSelect={vi.fn()} />);
     expect(screen.getByRole("button", { name: /player/i })).toBeInTheDocument();
   });
+
+  it("keeps the active destination visible in the mobile navigation dock", async () => {
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    vi.stubGlobal("matchMedia", vi.fn((query) => ({
+      matches: query === "(max-width: 820px)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+
+    const { rerender } = render(<Sidebar activeSection="home" alertsCount={0} onSelect={vi.fn()} />);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    scrollIntoView.mockClear();
+
+    rerender(<Sidebar activeSection="settings" alertsCount={0} onSelect={vi.fn()} />);
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    }));
+
+    window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+  });
 });
 
 const unlinkedCatalogItem = {
