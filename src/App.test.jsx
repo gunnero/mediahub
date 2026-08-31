@@ -468,6 +468,29 @@ describe("DetailModal", () => {
     expect(watchedProps.onMarkUnwatched).toHaveBeenCalledWith(movieDetail);
   });
 
+  it("prioritizes the watched action before the movie synopsis", () => {
+    const overview = "A focused crime story.";
+    const { container } = renderDetail({
+      detail: { ...movieDetail, overview, watched: false, watchHistory: [] },
+    });
+    const header = container.querySelector(".cinematic-title");
+    const watchAction = within(header).getByRole("button", { name: /^mark watched$/i });
+    const synopsis = within(header).getByText(overview);
+
+    expect(watchAction).toHaveClass("cinematic-watch-action");
+    expect(watchAction.closest(".cinematic-top-actions")).not.toBeNull();
+    expect(Boolean(watchAction.compareDocumentPosition(synopsis) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
+  it("does not enlarge portrait artwork into the cinematic backdrop", () => {
+    const { container } = renderDetail({
+      detail: { ...movieDetail, poster: "https://image.tmdb.org/t/p/w500/heat-poster.jpg", backdrop: "" },
+    });
+
+    expect(container.querySelector(".cinematic-backdrop")).toHaveClass("neutral");
+    expect(container.querySelector("img.cinematic-backdrop")).not.toBeInTheDocument();
+  });
+
   it("shows loading and safe error states", () => {
     renderDetail({
       detail: null,

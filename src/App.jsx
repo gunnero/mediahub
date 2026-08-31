@@ -1263,6 +1263,7 @@ export function DetailModal({
 
   const isAlert = "category" in item;
   const view = detail || item;
+  const cinematicBackdrop = usableArtwork(view?.backdrop);
   const primaryNote = detail?.notes?.[0] || null;
   const rating = detail?.rating?.rating || null;
   const metadata = detail?.metadata || view?.metadata || {};
@@ -1320,7 +1321,7 @@ export function DetailModal({
       <section className="cinematic-detail" role="dialog" aria-modal="true" aria-label={`${view.title} details`} onMouseDown={(event) => event.stopPropagation()}>
         <button ref={closeButtonRef} className="modal-close cinematic-close" onClick={onClose} type="button" aria-label="Close"><X size={20} /></button>
         <header className="cinematic-header">
-          {backdropFor(view) ? <img className="cinematic-backdrop" src={backdropFor(view)} alt="" /> : <div className="cinematic-backdrop neutral" />}
+          {cinematicBackdrop ? <img className="cinematic-backdrop" src={cinematicBackdrop} alt="" /> : <div className="cinematic-backdrop neutral" />}
           <div className="cinematic-shade" />
           <div className="cinematic-poster"><PosterArtwork item={view} /></div>
           <div className="cinematic-title">
@@ -1328,16 +1329,18 @@ export function DetailModal({
             <h2>{view.title}</h2>
             {detail?.tagline ? <blockquote>{detail.tagline}</blockquote> : null}
             <div className="cinematic-meta">{publicTags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-            <p>{view.overview || "This title is part of your permanent MediaHub library."}</p>
-            <div className="cinematic-actions">
+            <div className="cinematic-actions cinematic-top-actions">
               {playerEnabled && detail?.provider?.playableItemId ? (
                 <button className="primary-action" onClick={() => onPlay?.(detail)} type="button"><Play size={18} weight="fill" /> Play</button>
               ) : null}
               {canManualWatch ? (
-                <button className="secondary-action" disabled={actionPending} onClick={() => onMarkWatched?.(detail)} type="button">
-                  <CheckCircle size={18} weight="fill" /> {detail.watched ? "Mark watched again" : "Mark watched"}
+                <button className="secondary-action cinematic-watch-action" disabled={actionPending} onClick={() => onMarkWatched?.(detail)} type="button">
+                  <CheckCircle size={20} weight="fill" /> {detail.watched ? "Mark watched again" : "Mark watched"}
                 </button>
               ) : null}
+            </div>
+            <p>{view.overview || "This title is part of your permanent MediaHub library."}</p>
+            <div className="cinematic-actions cinematic-secondary-actions">
               {canManualWatch && hasManualWatch ? (
                 <button className="text-action danger" disabled={actionPending} onClick={() => onMarkUnwatched?.(detail)} type="button">
                   Remove latest manual watch
