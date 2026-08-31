@@ -193,15 +193,22 @@ describe("MediaHub Web V1 surfaces", () => {
 
   it("renders useful alerts and marks one read", async () => {
     let unread = true;
+    const onAlertsChanged = vi.fn();
     const apiClient = vi.fn(async (path, options = {}) => {
       if (path === "/api/v1/alerts") return { alerts: [{ id: 1, category: "upcoming", title: "Episode coming soon", subtitle: "Show · S01E02", dueText: "In 2 days", unread }], unread: unread ? 1 : 0 };
       if (path === "/api/v1/alerts/1/read" && options.method === "POST") { unread = false; return { alert: { id: 1, unread: false } }; }
+      if (path === "/api/v1/alerts/read-all" && options.method === "POST") { unread = false; return { read: 0 }; }
       throw new Error(`Unexpected request: ${path}`);
     });
-    render(<AlertsSection apiClient={apiClient} />);
+    render(<AlertsSection apiClient={apiClient} onAlertsChanged={onAlertsChanged} />);
     expect(await screen.findByText("Episode coming soon")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /mark episode coming soon read/i }));
     await waitFor(() => expect(apiClient).toHaveBeenCalledWith("/api/v1/alerts/1/read", { method: "POST" }));
+    expect(onAlertsChanged).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /mark all read/i }));
+    await waitFor(() => expect(apiClient).toHaveBeenCalledWith("/api/v1/alerts/read-all", { method: "POST" }));
+    expect(onAlertsChanged).toHaveBeenCalledTimes(2);
   });
 
   it("shows upcoming movie alerts in the Upcoming tab", async () => {

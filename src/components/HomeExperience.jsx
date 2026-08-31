@@ -78,7 +78,7 @@ function formatEventTime(value) {
 
 function releaseLabel(value) {
   const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return { relative: "Upcoming", day: "–", weekday: "" };
+  if (Number.isNaN(date.getTime())) return { relative: "Upcoming", day: "–", month: "" };
   const today = isoDate(new Date());
   const tomorrow = isoDate(addDays(new Date(), 1));
   return {
@@ -101,15 +101,15 @@ function isMeaningfulDiaryEvent(event) {
   return /^(watched|finished|rated|added private note|updated private note)/i.test(event?.title || "");
 }
 
-function SectionHeading({ eyebrow, title, description, action, compact = false }) {
+function SectionHeading({ eyebrow, title, description, action, actionInline = false, compact = false }) {
   return (
-    <header className={`home-section-heading${compact ? " compact" : ""}`}>
+    <header className={`home-section-heading${compact ? " compact" : ""}${actionInline ? " has-inline-action" : ""}`}>
       <div>
         {eyebrow ? <span className="eyebrow">{eyebrow}</span> : null}
-        <h2>{title}</h2>
+        {actionInline ? <div className="home-section-title-row"><h2>{title}</h2>{action}</div> : <h2>{title}</h2>}
         {description ? <p>{description}</p> : null}
       </div>
-      {action}
+      {!actionInline ? action : null}
     </header>
   );
 }
@@ -304,7 +304,7 @@ function UpcomingSection({ apiClient, onNavigate, onOpen, onSessionExpired, onLo
     return () => { cancelled = true; };
   }, [apiClient, onLoaded, onSessionExpired]);
 
-  return <section className="home-section upcoming-home-section"><SectionHeading eyebrow="Release calendar" title="Upcoming" description="The next releases from your followed shows and movie watchlist." action={<button className="text-action" onClick={() => onNavigate("calendar")} type="button">Open calendar<ArrowRight /></button>} />{state.error ? <div className="home-inline-error">{state.error}</div> : null}{state.loading ? <div aria-label="Loading upcoming releases" className="upcoming-timeline-skeleton" role="status">{Array.from({ length: 4 }, (_, index) => <span key={index} />)}</div> : state.items.length ? <div className="upcoming-timeline">{state.items.slice(0, 8).map((item) => { const when = releaseLabel(item.date); return <button aria-label={`Open ${item.title}, ${when.relative}`} key={item.id} onClick={() => onOpen(item)} type="button"><span className="upcoming-date"><small>{when.relative}</small><strong>{when.day}</strong><em>{when.month}</em></span><span className="upcoming-art"><HomeArtwork item={item} /></span><span className="upcoming-copy"><strong>{item.title}</strong><small>{item.subtitle || (item.kind === "movie" ? "Movie release" : "New episode")}</small></span><ArrowRight /></button>; })}</div> : <HomeEmptyState icon={CalendarDots} title="Nothing scheduled this week" body="Follow a show or add an upcoming movie to your watchlist and releases will appear here." actionLabel="Open calendar" onAction={() => onNavigate("calendar")} />}</section>;
+  return <section className="home-section upcoming-home-section"><SectionHeading actionInline eyebrow="Release calendar" title="Upcoming" description="The next releases from your followed shows and movie watchlist." action={<button className="text-action" onClick={() => onNavigate("calendar")} type="button">Open calendar<ArrowRight /></button>} />{state.error ? <div className="home-inline-error">{state.error}</div> : null}{state.loading ? <div aria-label="Loading upcoming releases" className="upcoming-timeline-skeleton" role="status">{Array.from({ length: 4 }, (_, index) => <span key={index} />)}</div> : state.items.length ? <div className={`upcoming-timeline${state.items.length === 1 ? " single" : ""}`}>{state.items.slice(0, 8).map((item) => { const when = releaseLabel(item.date); return <button aria-label={`Open ${item.title}, ${when.relative}, ${when.month} ${when.day}`} key={item.id} onClick={() => onOpen(item)} type="button"><span className="upcoming-art"><HomeArtwork item={item} /></span><span className="upcoming-copy"><time className="upcoming-date" dateTime={item.date}><strong>{when.relative}</strong><span aria-hidden="true">·</span><em>{when.month} {when.day}</em></time><strong>{item.title}</strong><small>{item.subtitle || (item.kind === "movie" ? "Movie release" : "New episode")}</small></span><ArrowRight /></button>; })}</div> : <HomeEmptyState icon={CalendarDots} title="Nothing scheduled this week" body="Follow a show or add an upcoming movie to your watchlist and releases will appear here." actionLabel="Open calendar" onAction={() => onNavigate("calendar")} />}</section>;
 }
 
 function DiaryPreview({ timeline, onNavigate }) {

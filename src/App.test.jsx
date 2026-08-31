@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
   DetailModal,
+  getDashboardUnreadCount,
   GlobalSearchPanel,
   HistorySection,
   MovieLibrary,
@@ -527,6 +529,66 @@ describe("DetailModal", () => {
 });
 
 describe("Web navigation feature flags", () => {
+  it("uses the server unread total instead of the truncated alert preview", () => {
+    const alerts = Array.from({ length: 20 }, (_, index) => ({ id: index + 1, unread: true }));
+    const dashboard = { alerts, stats: { alertsUnread: 47 } };
+
+    expect(getDashboardUnreadCount(dashboard)).toBe(47);
+    expect(getDashboardUnreadCount(dashboard, new Set([1, 2]))).toBe(45);
+    expect(getDashboardUnreadCount(dashboard, new Set([999]))).toBe(46);
+    expect(getDashboardUnreadCount({ alerts, stats: {} })).toBe(20);
+  });
+
+  it("rolls back an optimistic unread decrement when marking an alert fails", async () => {
+    stubAppApi();
+    const baseFetch = globalThis.fetch.getMockImplementation();
+    let finishFailedRead;
+    const failedRead = new Promise((resolve) => { finishFailedRead = () => resolve(jsonResponse({ message: "Could not mark alert read" }, 500)); });
+    const alert = { id: 999, category: "upcoming", title: "Outside dashboard preview", subtitle: "New episode", dueText: "Tomorrow", unread: true };
+
+    globalThis.fetch.mockImplementation((input, options = {}) => {
+      const path = typeof input === "string" ? input : input.url;
+      if (path === "/api/v1/dashboard") return Promise.resolve(jsonResponse({ ...appDashboard, stats: { ...appDashboard.stats, alertsUnread: 4 } }));
+      if (path === "/api/v1/alerts" && (!options.method || options.method === "GET")) return Promise.resolve(jsonResponse({ alerts: [alert], unread: 4 }));
+      if (path === "/api/v1/alerts/999/read" && options.method === "POST") return failedRead;
+      return baseFetch(input, options);
+    });
+
+    render(<App />);
+    const alertsNav = await screen.findByRole("button", { name: "Alerts, 4 unread alerts" });
+    fireEvent.click(alertsNav);
+    const alertTitle = await screen.findByText("Outside dashboard preview");
+    fireEvent.click(alertTitle.closest("button"));
+
+    expect(await screen.findByRole("button", { name: "Alerts, 3 unread alerts" })).toBeInTheDocument();
+    finishFailedRead();
+    expect(await screen.findByRole("button", { name: "Alerts, 4 unread alerts" })).toBeInTheDocument();
+  });
+
+  it("identifies unread alerts and keeps their badge inside the Alerts destination", () => {
+    const { rerender } = render(<Sidebar activeSection="stats" alertsCount={4} onSelect={vi.fn()} />);
+
+    const alerts = screen.getByRole("button", { name: "Alerts, 4 unread alerts" });
+    const stats = screen.getByRole("button", { name: "Stats" });
+    const badge = within(alerts).getByText("4");
+    expect(badge).toHaveClass("nav-alert-badge");
+    expect(badge).toHaveAttribute("aria-hidden", "true");
+    expect(within(stats).queryByText("4")).not.toBeInTheDocument();
+
+    rerender(<Sidebar activeSection="stats" alertsCount={1} onSelect={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Alerts, 1 unread alert" })).toBeInTheDocument();
+
+    rerender(<Sidebar activeSection="stats" alertsCount={0} onSelect={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Alerts" })).toBeInTheDocument();
+    expect(screen.queryByText("1")).not.toBeInTheDocument();
+  });
+
+  it("anchors the mobile unread badge inside its navigation destination", () => {
+    const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+
+    expect(css).toMatch(/\.nav-item \.nav-alert-badge\s*\{[^}]*top:\s*3px;[^}]*right:\s*7px;[^}]*left:\s*auto;[^}]*margin:\s*0;/s);
+  });
+
   it("hides Player by default and reveals it only when explicitly enabled", () => {
     const { rerender } = render(<Sidebar activeSection="home" alertsCount={0} onSelect={vi.fn()} />);
 
