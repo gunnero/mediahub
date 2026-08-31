@@ -10,4 +10,6 @@ Mobile discovery previews should fill the visual viewport without right or botto
 
 Keep mobile text inputs, selects, and textareas at a computed font size of at least 16px so iOS Safari does not retain focus zoom when a media detail opens. Preserve pinch zoom, and keep detail controls and episode copy intrinsically contained instead of masking overflow.
 
+Keep discovery-preview cast cards in one deterministic full-width column through the mobile breakpoint, regardless of title or scrollbar behavior. Nested Production metadata must retain clear space below its heading and never inherit the shared strip's negative top margin.
+
 When implementing from a selected generated mock, treat that image as the source of truth for layout, component anatomy, density, spacing, color, typography, visible content, and hierarchy.
