@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HomeExperience } from "./HomeExperience.jsx";
 
@@ -89,6 +90,39 @@ describe("HomeExperience", () => {
     render(<HomeExperience apiClient={apiFixture()} dashboard={rotatingDashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
     expect(screen.getByText(/Choice$/).textContent).not.toBe(firstTitle);
     vi.useRealTimers();
+  });
+
+  it("renders upcoming releases as semantic, readable cards and opens the selected release", async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const releaseDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+    const release = { id: "episode-92", kind: "episode", episodeId: 92, showId: 9, date: releaseDate, title: "MasterChef (US)", subtitle: "S16E16 · Keeping Up with Gordon and the final service" };
+    const fallbackApi = apiFixture();
+    const apiClient = vi.fn((path, options) => path.startsWith("/api/v1/calendar?") ? Promise.resolve({ items: [release] }) : fallbackApi(path, options));
+    const onOpen = vi.fn();
+
+    render(<HomeExperience apiClient={apiClient} dashboard={dashboard} onNavigate={vi.fn()} onOpen={onOpen} />);
+
+    const releaseButton = await screen.findByRole("button", { name: /open masterchef \(us\), tomorrow/i });
+    expect(releaseButton.querySelector("time")).toHaveAttribute("datetime", releaseDate);
+    expect(releaseButton).toHaveTextContent("Tomorrow");
+    expect(releaseButton).toHaveTextContent("Keeping Up with Gordon and the final service");
+    fireEvent.click(releaseButton);
+    expect(onOpen).toHaveBeenCalledWith(release);
+  });
+
+  it("stacks and limits upcoming previews on narrow phones", () => {
+    const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+    const compactStyles = css.slice(
+      css.indexOf("@media (max-width: 1180px)", css.indexOf(".upcoming-timeline")),
+      css.indexOf("@media (max-width: 820px)", css.indexOf(".upcoming-timeline")),
+    );
+    const phoneStyles = css.slice(css.indexOf("@media (max-width: 560px)", css.indexOf(".upcoming-timeline")));
+
+    expect(compactStyles).toMatch(/\.upcoming-timeline,\s*\.upcoming-timeline-skeleton\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(phoneStyles).toMatch(/\.upcoming-timeline,\s*\.upcoming-timeline-skeleton\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+    expect(phoneStyles).toMatch(/\.upcoming-timeline > button:nth-child\(n \+ 4\),\s*\.upcoming-timeline-skeleton > span:nth-child\(n \+ 4\)\s*\{[^}]*display:\s*none;/s);
+    expect(phoneStyles).not.toMatch(/grid-auto-columns:\s*88%/);
   });
 
   it("uses an unwatched watchlist movie even when none are under two hours", () => {

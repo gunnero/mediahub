@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bell,
   CalendarDots,
@@ -305,9 +305,12 @@ export function Sidebar({ activeSection, alertsCount, features = {}, onSelect })
         {navItems.filter((item) => !item.feature || features[item.feature]).map((item) => {
           const Icon = item.icon;
           const active = activeSection === item.id;
+          const unreadLabel = item.id === "alerts" && alertsCount > 0
+            ? `${item.label}, ${alertsCount} unread alert${alertsCount === 1 ? "" : "s"}`
+            : item.label;
           return (
             <button
-              aria-label={item.label}
+              aria-label={unreadLabel}
               className={`nav-item ${active ? "active" : ""}`}
               key={item.id}
               onClick={() => onSelect(item.id)}
@@ -317,7 +320,7 @@ export function Sidebar({ activeSection, alertsCount, features = {}, onSelect })
               <Icon size={24} />
               <span>{item.label}</span>
               {item.id === "alerts" && alertsCount > 0 ? (
-                <b>{alertsCount}</b>
+                <b aria-hidden="true" className="nav-alert-badge">{alertsCount > 99 ? "99+" : alertsCount}</b>
               ) : null}
             </button>
           );
@@ -329,6 +332,15 @@ export function Sidebar({ activeSection, alertsCount, features = {}, onSelect })
       </div>
     </aside>
   );
+}
+
+export function getDashboardUnreadCount(dashboard, readAlerts = new Set()) {
+  const serverUnread = Number(dashboard?.stats?.alertsUnread);
+  const baseline = dashboard?.stats?.alertsUnread != null && Number.isFinite(serverUnread)
+    ? serverUnread
+    : getUnreadCount(dashboard?.alerts);
+
+  return Math.max(0, baseline - readAlerts.size);
 }
 
 function LoadingScreen({ message = "Loading dashboard..." }) {
@@ -1527,7 +1539,7 @@ function FocusSection({
   globalQuery,
   onOpen,
   onAccountAction,
-  onPlayerRefresh,
+  onRefreshDashboard,
   onSelectSection,
   onSessionExpired,
   player,
@@ -1549,7 +1561,7 @@ function FocusSection({
   }
 
   if (activeSection === "discover") {
-    return <DiscoverSection apiClient={apiClient} initialType={discoverIntent.type} navigationKey={discoverIntent.key} onLibraryChanged={onPlayerRefresh} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
+    return <DiscoverSection apiClient={apiClient} initialType={discoverIntent.type} navigationKey={discoverIntent.key} onLibraryChanged={onRefreshDashboard} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
   }
 
   if (activeSection === "shows") {
@@ -1596,7 +1608,7 @@ function FocusSection({
   }
 
   if (activeSection === "alerts") {
-    return <AlertsSection apiClient={apiClient} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
+    return <AlertsSection apiClient={apiClient} onAlertsChanged={onRefreshDashboard} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
   }
 
   if (activeSection === "player" && features?.webPlayerEnabled) {
@@ -1604,7 +1616,7 @@ function FocusSection({
       <PlayerSection
         apiClient={apiClient}
         onOpenSettings={() => onSelectSection("settings")}
-        onRefreshDashboard={onPlayerRefresh}
+        onRefreshDashboard={onRefreshDashboard}
         onSessionExpired={onSessionExpired}
         player={player}
       />
@@ -1712,16 +1724,7 @@ export function App() {
     };
   }, [pendingFriendInvite, publicRoute?.type, publicRoute?.value]);
 
-  const alerts = useMemo(
-    () =>
-      dashboard.alerts.map((alert) => ({
-        ...alert,
-        unread: alert.unread && !readAlerts.has(alert.id),
-      })),
-    [dashboard.alerts, readAlerts],
-  );
-
-  const unreadCount = getUnreadCount(alerts);
+  const unreadCount = getDashboardUnreadCount(dashboard, readAlerts);
   const stats = { ...dashboard.stats, alertsUnread: unreadCount };
   const isEmptyLibrary =
     loadState === "ready" &&
@@ -1745,6 +1748,7 @@ export function App() {
   async function refreshDashboard() {
     const payload = await apiRequest("/api/v1/dashboard");
     setDashboard(payload);
+    setReadAlerts(new Set());
   }
 
   async function loadMediaDetail(item) {
@@ -1899,17 +1903,18 @@ export function App() {
     setDetailActionError("");
 
     if (item?.id && "category" in item) {
-      setReadAlerts((current) => new Set([...current, item.id]));
-      setDashboard((current) => ({
-        ...current,
-        alerts: current.alerts.map((alert) =>
-          alert.id === item.id ? { ...alert, unread: false } : alert,
-        ),
-      }));
+      if (item.unread) setReadAlerts((current) => new Set([...current, item.id]));
 
       try {
         await apiRequest(`/api/v1/alerts/${item.id}/read`, { method: "POST" });
       } catch (error) {
+        if (item.unread) {
+          setReadAlerts((current) => {
+            const next = new Set(current);
+            next.delete(item.id);
+            return next;
+          });
+        }
         if (error instanceof SessionExpiredError) {
           expireSession();
         }
@@ -2119,7 +2124,7 @@ export function App() {
                 globalQuery={query}
                 onAccountAction={handleAccountAction}
                 onOpen={openItem}
-                onPlayerRefresh={refreshDashboard}
+                onRefreshDashboard={refreshDashboard}
                 onSelectSection={selectSection}
                 onSessionExpired={expireSession}
                 player={dashboard.player}

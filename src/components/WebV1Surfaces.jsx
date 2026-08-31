@@ -267,13 +267,13 @@ function alertMatchesFilter(alert, filter) {
   return alert.category === filter;
 }
 
-export function AlertsSection({ apiClient = apiRequest, onOpen, onSessionExpired }) {
+export function AlertsSection({ apiClient = apiRequest, onAlertsChanged, onOpen, onSessionExpired }) {
   const [reload, setReload] = useState(0);
   const [filter, setFilter] = useState("all");
   const [state] = useSafeLoad(() => apiClient("/api/v1/alerts"), [apiClient, reload], onSessionExpired);
   const items = (state.data?.alerts || []).filter((item) => alertMatchesFilter(item, filter));
-  async function read(alert) { await apiClient(`/api/v1/alerts/${alert.id}/read`, { method: "POST" }); setReload((value) => value + 1); }
-  async function readAll() { await apiClient("/api/v1/alerts/read-all", { method: "POST" }); setReload((value) => value + 1); }
+  async function read(alert) { await apiClient(`/api/v1/alerts/${alert.id}/read`, { method: "POST" }); setReload((value) => value + 1); await onAlertsChanged?.(); }
+  async function readAll() { await apiClient("/api/v1/alerts/read-all", { method: "POST" }); setReload((value) => value + 1); await onAlertsChanged?.(); }
   return <section className="web-v1-screen alerts-screen"><header className="screen-intro"><span className="eyebrow">Stay current</span><h2>Alerts</h2><p>Release reminders and library issues that deserve your attention.</p></header><div className="alerts-toolbar"><div className="segmented-control">{[["all", "All"], ["new-episodes", "New episodes"], ["upcoming", "Upcoming"], ["movies", "Movies"], ["reminders", "Reminders"]].map(([id, label]) => <button className={filter === id ? "active" : ""} key={id} onClick={() => setFilter(id)} type="button">{label}</button>)}</div><button className="text-action" onClick={readAll} type="button">Mark all read</button></div>{state.error ? <div className="detail-error">{state.error}</div> : null}{state.loading ? <div className="empty-strip compact">Loading alerts...</div> : null}<div className="alerts-list">{items.map((alert) => <article className={alert.unread ? "unread" : ""} key={alert.id}><button onClick={() => onOpen?.({ ...alert, ...alert.payload })} type="button"><Bell size={22} /><span><strong>{alert.title}</strong><small>{alert.subtitle}</small></span><em>{alert.dueText}</em></button>{alert.unread ? <button aria-label={`Mark ${alert.title} read`} className="text-action" onClick={() => read(alert)} type="button">Mark read</button> : null}</article>)}</div>{!state.loading && !items.length ? <div className="empty-strip compact">No alerts in this view</div> : null}</section>;
 }
 
