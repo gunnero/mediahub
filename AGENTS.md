@@ -12,4 +12,6 @@ Keep mobile text inputs, selects, and textareas at a computed font size of at le
 
 Keep discovery-preview cast cards in one deterministic full-width column through the mobile breakpoint, regardless of title or scrollbar behavior. Nested Production metadata must retain clear space below its heading and never inherit the shared strip's negative top margin.
 
+Discovery previews should show Add to Library and Add to Watchlist in an equal-width, touch-friendly quick-action group below the title metadata, while retaining the same actions after the details. On the narrowest phones, stack the actions; when Mark watched is present, give it a full-width row.
+
 When implementing from a selected generated mock, treat that image as the source of truth for layout, component anatomy, density, spacing, color, typography, visible content, and hierarchy.
