@@ -74,6 +74,19 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(css).not.toMatch(/\.discovery-preview-expanded\s*\{[^}]*max-height:\s*calc\(100vh - 20px\)/s);
   });
 
+  it("prevents iOS form focus from carrying a zoomed viewport into media details", () => {
+    const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+    const html = readFileSync(`${process.cwd()}/index.html`, "utf8");
+    const mobileZoomGuard = css.slice(css.indexOf("/* Prevent iOS form-focus zoom"));
+
+    expect(mobileZoomGuard).toContain('@media (max-width: 1024px)');
+    expect(mobileZoomGuard).toMatch(/\.app-shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\),[\s\S]*font-size:\s*16px;/);
+    expect(mobileZoomGuard).toMatch(/button,[\s\S]*\[role="button"\]\s*\{[^}]*touch-action:\s*manipulation;/);
+    expect(mobileZoomGuard).toMatch(/\.cinematic-episode > span:nth-child\(2\)[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
+    expect(html).toContain('content="width=device-width, initial-scale=1.0"');
+    expect(html).not.toMatch(/maximum-scale|user-scalable/i);
+  });
+
   it("browses trending, popular, now playing, upcoming, and top rated without a hero", async () => {
     const apiClient = vi.fn(async (path) => ({
       status: "ready",
