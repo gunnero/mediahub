@@ -55,10 +55,21 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(screen.getByText("Complete crime saga plot.")).toBeInTheDocument();
     expect(screen.getByText("170 min")).toBeInTheDocument();
     expect(screen.getByText("Forward Pass")).toBeInTheDocument();
+    expect(screen.getByText("Production").closest(".detail-section-heading")).toBeInTheDocument();
   });
 
   it("keeps discovery preview artwork in its column so details stay visible", () => {
     const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+    const mobileBlockStart = css.lastIndexOf("@media (max-width: 820px)");
+    const mobileBlockOpen = css.indexOf("{", mobileBlockStart);
+    let mobileBlockEnd = mobileBlockOpen;
+    let mobileBlockDepth = 0;
+    for (; mobileBlockEnd < css.length; mobileBlockEnd += 1) {
+      if (css[mobileBlockEnd] === "{") mobileBlockDepth += 1;
+      if (css[mobileBlockEnd] === "}") mobileBlockDepth -= 1;
+      if (mobileBlockDepth === 0 && mobileBlockEnd > mobileBlockOpen) break;
+    }
+    const finalMobileBlock = css.slice(mobileBlockOpen + 1, mobileBlockEnd);
 
     expect(css).toMatch(/\.discovery-preview-expanded\s*\{[^}]*overflow-y:\s*hidden/s);
     expect(css).toMatch(/\.discovery-preview \.modal-close\s*\{[^}]*position:\s*absolute/s);
@@ -70,6 +81,9 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(css).toMatch(/\.discovery-preview-expanded\s+\.discovery-preview-art\s*\{[^}]*position:\s*sticky/s);
     expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded\s*\{[^}]*grid-template-rows:\s*max-content max-content/s);
     expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded \.discovery-preview-art\s*\{[^}]*position:\s*relative/s);
+    expect(css).toMatch(/\.discovery-preview \.production-section > \.metadata-strip\s*\{[^}]*margin:\s*0 0 22px/s);
+    expect(finalMobileBlock).toMatch(/\.discovery-preview \.discovery-detail-section \.people-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+    expect(finalMobileBlock).toMatch(/\.discovery-preview \.people-grid article\s*\{[^}]*width:\s*100%;[^}]*min-height:\s*48px/s);
     expect(css).not.toMatch(/\.discovery-preview-expanded\s*\{[^}]*width:\s*calc\(100vw - 20px\)/s);
     expect(css).not.toMatch(/\.discovery-preview-expanded\s*\{[^}]*max-height:\s*calc\(100vh - 20px\)/s);
   });
