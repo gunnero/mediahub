@@ -1,13 +1,34 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AlertsSection, CalendarSection, DiscoverSection, ListsSection, StatsSection, WebSettingsSection } from "./WebV1Surfaces.jsx";
+import { AlertsSection, CalendarSection, DiscoverSection, DiscoveryPreviewModal, ListsSection, StatsSection, WebSettingsSection } from "./WebV1Surfaces.jsx";
 
 afterEach(() => cleanup());
 
 describe("MediaHub Web V1 surfaces", () => {
+  it("shows synchronized actions near the preview title and after its details", () => {
+    const actions = <div className="modal-actions"><button className="primary-action" type="button">Add to Library</button><button className="secondary-action" type="button">Add to Watchlist</button></div>;
+    render(<DiscoveryPreviewModal actions={actions} onClose={vi.fn()} preview={{ media_type: "movie", title: "Heat", overview: "Crime saga.", production: { companies: ["Forward Pass"] } }} />);
+
+    const dialog = screen.getByRole("dialog", { name: /heat discovery preview/i });
+    const quickActions = within(dialog).getByRole("group", { name: /quick actions/i });
+    const actionsAfterDetails = within(dialog).getByRole("group", { name: /actions after details/i });
+    const metadata = dialog.querySelector(".discovery-preview-content > .metadata-strip");
+    const plot = within(dialog).getByText("Plot").closest("section");
+    const production = within(dialog).getByText("Production").closest("section");
+    const contentChildren = [...dialog.querySelector(".discovery-preview-content").children];
+
+    for (const group of [quickActions, actionsAfterDetails]) {
+      expect(within(group).getByRole("button", { name: /add to library/i })).toBeInTheDocument();
+      expect(within(group).getByRole("button", { name: /add to watchlist/i })).toBeInTheDocument();
+    }
+    expect(contentChildren.indexOf(quickActions)).toBe(contentChildren.indexOf(metadata) + 1);
+    expect(contentChildren.indexOf(quickActions)).toBeLessThan(contentChildren.indexOf(plot));
+    expect(contentChildren.indexOf(actionsAfterDetails)).toBeGreaterThan(contentChildren.indexOf(production));
+  });
+
   it("discovers a movie and adds it without exposing TMDB configuration", async () => {
     const apiClient = vi.fn(async (path, options = {}) => {
       if (path.startsWith("/api/v1/discover/browse")) return { status: "ready", items: [] };
@@ -82,6 +103,9 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded\s*\{[^}]*grid-template-rows:\s*max-content max-content/s);
     expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded \.discovery-preview-art\s*\{[^}]*position:\s*relative/s);
     expect(css).toMatch(/\.discovery-preview \.production-section > \.metadata-strip\s*\{[^}]*margin:\s*0 0 22px/s);
+    expect(css).toMatch(/\.discovery-preview-actions \.modal-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
+    expect(css).toMatch(/\.discovery-preview-actions \.modal-actions > \.text-action\s*\{[^}]*grid-column:\s*1 \/ -1/s);
+    expect(css).toMatch(/@media \(max-width:\s*359px\)[\s\S]*\.discovery-preview-actions \.modal-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
     expect(finalMobileBlock).toMatch(/\.discovery-preview \.discovery-detail-section \.people-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
     expect(finalMobileBlock).toMatch(/\.discovery-preview \.people-grid article\s*\{[^}]*width:\s*100%;[^}]*min-height:\s*48px/s);
     expect(css).not.toMatch(/\.discovery-preview-expanded\s*\{[^}]*width:\s*calc\(100vw - 20px\)/s);

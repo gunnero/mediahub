@@ -61,13 +61,14 @@ export function DiscoveryPreviewModal({ actions, error = "", loading = false, on
       {preview.original_title && preview.original_title !== preview.title ? <small className="detail-original-title">Original title: {preview.original_title}</small> : null}
       {preview.tagline ? <p className="detail-tagline">“{preview.tagline}”</p> : null}
       <div className="metadata-strip">{facts.map((tag) => <span key={tag}>{tag}</span>)}</div>
+      {actions ? <div className="discovery-preview-actions discovery-preview-actions--top" role="group" aria-label="Quick actions">{actions}</div> : null}
       {preview.watched ? <p className="discovery-memory-state"><CheckCircle size={17} weight="fill" /> You watched this{preview.watched_count > 1 ? ` ${preview.watched_count} times` : ""}.</p> : null}
       <section className="discovery-detail-section"><strong>Plot</strong><p>{preview.overview || "No overview is available yet."}</p></section>
       {loading ? <div className="empty-strip compact">Loading complete movie details...</div> : null}
       {error ? <div className="detail-error">{error}</div> : null}
       {cast.length || creators.length ? <section className="discovery-detail-section people-section"><div className="detail-section-heading"><strong>Cast & creators</strong><span>{cast.length + creators.length} people</span></div><div className="people-grid">{[...creators, ...cast].map((person, index) => <article key={`${person.id || person.name}-${index}`}>{person.image ? <img alt="" loading="lazy" src={person.image} /> : <span className="person-fallback">{initials(person.name)}</span>}<span><strong>{person.name}</strong><small>{person.role || "Cast"}</small></span></article>)}</div></section> : null}
       {production.length ? <section className="discovery-detail-section production-section"><div className="detail-section-heading"><strong>Production</strong></div><div className="metadata-strip">{production.map((fact) => <span key={fact}>{fact}</span>)}</div></section> : null}
-      {actions}
+      {actions ? <div className="discovery-preview-actions discovery-preview-actions--bottom" role="group" aria-label="Actions after details">{actions}</div> : null}
       {!preview.already_in_library ? <p className="discovery-action-help"><strong>Library</strong> saves the title to your permanent collection. <strong>Watchlist</strong> saves it and marks it as something you plan to watch.</p> : null}
     </div>
   </div>;

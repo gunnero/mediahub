@@ -1094,17 +1094,22 @@ describe("GlobalSearchPanel", () => {
     expect(await screen.findByText("Discovery Film")).toBeInTheDocument();
     expect(screen.getByText("Discovery Show")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /open discovery film/i }));
-    expect(screen.getByRole("dialog", { name: /discovery film discovery preview/i })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: /discovery film discovery preview/i });
+    expect(dialog).toBeInTheDocument();
     expect(await screen.findByText("Discovery Actor")).toBeInTheDocument();
     expect(screen.getByText("Discovery Director")).toBeInTheDocument();
     expect(screen.getByText("The complete plot for a newly discovered film.")).toBeInTheDocument();
     expect(screen.getByText("118 min")).toBeInTheDocument();
     expect(screen.getByText("Discovery Studio")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /add to library/i }));
+    const quickActions = within(dialog).getByRole("group", { name: /quick actions/i });
+    const actionsAfterDetails = within(dialog).getByRole("group", { name: /actions after details/i });
+    expect(within(quickActions).getByRole("button", { name: /add to library/i })).toBeInTheDocument();
+    expect(within(actionsAfterDetails).getByRole("button", { name: /add to library/i })).toBeInTheDocument();
+    fireEvent.click(within(quickActions).getByRole("button", { name: /add to library/i }));
 
     await waitFor(() => expect(apiClient).toHaveBeenCalledWith("/api/v1/discover/movies/101/add", { method: "POST", body: { action: "library" } }));
     expect(onLibraryChanged).toHaveBeenCalledOnce();
-    expect(screen.getByRole("button", { name: /open in my library/i })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: /open in my library/i })).toHaveLength(2);
   });
 });
 
