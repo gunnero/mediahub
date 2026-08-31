@@ -860,6 +860,8 @@
 
 html {
   background: var(--page);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -7735,5 +7737,54 @@ textarea:disabled {
 
   .cinematic-secondary-actions {
     margin-top: 8px;
+  }
+}
+
+/* Prevent iOS form-focus zoom from carrying into a media dialog. */
+@media (max-width: 1024px) {
+  .app-shell input:not([type="checkbox"]):not([type="radio"]),
+  .app-shell select,
+  .app-shell textarea,
+  .login-shell input:not([type="checkbox"]):not([type="radio"]),
+  .login-shell select,
+  .login-shell textarea {
+    font-size: 16px;
+  }
+
+  button,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+}
+
+@media (max-width: 820px) {
+  body {
+    min-width: 0;
+  }
+
+  .cinematic-detail,
+  .cinematic-body,
+  .detail-tab-panel,
+  .episode-browser-panel,
+  .cinematic-episode-list,
+  .season-controls,
+  .season-controls label,
+  .season-controls select,
+  .season-controls > div,
+  .cinematic-episode,
+  .cinematic-episode > span:nth-child(2) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .cinematic-episode {
+    width: 100%;
+  }
+
+  .cinematic-episode strong,
+  .cinematic-episode small,
+  .cinematic-episode em {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
