@@ -1270,7 +1270,8 @@ export function DetailModal({
   const hasManualWatch = (detail?.watchHistory || []).some((watch) => watch.source === "manual");
   const canManualWatch = detail?.kind === "movie" || detail?.kind === "episode";
   const detailTimeline = detail?.timeline || [];
-  const selectedSeasonData = detail?.seasons?.find((season) => season.seasonNumber === selectedSeason) || detail?.seasons?.[0] || null;
+  const seasons = Array.isArray(detail?.seasons) ? detail.seasons : [];
+  const selectedSeasonData = seasons.find((season) => season.seasonNumber === selectedSeason) || seasons[0] || null;
   const tabs = detail?.kind === "show"
     ? [
         ["overview", "Overview"],
@@ -1420,27 +1421,31 @@ export function DetailModal({
 
               {activeTab === "episodes" && detail.kind === "show" ? (
                 <section className="episode-browser-panel">
-                  <div className="season-controls">
-                    <label><span>Season</span><select aria-label="Season" onChange={(event) => setSelectedSeason(Number(event.target.value))} value={selectedSeason ?? ""}>
-                      {(detail.seasons || []).map((season) => <option key={season.seasonNumber} value={season.seasonNumber}>{season.seasonNumber === 0 ? "Specials" : `Season ${season.seasonNumber}`}</option>)}
-                    </select></label>
-                    {selectedSeasonData ? <span>{selectedSeasonData.watchedEpisodes}/{selectedSeasonData.totalEpisodes || selectedSeasonData.episodesCount} watched</span> : null}
-                    <div>
-                      <button className="text-action" onClick={() => onMarkSeasonWatched?.(detail, selectedSeason)} type="button">Mark season watched</button>
-                      <button className="text-action danger" onClick={() => onMarkSeasonUnwatched?.(detail, selectedSeason)} type="button">Mark season unwatched</button>
-                    </div>
-                  </div>
                   {selectedSeasonData ? (
-                    <div className="cinematic-episode-list">
-                      {selectedSeasonData.episodes.map((episode) => (
-                        <button aria-label={`Open ${episode.title}`} className={`cinematic-episode ${episode.watched ? "watched" : ""}`} key={episode.id} onClick={() => onOpenEpisode?.({ episodeId: episode.episodeId || episode.id, showId: detail.showId, kind: "episode", title: episode.title, subtitle: episode.code, meta: `${detail.title} - ${episode.code}` })} type="button">
-                          <span className="episode-still"><PosterArtwork item={episode} /></span>
-                          <span><small>{episode.code}{episode.airDate ? ` · ${shortDate(episode.airDate)}` : ""}</small><strong>{episode.title}</strong><em>{[episode.runtime ? `${episode.runtime} min` : "", episode.watchedAt ? `Watched ${shortDate(episode.watchedAt)}` : "", episode.rating ? `Rated ${episode.rating}/10` : "", episode.hasNote ? "Private note" : ""].filter(Boolean).join(" · ")}</em></span>
-                          <b>{episode.watched ? "Watched" : playerEnabled && episode.playableItemId ? "Play" : "Not watched"}</b>
-                        </button>
-                      ))}
-                    </div>
-                  ) : <div className="empty-strip compact">No seasons available</div>}
+                    <>
+                      <div className="season-controls">
+                        <label><span>Season</span><select aria-label="Season" onChange={(event) => setSelectedSeason(Number(event.target.value))} value={selectedSeasonData.seasonNumber}>
+                          {seasons.map((season) => <option key={season.seasonNumber} value={season.seasonNumber}>{season.seasonNumber === 0 ? "Specials" : `Season ${season.seasonNumber}`}</option>)}
+                        </select></label>
+                        <span>{selectedSeasonData.watchedEpisodes}/{selectedSeasonData.totalEpisodes || selectedSeasonData.episodesCount} watched</span>
+                        <div>
+                          <button className="text-action" onClick={() => onMarkSeasonWatched?.(detail, selectedSeasonData.seasonNumber)} type="button">Mark season watched</button>
+                          <button className="text-action danger" onClick={() => onMarkSeasonUnwatched?.(detail, selectedSeasonData.seasonNumber)} type="button">Mark season unwatched</button>
+                        </div>
+                      </div>
+                      <div className="cinematic-episode-list">
+                        {selectedSeasonData.episodes.map((episode) => (
+                          <button aria-label={`Open ${episode.title}`} className={`cinematic-episode ${episode.watched ? "watched" : ""}`} key={episode.id} onClick={() => onOpenEpisode?.({ episodeId: episode.episodeId || episode.id, showId: detail.showId, kind: "episode", title: episode.title, subtitle: episode.code, meta: `${detail.title} - ${episode.code}` })} type="button">
+                            <span className="episode-still"><PosterArtwork item={episode} /></span>
+                            <span><small>{episode.code}{episode.airDate ? ` · ${shortDate(episode.airDate)}` : ""}</small><strong>{episode.title}</strong><em>{[episode.runtime ? `${episode.runtime} min` : "", episode.watchedAt ? `Watched ${shortDate(episode.watchedAt)}` : "", episode.rating ? `Rated ${episode.rating}/10` : "", episode.hasNote ? "Private note" : ""].filter(Boolean).join(" · ")}</em></span>
+                            <b>{episode.watched ? "Watched" : playerEnabled && episode.playableItemId ? "Play" : "Not watched"}</b>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="empty-strip compact" role="status">No seasons available</div>
+                  )}
                 </section>
               ) : null}
 

@@ -6,4 +6,6 @@ Before making substantial visual changes, use the Product Design plugin's `get-c
 
 Mobile movie details should use a compact, normal-scale header rather than an oversized single-column hero. Keep the primary watched action prominent near the title at the top, with a large touch target.
 
+Mobile discovery previews should fill the visual viewport without right or bottom gutters. When a show's episode catalog is empty, show a single empty state instead of an optionless season picker or inactive season actions.
+
 When implementing from a selected generated mock, treat that image as the source of truth for layout, component anatomy, density, spacing, color, typography, visible content, and hierarchy.

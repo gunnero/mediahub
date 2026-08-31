@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\MediaEventSource;
 use App\Enums\MediaEventType;
+use App\Models\Episode;
 use App\Models\Movie;
 use App\Models\Show;
 use App\Models\User;
@@ -32,6 +33,7 @@ class DiscoveryService
         private readonly MediaMetadataService $metadata,
         private readonly MediaEventService $events,
         private readonly PlaybackLibraryService $library,
+        private readonly EpisodeCatalogService $episodeCatalog,
     ) {}
 
     /**
@@ -293,7 +295,7 @@ class DiscoveryService
             throw ValidationException::withMessages(['tmdb_id' => 'Show metadata is currently unavailable.']);
         }
 
-        return DB::transaction(function () use ($action, $details, $tmdbId, $user): Show {
+        $show = DB::transaction(function () use ($action, $details, $tmdbId, $user): Show {
             $show = $this->existingShow($user, $tmdbId, $details);
             $isNew = $show === null;
             $show ??= Show::create([
@@ -328,6 +330,22 @@ class DiscoveryService
 
             return $show->refresh();
         });
+
+        if (Episode::forUser($user)->where('show_id', $show->id)->doesntExist()) {
+            defer(function () use ($show, $user): void {
+                if (Episode::forUser($user)->where('show_id', $show->id)->exists()) {
+                    return;
+                }
+
+                try {
+                    $this->episodeCatalog->syncShow($user, $show);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }, "mediahub:episode-catalog:{$user->id}:{$show->id}");
+        }
+
+        return $show->refresh();
     }
 
     /** @return array<string, mixed> */

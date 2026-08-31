@@ -423,6 +423,27 @@ describe("DetailModal", () => {
     });
   });
 
+  it("hides season controls when a show has no episode catalog", () => {
+    renderDetail({
+      item: { id: 8, showId: 8, kind: "show", title: "Severance" },
+      detail: {
+        ...movieDetail,
+        id: 8,
+        showId: 8,
+        kind: "show",
+        title: "Severance",
+        seasons: [],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /episodes/i }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("No seasons available");
+    expect(screen.queryByRole("combobox", { name: "Season" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark season watched" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark season unwatched" })).not.toBeInTheDocument();
+  });
+
   it("saves and clears rating selections", () => {
     const props = renderDetail();
 
