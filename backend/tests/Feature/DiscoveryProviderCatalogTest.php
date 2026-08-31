@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
+use App\Models\Episode;
 use App\Models\EpisodeWatch;
 use App\Models\MediaLink;
 use App\Models\Movie;
@@ -134,20 +135,60 @@ class DiscoveryProviderCatalogTest extends TestCase
         $other = $this->member('other@example.test');
         Http::fake([
             'api.themoviedb.org/3/movie/949*' => Http::response($this->movieDetails()),
+            'api.themoviedb.org/3/tv/95396/season/1*' => Http::response(['episodes' => [[
+                'id' => 9539601,
+                'season_number' => 1,
+                'episode_number' => 1,
+                'name' => 'Good News About Hell',
+                'air_date' => '2022-02-18',
+                'runtime' => 57,
+                'still_path' => '/episode.jpg',
+            ]]]),
             'api.themoviedb.org/3/tv/95396*' => Http::response($this->showDetails()),
         ]);
 
         $this->actingAs($user)->postJson('/api/v1/discover/movies/949/add', ['action' => 'watchlist'])->assertCreated()->assertJsonPath('item.watchlist', true);
         $this->actingAs($user)->postJson('/api/v1/discover/movies/949/add', ['action' => 'library'])->assertCreated();
-        $this->actingAs($user)->postJson('/api/v1/discover/shows/95396/add', ['action' => 'watchlist'])->assertCreated()->assertJsonPath('item.watchlist', true);
+        $this->actingAs($user)->postJson('/api/v1/discover/shows/95396/add', ['action' => 'watchlist'])
+            ->assertCreated()
+            ->assertJsonPath('item.watchlist', true);
 
         $this->assertSame(1, Movie::forUser($user)->where('tmdb_id', 949)->count());
         $this->assertSame(1, Show::forUser($user)->where('tmdb_id', 95396)->count());
         $this->assertTrue(Movie::forUser($user)->where('tmdb_id', 949)->firstOrFail()->is_to_watch);
-        $this->assertTrue(Show::forUser($user)->where('tmdb_id', 95396)->firstOrFail()->followed);
+        $show = Show::forUser($user)->where('tmdb_id', 95396)->firstOrFail();
+        $this->assertTrue($show->followed);
+        $this->assertSame(1, Episode::forUser($user)->where('tmdb_id', 9539601)->count());
+        $this->actingAs($user)
+            ->getJson("/api/v1/library/shows/{$show->id}")
+            ->assertOk()
+            ->assertJsonPath('item.seasons.0.seasonNumber', 1)
+            ->assertJsonPath('item.seasons.0.episodes.0.title', 'Good News About Hell');
         $this->assertSame(0, Movie::forUser($other)->count());
         $this->assertDatabaseHas('media_events', ['user_id' => $user->id, 'event_type' => 'movie.added']);
         $this->assertDatabaseHas('media_events', ['user_id' => $user->id, 'event_type' => 'show.added']);
+    }
+
+    public function test_discovered_show_is_still_added_when_its_episode_catalog_is_temporarily_unavailable(): void
+    {
+        $user = $this->member();
+        Http::fake([
+            'api.themoviedb.org/3/tv/95397/season/1*' => Http::response([], 503),
+            'api.themoviedb.org/3/tv/95397*' => Http::response([
+                ...$this->showDetails(),
+                'id' => 95397,
+                'name' => 'Fallback Show',
+            ]),
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/v1/discover/shows/95397/add', ['action' => 'library'])
+            ->assertCreated()
+            ->assertJsonPath('item.title', 'Fallback Show')
+            ->assertJsonPath('item.seasons', []);
+
+        $this->assertDatabaseHas('shows', ['user_id' => $user->id, 'tmdb_id' => 95397]);
+        $this->assertDatabaseCount('episodes', 0);
     }
 
     public function test_discovery_is_failure_safe_when_tmdb_is_disabled(): void
@@ -506,6 +547,6 @@ class DiscoveryProviderCatalogTest extends TestCase
     /** @return array<string, mixed> */
     private function showDetails(): array
     {
-        return ['id' => 95396, 'name' => 'Severance', 'original_name' => 'Severance', 'overview' => 'Work-life separation.', 'poster_path' => '/show.jpg', 'backdrop_path' => '/show-bg.jpg', 'first_air_date' => '2022-02-18', 'genres' => [['id' => 18, 'name' => 'Drama']], 'episode_run_time' => [50], 'status' => 'Returning Series', 'vote_average' => 8.4, 'external_ids' => ['imdb_id' => 'tt11280740', 'tvdb_id' => 371980]];
+        return ['id' => 95396, 'name' => 'Severance', 'original_name' => 'Severance', 'overview' => 'Work-life separation.', 'poster_path' => '/show.jpg', 'backdrop_path' => '/show-bg.jpg', 'first_air_date' => '2022-02-18', 'genres' => [['id' => 18, 'name' => 'Drama']], 'episode_run_time' => [50], 'status' => 'Returning Series', 'vote_average' => 8.4, 'external_ids' => ['imdb_id' => 'tt11280740', 'tvdb_id' => 371980], 'seasons' => [['season_number' => 1, 'episode_count' => 1]]];
     }
 }

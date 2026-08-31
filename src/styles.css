@@ -6210,8 +6210,6 @@ textarea:disabled {
   }
 
   .discovery-preview-expanded {
-    width: calc(100vw - 20px);
-    max-height: calc(100vh - 20px);
     grid-template-rows: max-content max-content;
   }
 

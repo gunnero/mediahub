@@ -66,8 +66,9 @@ class MediaDataQualityTest extends TestCase
             ]),
         ]);
 
-        $summary = app(EpisodeCatalogService::class)->syncUser($user);
+        $summary = app(EpisodeCatalogService::class)->syncShow($user, $show);
 
+        $this->assertSame(1, $summary['shows_planned']);
         $this->assertSame(1, $summary['shows_synced']);
         $this->assertSame(1, $summary['episodes_created']);
         $this->assertSame(1, $summary['episodes_updated']);
