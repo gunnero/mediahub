@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -1253,5 +1253,83 @@ describe("TimelinePanel", () => {
     );
 
     expect(screen.getByText(/your entertainment diary is quiet/i)).toBeInTheDocument();
+  });
+});
+
+
+describe("Media detail request lifecycle", () => {
+  function setupDetailRequests(handler) {
+    stubAppApi();
+    const baseFetch = globalThis.fetch;
+    const movies = [
+      { id: 101, movieId: 101, kind: "movie", title: "First movie" },
+      { id: 102, movieId: 102, kind: "movie", title: "Second movie" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (path, options) => {
+      if (/^\/api\/v1\/library\/movies\/10[12](?:\/watch)?$/.test(path)) return handler(path, options, movies);
+      if (path.startsWith("/api/v1/library/movies?")) return jsonResponse({ items: movies, pagination: { page: 1, total: 2, hasMore: false } });
+      if (path.startsWith("/api/v1/library/continue-watching") || path.startsWith("/api/v1/calendar")) return jsonResponse({ items: [] });
+      if (path === "/api/v1/status" || path.endsWith("/watch")) return jsonResponse({});
+      return baseFetch(path, options);
+    }));
+  }
+
+  async function openMovieLibrary() {
+    render(<App />);
+    const navigation = await screen.findByRole("navigation", { name: "Main navigation" });
+    fireEvent.click(within(navigation).getByRole("button", { name: "Movies", exact: true }));
+    await screen.findByRole("button", { name: "Open First movie", exact: true });
+  }
+
+  it.each([200, 500, 401])("ignores a late %i response for a closed title after another title opens", async (status) => {
+    let finishFirst;
+    let firstSignal;
+    const firstResponse = new Promise((resolve) => { finishFirst = resolve; });
+    setupDetailRequests((path, options, movies) => {
+      if (path.endsWith("/101")) {
+        firstSignal = options.signal;
+        return firstResponse;
+      }
+      return jsonResponse({ item: movies[1] });
+    });
+    await openMovieLibrary();
+    fireEvent.click(screen.getByRole("button", { name: "Open First movie", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    expect(firstSignal.aborted).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Second movie", exact: true }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details"));
+    await act(async () => finishFirst(jsonResponse({ item: { id: 101, movieId: 101, kind: "movie", title: "First movie" }, message: "Old request failed" }, status)));
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details");
+    expect(screen.queryByText("Old request failed")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+  });
+
+  it("ignores a late refresh after a watch action when the title has been closed", async () => {
+    let finishRefresh;
+    let refreshSignal;
+    let firstLoads = 0;
+    const refreshResponse = new Promise((resolve) => { finishRefresh = resolve; });
+    setupDetailRequests((path, options, movies) => {
+      if (path.endsWith("/watch")) return jsonResponse({});
+      if (path.endsWith("/101")) {
+        firstLoads += 1;
+        if (firstLoads > 1) {
+          refreshSignal = options.signal;
+          return refreshResponse;
+        }
+        return jsonResponse({ item: { ...movies[0], watched: false, watchHistory: [] } });
+      }
+      return jsonResponse({ item: movies[1] });
+    });
+    await openMovieLibrary();
+    fireEvent.click(screen.getByRole("button", { name: "Open First movie", exact: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark watched", exact: true }));
+    await waitFor(() => expect(firstLoads).toBe(2));
+    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    expect(refreshSignal.aborted).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Second movie", exact: true }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details"));
+    await act(async () => finishRefresh(jsonResponse({ item: { id: 101, movieId: 101, kind: "movie", title: "First movie", watched: true } })));
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details");
   });
 });

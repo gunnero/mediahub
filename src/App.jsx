@@ -1672,6 +1672,12 @@ export function App() {
   const [movieIntent, setMovieIntent] = useState({ status: "all", sort: "latest_watched", key: 0 });
   const [discoverIntent, setDiscoverIntent] = useState({ type: "all", key: 0 });
   const searchInputRef = useRef(null);
+  const detailSelectionRef = useRef(null);
+
+  useEffect(() => () => {
+    detailSelectionRef.current?.controller.abort();
+    detailSelectionRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (publicRoute) return undefined;
@@ -1753,6 +1759,7 @@ export function App() {
 
   async function loadMediaDetail(item) {
     const path = mediaDetailPath(item);
+    const selection = detailSelectionRef.current;
 
     setSelectedDetail(null);
     setDetailError("");
@@ -1767,28 +1774,47 @@ export function App() {
     setDetailLoading(true);
 
     try {
-      const payload = await apiRequest(path);
+      const payload = await apiRequest(path, { signal: selection.controller.signal });
+      if (detailSelectionRef.current !== selection) return;
       setSelectedDetail(payload.item);
     } catch (error) {
+      if (detailSelectionRef.current !== selection || error.name === "AbortError") return;
       if (error instanceof SessionExpiredError) {
         expireSession();
         return;
       }
       setDetailError(error.message || "Could not load details.");
     } finally {
-      setDetailLoading(false);
+      if (detailSelectionRef.current === selection) setDetailLoading(false);
     }
   }
 
   async function refreshMediaDetail(detail) {
     const path = mediaDetailPath(detail);
+    const selection = detailSelectionRef.current;
 
-    if (!path) {
+    if (!path || selection?.path !== path) {
       return;
     }
 
-    const payload = await apiRequest(path);
-    setSelectedDetail(payload.item);
+    try {
+      const payload = await apiRequest(path, { signal: selection.controller.signal });
+      if (detailSelectionRef.current === selection) setSelectedDetail(payload.item);
+    } catch (error) {
+      if (detailSelectionRef.current === selection && error.name !== "AbortError") throw error;
+    }
+  }
+
+  function closeDetail() {
+    detailSelectionRef.current?.controller.abort();
+    detailSelectionRef.current = null;
+    setSelectedItem(null);
+    setSelectedDetail(null);
+    setDetailLoading(false);
+    setDetailError("");
+    setDetailActionError("");
+    setDetailActionPending(false);
+    setDetailPlayback(null);
   }
 
   async function handleLogin(credentials) {
@@ -1810,6 +1836,7 @@ export function App() {
   }
 
   async function handleLogout() {
+    closeDetail();
     try {
       await apiRequest("/api/v1/auth/logout", { method: "POST" });
     } catch (error) {
@@ -1886,6 +1913,7 @@ export function App() {
   }
 
   function expireSession() {
+    closeDetail();
     setAuthUser(null);
     setDashboard(fallbackData);
     setReadAlerts(new Set());
@@ -1897,10 +1925,15 @@ export function App() {
   }
 
   async function openItem(item) {
+    detailSelectionRef.current?.controller.abort();
+    detailSelectionRef.current = { path: mediaDetailPath(item), controller: new AbortController() };
     setSelectedItem(item);
     setSelectedDetail(null);
     setDetailError("");
     setDetailActionError("");
+    setDetailActionPending(false);
+    setDetailLoading(false);
+    setDetailPlayback(null);
 
     if (item?.id && "category" in item) {
       if (item.unread) setReadAlerts((current) => new Set([...current, item.id]));
@@ -1927,19 +1960,21 @@ export function App() {
   }
 
   async function runDetailAction(action) {
+    const selection = detailSelectionRef.current;
     setDetailActionPending(true);
     setDetailActionError("");
 
     try {
       await action();
     } catch (error) {
+      if (detailSelectionRef.current !== selection) return;
       if (error instanceof SessionExpiredError) {
         expireSession();
         return;
       }
       setDetailActionError(error.message || "Could not save change.");
     } finally {
-      setDetailActionPending(false);
+      if (detailSelectionRef.current === selection) setDetailActionPending(false);
     }
   }
 
@@ -2015,10 +2050,11 @@ export function App() {
 
   async function handlePlayDetail(detail) {
     if (!detail?.provider?.playableItemId) return;
+    const selection = detailSelectionRef.current;
 
     await runDetailAction(async () => {
       const payload = await apiRequest(`/api/v1/player/items/${detail.provider.playableItemId}/play`, { method: "POST" });
-      setDetailPlayback(payload);
+      if (detailSelectionRef.current === selection) setDetailPlayback(payload);
     });
   }
 
@@ -2145,13 +2181,7 @@ export function App() {
         detailLoading={detailLoading}
         item={selectedItem}
         onClearRating={handleClearRating}
-        onClose={() => {
-          setSelectedItem(null);
-          setSelectedDetail(null);
-          setDetailError("");
-          setDetailActionError("");
-          setDetailPlayback(null);
-        }}
+        onClose={closeDetail}
         onDeleteNote={handleDeleteNote}
         onMarkUnwatched={handleMarkUnwatched}
         onMarkWatched={handleMarkWatched}

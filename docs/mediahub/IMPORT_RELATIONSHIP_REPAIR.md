@@ -1,5 +1,28 @@
 # Import Relationship Repair
 
+## Safe Initial Imports And Replacement
+
+The compatibility importer accepts the SQLite archive produced by the private TV Time workflow. It also accepts legacy dashboard JSON containing all three arrays `followedNewEpisodes`, `moviesToCheckOut`, and `alerts`. Dashboard JSON only contains preview titles and alerts; it is not a full library backup and cannot replace existing watch history. MediaHub user-export JSON uses a different schema and is not accepted by this importer.
+
+Keep the source in an approved private import directory. Validate every source row and inspect the source/existing counts first:
+
+```bash
+cd backend
+php artisan tvtime:import-user {user_id} {private_source_path} --dry-run
+```
+
+Dry-run never writes library data, audit events, or backups. Invalid, unsupported, and empty snapshots are rejected before destination writes. Initial imports into an empty account use the same command without `--dry-run`.
+
+Replacing an existing unannotated library requires an explicit flag:
+
+```bash
+php artisan tvtime:import-user {user_id} {private_source_path} --replace
+```
+
+Replacement saves a private `mediahub-import-backup-v1` snapshot under the local storage disk's `import-backups/user-{id}/` directory before deleting anything. It contains the original rows and IDs for shows, movies, episodes, both watch tables, and alerts. Backup failure aborts the import; database write failures roll back the replacement. Backups are for assisted recovery, not an input to this importer.
+
+Replacement refuses accounts containing notes, ratings, list items, favorites, diary subject links, or playback records. These relationships cannot safely be attached to newly generated media IDs. Use a separate empty account for the import until a merge workflow can preserve those identities. Neither `--replace` nor `--dry-run` bypasses this protection. The repair command below remains available for existing libraries without replacing their records.
+
 ## Purpose
 
 Imported archives can contain valid watch totals whose episode, watch, or show relationships are incomplete. The repair command restores only relationships that can be proven from same-user canonical rows.

@@ -7,6 +7,7 @@ use App\Enums\MediaEventType;
 use App\Models\Alert;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
+use App\Models\MediaEvent;
 use App\Models\Movie;
 use App\Models\MovieWatch;
 use App\Models\Show;
@@ -14,19 +15,24 @@ use App\Models\User;
 use App\Services\AnalyticsService;
 use App\Services\AuditLogService;
 use App\Services\MediaEventService;
+use App\Services\TvTimeImportSource;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use PDO;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 class ImportTvTimeUserCommand extends Command
 {
-    protected $signature = 'tvtime:import-user {user_id} {path_to_sqlite_or_json}';
+    protected $signature = 'tvtime:import-user {user_id} {path_to_sqlite_or_json}
+        {--dry-run : Validate and preview counts without changing data}
+        {--replace : Back up and replace an existing unannotated library}';
 
     protected $description = 'Import a private TV Time dashboard SQLite or JSON snapshot for one user.';
 
-    public function handle(AnalyticsService $analytics, AuditLogService $auditLogs, MediaEventService $mediaEvents): int
+    public function handle(AnalyticsService $analytics, AuditLogService $auditLogs, MediaEventService $mediaEvents, TvTimeImportSource $reader): int
     {
         $user = User::find($this->argument('user_id'));
 
@@ -61,13 +67,67 @@ class ImportTvTimeUserCommand extends Command
         }
 
         try {
-            $summary = DB::transaction(function () use ($extension, $realPath, $user): array {
-                $this->clearExistingLibrary($user);
+            $source = $reader->read($realPath, $extension);
+        } catch (Throwable) {
+            $this->error('Import failed: invalid, empty, or unsupported source snapshot. No data was changed.');
 
-                return $extension === 'json'
-                    ? $this->importDashboardJson($user, $realPath)
-                    : $this->importSqlite($user, $realPath);
+            return self::FAILURE;
+        }
+
+        $counts = $this->existingCounts($user);
+        $this->table(['Dataset', 'Source rows', 'Existing rows'], [
+            ['Shows', count($source['shows']), $counts['shows']],
+            ['Movies', count($source['movies']), $counts['movies']],
+            ['Episode watches', count($source['episode_watches']), $counts['episode_watches']],
+            ['Movie watches', count(array_filter($source['movies'], fn (array $movie): bool => $source['format'] === 'sqlite' && ! $this->boolValue($movie['is_to_watch'] ?? false))), $counts['movie_watches']],
+            ['Existing episodes', 'derived from episode watches', $counts['episodes']],
+            ['Alerts', count($source['alerts']), $counts['alerts']],
+        ]);
+        if ($source['format'] === 'json') {
+            $this->warn('Legacy dashboard JSON contains preview titles and alerts only, not full watch history.');
+        }
+        $blocker = $this->replacementBlocker($user, $source, $counts);
+        if ($this->option('dry-run')) {
+            if ($blocker) {
+                $this->warn($blocker);
+            }
+            if (array_sum($counts) > 0) {
+                $this->warn('Existing library detected. Replacement requires --replace and a private backup.');
+            }
+            $this->info('Dry run complete. No data was changed.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            $summary = DB::transaction(function () use ($source, $user): array {
+                $user = User::query()->lockForUpdate()->findOrFail($user->id);
+                $counts = $this->existingCounts($user);
+                if ($blocker = $this->replacementBlocker($user, $source, $counts)) {
+                    throw new RuntimeException($blocker);
+                }
+                if (array_sum($counts) > 0) {
+                    if (! $this->option('replace')) {
+                        throw new RuntimeException('Import refused: existing library requires --replace. Review --dry-run first.');
+                    }
+                    $this->backupLibrary($user);
+                    $this->clearExistingLibrary($user);
+                }
+
+                return $source['format'] === 'json'
+                    ? $this->importDashboardJson($user, $source)
+                    : $this->importSqlite($user, $source);
             });
+        } catch (RuntimeException $exception) {
+            // Only deliberate guard failures have messages suitable for the console.
+            if (! str_starts_with($exception->getMessage(), 'Import refused:')) {
+                report($exception);
+            }
+            $this->error(str_starts_with($exception->getMessage(), 'Import refused:')
+                ? $exception->getMessage()
+                : 'Import failed: source data could not be imported. No data was changed.');
+
+            return self::FAILURE;
         } catch (Throwable $exception) {
             report($exception);
             $this->error('Import failed: source data could not be imported.');
@@ -99,6 +159,46 @@ class ImportTvTimeUserCommand extends Command
         return self::SUCCESS;
     }
 
+    private function existingCounts(User $user): array
+    {
+        $counts = [];
+        foreach (['shows', 'movies', 'episodes', 'episode_watches', 'movie_watches', 'alerts'] as $table) {
+            $counts[$table] = DB::table($table)->where('user_id', $user->id)->count();
+        }
+
+        return $counts;
+    }
+
+    private function replacementBlocker(User $user, array $source, array $counts): ?string
+    {
+        foreach (['notes', 'ratings', 'media_list_items', 'media_links', 'playback_sessions', 'playback_progress'] as $table) {
+            if (DB::table($table)->where('user_id', $user->id)->exists()) {
+                return 'Import refused: personal annotations or media links must be preserved. Import into an empty account instead.';
+            }
+        }
+        if ($user->favorite_movie_ids || $user->favorite_show_ids
+            || MediaEvent::forUser($user)->whereNotNull('subject_id')->exists()) {
+            return 'Import refused: favorites or diary links must be preserved. Import into an empty account instead.';
+        }
+        if ($source['format'] === 'json' && ($counts['episode_watches'] + $counts['movie_watches']) > 0) {
+            return 'Import refused: a dashboard preview cannot replace watch history. Use the complete SQLite snapshot.';
+        }
+
+        return null;
+    }
+
+    private function backupLibrary(User $user): void
+    {
+        $backup = ['schema' => 'mediahub-import-backup-v1', 'user_id' => $user->id, 'created_at' => now()->toIso8601String(), 'tables' => []];
+        foreach (array_keys($this->existingCounts($user)) as $table) {
+            $backup['tables'][$table] = DB::table($table)->where('user_id', $user->id)->orderBy('id')->get()->all();
+        }
+        $path = 'import-backups/user-'.$user->id.'/'.Str::uuid().'.json';
+        if (! Storage::disk('local')->put($path, json_encode($backup, JSON_THROW_ON_ERROR), ['visibility' => 'private'])) {
+            throw new RuntimeException('Import refused: private backup could not be saved.');
+        }
+    }
+
     private function clearExistingLibrary(User $user): void
     {
         Alert::forUser($user)->delete();
@@ -112,15 +212,11 @@ class ImportTvTimeUserCommand extends Command
     /**
      * @return array{shows_imported:int,episodes_imported:int,movies_imported:int,watches_imported:int,alerts_imported:int}
      */
-    private function importSqlite(User $user, string $path): array
+    private function importSqlite(User $user, array $source): array
     {
-        $source = new PDO('sqlite:'.$path);
-        $source->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $source->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-
         $showMap = [];
 
-        foreach ($this->rows($source, 'select * from shows order by title') as $row) {
+        foreach ($source['shows'] as $row) {
             $show = Show::create([
                 'user_id' => $user->id,
                 'external_source' => 'tvtime',
@@ -143,7 +239,7 @@ class ImportTvTimeUserCommand extends Command
         $episodeMap = [];
         $episodeWatchesImported = 0;
 
-        foreach ($this->rows($source, 'select * from episode_watches order by id') as $row) {
+        foreach ($source['episode_watches'] as $row) {
             $showKey = $this->stringOrNull($row['show_key'] ?? null);
             $show = $showKey ? ($showMap[$showKey] ?? null) : null;
 
@@ -185,7 +281,7 @@ class ImportTvTimeUserCommand extends Command
 
         $movieWatchesImported = 0;
 
-        foreach ($this->rows($source, 'select * from movies order by title') as $row) {
+        foreach ($source['movies'] as $row) {
             $movie = Movie::create([
                 'user_id' => $user->id,
                 'external_source' => 'tvtime',
@@ -208,7 +304,7 @@ class ImportTvTimeUserCommand extends Command
             }
         }
 
-        foreach ($this->rows($source, 'select * from alerts order by id') as $row) {
+        foreach ($source['alerts'] as $row) {
             Alert::create([
                 'user_id' => $user->id,
                 'category' => $this->stringOrDefault($row['category'] ?? null, 'site'),
@@ -233,15 +329,9 @@ class ImportTvTimeUserCommand extends Command
     /**
      * @return array{shows_imported:int,episodes_imported:int,movies_imported:int,watches_imported:int,alerts_imported:int}
      */
-    private function importDashboardJson(User $user, string $path): array
+    private function importDashboardJson(User $user, array $source): array
     {
-        $payload = json_decode(file_get_contents($path) ?: '', true, flags: JSON_THROW_ON_ERROR);
-
-        foreach (($payload['followedNewEpisodes'] ?? []) as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
+        foreach ($source['shows'] as $item) {
             Show::create([
                 'user_id' => $user->id,
                 'external_source' => 'dashboard-json',
@@ -253,11 +343,7 @@ class ImportTvTimeUserCommand extends Command
             ]);
         }
 
-        foreach (($payload['moviesToCheckOut'] ?? []) as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
+        foreach ($source['movies'] as $item) {
             Movie::create([
                 'user_id' => $user->id,
                 'external_source' => 'dashboard-json',
@@ -268,11 +354,7 @@ class ImportTvTimeUserCommand extends Command
             ]);
         }
 
-        foreach (($payload['alerts'] ?? []) as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
+        foreach ($source['alerts'] as $item) {
             Alert::create([
                 'user_id' => $user->id,
                 'category' => $this->stringOrDefault($item['category'] ?? null, 'site'),
@@ -290,16 +372,6 @@ class ImportTvTimeUserCommand extends Command
             'watches_imported' => EpisodeWatch::forUser($user)->count() + MovieWatch::forUser($user)->count(),
             'alerts_imported' => Alert::forUser($user)->count(),
         ];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function rows(PDO $source, string $sql): array
-    {
-        $statement = $source->query($sql);
-
-        return $statement ? $statement->fetchAll() : [];
     }
 
     private function isAllowedImportPath(string $path): bool
