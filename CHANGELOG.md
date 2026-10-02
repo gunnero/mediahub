@@ -4,6 +4,11 @@ Notable public-facing repository and product changes are recorded here. MediaHub
 
 ## Unreleased
 
+### Fixed
+
+- Validate complete compatibility-import snapshots before writing, add a no-write preview, and require explicit replacement with a private backup. Protect existing annotations and media relationships from orphaning.
+- Cancel obsolete media-detail requests and ignore late responses, errors, and watch-action refreshes after the selected title changes or closes.
+
 ### Changed
 
 - Reframed the repository around MediaHub and prepared a safe GitHub rename.
@@ -14,6 +19,7 @@ Notable public-facing repository and product changes are recorded here. MediaHub
 
 ### Security
 
+- Updated locked frontend test/build dependencies and Laravel, Filament, Livewire, CommonMark, and Flysystem within the existing supported version ranges to resolve dependency-audit advisories.
 - Removed real staging hosts, SSH guidance, server paths, deployment topology, and rollback details from the current public tree.
 
 ## 1.0.0-rc1.1
