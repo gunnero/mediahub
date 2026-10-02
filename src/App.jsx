@@ -17,6 +17,8 @@ import {
 } from "@phosphor-icons/react";
 import { getUnreadCount } from "./lib/dashboard.js";
 import { apiRequest, SessionExpiredError } from "./lib/api.js";
+import { useAppRoute } from "./lib/navigation.js";
+import { WatchDateForm } from "./components/WatchDateForm.jsx";
 import { PlayerSection, SettingsSection } from "./components/MediaHubSurfaces.jsx";
 import { HomeExperience } from "./components/HomeExperience.jsx";
 import {
@@ -1354,6 +1356,7 @@ export function DetailModal({
             </div>
             <p>{view.overview || "This title is part of your permanent MediaHub library."}</p>
             <div className="cinematic-actions cinematic-secondary-actions">
+              {canManualWatch ? <WatchDateForm key={`${detail.kind}-${detail.id}`} detail={detail} pending={actionPending} onSave={onMarkWatched} /> : null}
               {canManualWatch && hasManualWatch ? (
                 <button className="text-action danger" disabled={actionPending} onClick={() => onMarkUnwatched?.(detail)} type="button">
                   Remove latest manual watch
@@ -1647,13 +1650,14 @@ function FocusSection({
 }
 
 export function App() {
+  const { route, navigate, closeMedia } = useAppRoute();
   const publicRoute = resolvePublicRoute(window.location.pathname);
   const pendingFriendInvite = new URLSearchParams(window.location.search).get("friend-invite");
   const [dashboard, setDashboard] = useState(fallbackData);
   const [authUser, setAuthUser] = useState(null);
   const [appState, setAppState] = useState("checking");
   const [query, setQuery] = useState("");
-  const [activeSection, setActiveSection] = useState("home");
+  const activeSection = route.section;
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1666,11 +1670,11 @@ export function App() {
   const [authError, setAuthError] = useState("");
   const [apiError, setApiError] = useState("");
   const [submittingLogin, setSubmittingLogin] = useState(false);
-  const [profileMode, setProfileMode] = useState("view");
-  const [settingsInitialSection, setSettingsInitialSection] = useState("profile");
+  const profileMode = route.profileMode;
+  const settingsInitialSection = route.settingsTab;
   const [historyIntent, setHistoryIntent] = useState({ type: "all", key: 0 });
   const [movieIntent, setMovieIntent] = useState({ status: "all", sort: "latest_watched", key: 0 });
-  const [discoverIntent, setDiscoverIntent] = useState({ type: "all", key: 0 });
+  const discoverIntent = { type: route.discoverType, key: route.href };
   const searchInputRef = useRef(null);
   const detailSelectionRef = useRef(null);
 
@@ -1678,6 +1682,20 @@ export function App() {
     detailSelectionRef.current?.controller.abort();
     detailSelectionRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (appState !== "ready" || publicRoute) return;
+    if (route.section === "player" && !dashboard.features?.webPlayerEnabled) {
+      navigate("/", { replace: true });
+      return;
+    }
+    const path = mediaDetailPath(route.detail);
+    if (path && detailSelectionRef.current?.path !== path) {
+      showItem(route.detail);
+    } else if (!path) {
+      clearDetail();
+    }
+  }, [appState, route.href, route.section]);
 
   useEffect(() => {
     if (publicRoute) return undefined;
@@ -1805,7 +1823,7 @@ export function App() {
     }
   }
 
-  function closeDetail() {
+  function clearDetail() {
     detailSelectionRef.current?.controller.abort();
     detailSelectionRef.current = null;
     setSelectedItem(null);
@@ -1815,6 +1833,11 @@ export function App() {
     setDetailActionError("");
     setDetailActionPending(false);
     setDetailPlayback(null);
+  }
+
+  function closeDetail() {
+    clearDetail();
+    if (route.detail) closeMedia();
   }
 
   async function handleLogin(credentials) {
@@ -1836,7 +1859,7 @@ export function App() {
   }
 
   async function handleLogout() {
-    closeDetail();
+    clearDetail();
     try {
       await apiRequest("/api/v1/auth/logout", { method: "POST" });
     } catch (error) {
@@ -1852,33 +1875,27 @@ export function App() {
     setSelectedDetail(null);
     setAppState("login");
     setLoadState("guest");
+    navigate("/", { replace: true });
   }
 
   function handleAccountAction(action) {
     if (action === "view-profile" || action === "edit-profile") {
-      setProfileMode(action === "edit-profile" ? "edit" : "view");
-      setActiveSection("profile");
+      navigate(action === "edit-profile" ? "/profile?view=edit" : "/profile");
       return;
     }
     if (action === "privacy") {
-      setSettingsInitialSection("privacy");
-      setActiveSection("settings");
+      navigate("/settings?tab=privacy");
       return;
     }
     if (action === "settings") {
-      setSettingsInitialSection("profile");
-      setActiveSection("settings");
+      navigate("/settings");
       return;
     }
-    if (["friends", "invite-friends"].includes(action)) setActiveSection(action);
+    if (["friends", "invite-friends"].includes(action)) navigate(`/${action}`);
   }
 
   function selectSection(section) {
-    if (section === "settings") setSettingsInitialSection("profile");
     if (section === "home") setQuery("");
-    if (section === "discover") {
-      setDiscoverIntent((current) => ({ type: "all", key: current.key + 1 }));
-    }
     if (section === "movies") {
       setQuery("");
       setMovieIntent((current) => ({ status: "all", sort: "latest_watched", key: current.key + 1 }));
@@ -1886,7 +1903,8 @@ export function App() {
     if (section === "history") {
       setHistoryIntent((current) => ({ type: "all", key: current.key + 1 }));
     }
-    setActiveSection(section);
+    clearDetail();
+    navigate(section === "home" ? "/" : `/${section}`);
   }
 
   function handleHomeNavigation(action) {
@@ -1895,25 +1913,22 @@ export function App() {
       return;
     }
     if (action === "add-movie" || action === "add-show") {
-      setDiscoverIntent((current) => ({ type: action === "add-movie" ? "movie" : "show", key: current.key + 1 }));
-      setActiveSection("discover");
+      navigate(`/discover?type=${action === "add-movie" ? "movie" : "show"}`);
       return;
     }
     if (action === "import" || action === "export") {
-      setSettingsInitialSection("import-export");
-      setActiveSection("settings");
+      navigate("/settings?tab=import-export");
       return;
     }
     if (action === "profile") {
-      setProfileMode("edit");
-      setActiveSection("profile");
+      navigate("/profile?view=edit");
       return;
     }
     selectSection(action);
   }
 
   function expireSession() {
-    closeDetail();
+    clearDetail();
     setAuthUser(null);
     setDashboard(fallbackData);
     setReadAlerts(new Set());
@@ -1924,7 +1939,17 @@ export function App() {
     setLoadState("guest");
   }
 
-  async function openItem(item) {
+  function openItem(item) {
+    const path = mediaDetailPath(item);
+    if (path && !("category" in item)) {
+      navigate(path.replace("/api/v1/library", ""), {
+        state: { mediahubSection: activeSection, mediahubDetailParent: route.href },
+      });
+    }
+    return showItem(item);
+  }
+
+  async function showItem(item) {
     detailSelectionRef.current?.controller.abort();
     detailSelectionRef.current = { path: mediaDetailPath(item), controller: new AbortController() };
     setSelectedItem(item);
@@ -1966,6 +1991,7 @@ export function App() {
 
     try {
       await action();
+      return true;
     } catch (error) {
       if (detailSelectionRef.current !== selection) return;
       if (error instanceof SessionExpiredError) {
@@ -1973,6 +1999,7 @@ export function App() {
         return;
       }
       setDetailActionError(error.message || "Could not save change.");
+      return false;
     } finally {
       if (detailSelectionRef.current === selection) setDetailActionPending(false);
     }
@@ -2024,9 +2051,9 @@ export function App() {
     });
   }
 
-  async function handleMarkWatched(detail) {
-    await runDetailAction(async () => {
-      await apiRequest(`${mediaBasePath(detail)}/watch`, { method: "POST" });
+  async function handleMarkWatched(detail, watchedAt) {
+    return runDetailAction(async () => {
+      await apiRequest(`${mediaBasePath(detail)}/watch`, { method: "POST", ...(watchedAt ? { body: { watched_at: watchedAt } } : {}) });
       await refreshMediaDetail(detail);
       await refreshDashboard();
     });

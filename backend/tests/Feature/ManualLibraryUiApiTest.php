@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
+use App\Models\MediaEvent;
 use App\Models\MediaLink;
 use App\Models\Movie;
 use App\Models\MovieWatch;
@@ -226,6 +227,30 @@ class ManualLibraryUiApiTest extends TestCase
         $this->actingAs($user)->deleteJson("/api/v1/library/episodes/{$episode->id}/watch")->assertNoContent();
         $this->assertSame(0, MovieWatch::forUser($user)->where('movie_id', $movie->id)->where('source', 'manual')->count());
         $this->assertSame(0, EpisodeWatch::forUser($user)->where('episode_id', $episode->id)->where('source', 'manual')->count());
+    }
+
+    public function test_past_watches_keep_the_chosen_time_in_history_and_the_diary(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 2)->setTime(18, 0));
+        $user = $this->member();
+        $movie = Movie::create(['user_id' => $user->id, 'title' => 'Past Movie']);
+        $show = Show::create(['user_id' => $user->id, 'title' => 'Past Show']);
+        $episode = Episode::create(['user_id' => $user->id, 'show_id' => $show->id, 'title' => 'Past Episode']);
+
+        foreach ([['movies', $movie], ['episodes', $episode]] as [$type, $media]) {
+            $path = "/api/v1/library/{$type}/{$media->id}";
+            $this->actingAs($user)->postJson("{$path}/watch")->assertCreated();
+            $this->actingAs($user)->postJson("{$path}/watch", ['watched_at' => '2026-09-01T21:15:00.000Z'])
+                ->assertCreated()->assertJsonPath('watch.watched_at', '2026-09-01T21:15:00+00:00');
+            $this->actingAs($user)->getJson($path)
+                ->assertOk()->assertJsonCount(2, 'item.watchHistory');
+
+            $event = MediaEvent::where('subject_type', $media::class)->where('subject_id', $media->id)->latest('id')->firstOrFail();
+            $this->assertSame('2026-09-01T21:15:00+00:00', $event->occurred_at->toIso8601String());
+            $this->actingAs($user)->postJson("{$path}/watch", ['watched_at' => '2026-10-03T18:00:00Z'])
+                ->assertUnprocessable()->assertJsonValidationErrors('watched_at');
+            $this->actingAs($user)->getJson($path)->assertJsonCount(2, 'item.watchHistory');
+        }
     }
 
     public function test_unwatch_only_removes_manual_rows_and_keeps_provider_history(): void

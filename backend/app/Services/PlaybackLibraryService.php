@@ -605,7 +605,7 @@ class PlaybackLibraryService
             'media_type' => 'movie',
             'watched_at' => $watch->watched_at?->toIso8601String(),
             'runtime' => $watch->runtime,
-        ], MediaEventSource::Manual);
+        ], MediaEventSource::Manual, $watch->watched_at);
 
         return $watch->refresh();
     }
@@ -636,7 +636,7 @@ class PlaybackLibraryService
             'show_id' => $episode->show_id,
             'watched_at' => $watch->watched_at?->toIso8601String(),
             'runtime' => $watch->runtime,
-        ], MediaEventSource::Manual);
+        ], MediaEventSource::Manual, $watch->watched_at);
 
         return $watch->refresh();
     }

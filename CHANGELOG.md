@@ -4,6 +4,11 @@ Notable public-facing repository and product changes are recorded here. MediaHub
 
 ## Unreleased
 
+### Added
+
+- Bookmarkable sections and movie, show, and episode details, with browser Back/Forward navigation and direct links after sign-in.
+- Log a past movie or episode watch with a local date and time; watch history and diary entries retain the chosen time.
+
 ### Fixed
 
 - Validate complete compatibility-import snapshots before writing, add a no-write preview, and require explicit replacement with a private backup. Protect existing annotations and media relationships from orphaning.

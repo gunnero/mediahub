@@ -2894,6 +2894,42 @@ img {
   margin-top: 12px;
 }
 
+.watch-date-control {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.watch-date-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  max-width: 100%;
+}
+
+.watch-date-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.watch-date-form input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: inherit;
+  font-size: 16px;
+  color-scheme: dark;
+}
+
+.watch-date-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .cinematic-body {
   max-height: calc(100vh - 445px);
   min-height: 260px;

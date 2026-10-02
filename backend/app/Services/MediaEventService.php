@@ -33,8 +33,9 @@ class MediaEventService
         ?Model $subject = null,
         array $metadata = [],
         MediaEventSource|string $source = MediaEventSource::System,
+        ?CarbonInterface $occurredAt = null,
     ): ?MediaEvent {
-        return $this->recordAt($user, $eventType, $subject, $metadata, $source, now());
+        return $this->recordAt($user, $eventType, $subject, $metadata, $source, $occurredAt ?? now());
     }
 
     /**

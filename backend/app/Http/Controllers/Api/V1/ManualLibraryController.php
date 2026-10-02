@@ -42,7 +42,7 @@ class ManualLibraryController extends Controller
     public function watchMovie(Request $request, Movie $movie, PlaybackLibraryService $library): JsonResponse
     {
         $data = $request->validate([
-            'watched_at' => ['nullable', 'date'],
+            'watched_at' => ['nullable', 'date', 'before_or_equal:now'],
             'runtime' => ['nullable', 'integer', 'min:0'],
         ]);
 
@@ -62,7 +62,7 @@ class ManualLibraryController extends Controller
     public function watchEpisode(Request $request, Episode $episode, PlaybackLibraryService $library): JsonResponse
     {
         $data = $request->validate([
-            'watched_at' => ['nullable', 'date'],
+            'watched_at' => ['nullable', 'date', 'before_or_equal:now'],
             'runtime' => ['nullable', 'integer', 'min:0'],
         ]);
 
