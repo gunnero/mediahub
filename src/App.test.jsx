@@ -1281,6 +1281,88 @@ describe("Media detail request lifecycle", () => {
     await screen.findByRole("button", { name: "Open First movie", exact: true });
   }
 
+  it("restores bookmarked sections and browser Back and Forward navigation", async () => {
+    window.history.replaceState({}, "", "/history");
+    stubAppApi();
+    render(<App />);
+    const navigation = await screen.findByRole("navigation", { name: "Main navigation" });
+    expect(within(navigation).getByRole("button", { name: "History", exact: true })).toHaveClass("active");
+    fireEvent.click(within(navigation).getByRole("button", { name: "Movies", exact: true }));
+    expect(window.location.pathname).toBe("/movies");
+    await act(async () => window.history.back());
+    await waitFor(() => expect(within(navigation).getByRole("button", { name: "History", exact: true })).toHaveClass("active"));
+    await act(async () => window.history.forward());
+    await waitFor(() => expect(within(navigation).getByRole("button", { name: "Movies", exact: true })).toHaveClass("active"));
+  });
+
+  it("opens a copied title URL after authentication and closes to its library", async () => {
+    window.history.replaceState({}, "", "/movies/101");
+    setupDetailRequests((path, options, movies) => jsonResponse({ item: movies[0] }));
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    expect(window.location.pathname).toBe("/movies");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("preserves a title link through the sign-in form", async () => {
+    window.history.replaceState({}, "", "/movies/101");
+    setupDetailRequests((path, options, movies) => jsonResponse({ item: movies[0] }));
+    const baseFetch = globalThis.fetch;
+    let authenticated = false;
+    vi.stubGlobal("fetch", vi.fn((path, options) => {
+      if (path === "/api/v1/auth/login") {
+        authenticated = true;
+        return jsonResponse({});
+      }
+      if (path === "/api/v1/auth/session" && !authenticated) return jsonResponse({ authenticated: false });
+      return baseFetch(path, options);
+    }));
+    render(<App />);
+    await screen.findByRole("button", { name: "Sign in" });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "member@example.test" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    expect(window.location.pathname).toBe("/movies/101");
+  });
+
+  it("restores title details with Forward after Back closes them", async () => {
+    setupDetailRequests((path, options, movies) => jsonResponse({ item: movies[0] }));
+    await openMovieLibrary();
+    fireEvent.click(screen.getByRole("button", { name: "Open First movie", exact: true }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    expect(window.location.pathname).toBe("/movies/101");
+    await act(async () => window.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(window.location.pathname).toBe("/movies");
+    await act(async () => window.history.forward());
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+  });
+
+  it("saves a past watch using the selected local time and keeps the form on failure", async () => {
+    let shouldFail = true;
+    let savedBody;
+    setupDetailRequests((path, options, movies) => {
+      if (path.endsWith("/watch")) {
+        savedBody = JSON.parse(options.body);
+        return jsonResponse(shouldFail ? { message: "Could not save this watch" } : {}, shouldFail ? 422 : 201);
+      }
+      return jsonResponse({ item: movies[0] });
+    });
+    await openMovieLibrary();
+    fireEvent.click(screen.getByRole("button", { name: "Open First movie", exact: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Log a past watch" }));
+    fireEvent.change(screen.getByLabelText("Watched at"), { target: { value: "2026-01-15T21:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save watch" }));
+    expect(await screen.findByText("Could not save this watch")).toBeInTheDocument();
+    expect(screen.getByLabelText("Watched at")).toHaveValue("2026-01-15T21:30");
+    expect(savedBody).toEqual({ watched_at: new Date(2026, 0, 15, 21, 30).toISOString() });
+    shouldFail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Save watch" }));
+    await waitFor(() => expect(screen.queryByLabelText("Watched at")).not.toBeInTheDocument());
+  });
+
   it.each([200, 500, 401])("ignores a late %i response for a closed title after another title opens", async (status) => {
     let finishFirst;
     let firstSignal;
