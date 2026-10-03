@@ -84,7 +84,7 @@ class LocalReleaseTest(unittest.TestCase):
         (self.source / 'scripts').mkdir()
         for name in ['deploy-mediahub.sh', 'scripts/prepare-release.sh', 'scripts/deploy-release.sh', 'scripts/release-assets.py']:
             shutil.copy2(ROOT / name, self.source / name)
-        (self.source / '.gitignore').write_text('.mediahub-deploy.env\nnode_modules/\ndist/\nbackend/.env\nbackend/vendor/\nbackend/storage/\nbackend/bootstrap/cache/\nbackend/database/*.sqlite\nbackend/public/index.html\nbackend/public/assets/\nbackend/public/mediahub-release-check-*\n')
+        (self.source / '.gitignore').write_text('.mediahub-deploy.env\nnode_modules/\ndist/\nbackend/.env\nbackend/vendor/\nbackend/storage/\nbackend/bootstrap/cache/\nbackend/database/*.sqlite\nbackend/public/index.html\nbackend/public/assets/\n')
         (self.source / 'backend/public').mkdir(parents=True)
         (self.source / 'backend/public/index.php').write_text('php entry')
         (self.source / 'backend/public/.htaccess').write_text('rewrite')

@@ -88,7 +88,7 @@ php backend/artisan config:cache
 php backend/artisan route:cache
 php backend/artisan view:cache
 python3 "$release/release-assets.py" stage "$frontend" "$public" "$target"
-python3 "$release/release-assets.py" verify "$frontend" "$MEDIAHUB_LIVE_URL" "/mediahub-release-check-$target.html"
+python3 "$release/release-assets.py" verify "$frontend" "$MEDIAHUB_LIVE_URL" "/assets/mediahub-release-check-$target.html"
 sha256sum --check "$backup/environment.sha256"
 [[ "$(git rev-parse HEAD)" == "$target" && -z "$(git status --porcelain)" ]] || fail 'Checkout differs from the release'
 python3 "$release/release-assets.py" publish "$public" "$target"

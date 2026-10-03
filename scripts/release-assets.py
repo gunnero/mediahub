@@ -73,7 +73,7 @@ def stage(source, public, commit):
         elif relative != Path("index.html"):
             destination.parent.mkdir(parents=True, exist_ok=True)
             atomic_copy(file, destination)
-    staged = public / f"mediahub-release-check-{commit}.html"
+    staged = public / "assets" / f"mediahub-release-check-{commit}.html"
     atomic_copy(source / "index.html", staged)
     # Probe the actual files through HTTP before switching the active index.
     return staged
@@ -92,7 +92,7 @@ def publish(public, commit):
     public = Path(public)
     if not re.fullmatch(r"[a-f0-9]{40}", commit):
         raise ValueError("Invalid release commit")
-    staged = public / f"mediahub-release-check-{commit}.html"
+    staged = public / "assets" / f"mediahub-release-check-{commit}.html"
     if staged.is_symlink() or (public / "index.html").is_symlink() or staged.stat().st_mode & 0o777 != 0o644:
         raise ValueError("Unsafe staged index permissions or link")
     os.replace(staged, public / "index.html")
