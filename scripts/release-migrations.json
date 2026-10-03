@@ -1,0 +1,12 @@
+{
+  "description": "MediaHub V2 additive schema; see docs/mediahub/V2_DELIVERY.md for deployment and recovery.",
+  "additive": {
+    "backend/database/migrations/2026_10_03_000001_create_personal_library_tools.php": "666dfd3fcf718c3eda195ec9337cae06ff63afbf643aeb6ada32c3202602b3ea",
+    "backend/database/migrations/2026_10_03_000002_create_discovery_dismissals.php": "a893ea91feaa1a56673504cc5f3fc64163ac30f6316c46c510d36916d828ff6f",
+    "backend/database/migrations/2026_10_03_000003_extend_media_lists.php": "5479fa1b66d3a4969398d7df794a35c0b28ad2d5ee07a9dbe55d24b3ef5880d0",
+    "backend/database/migrations/2026_10_03_000004_create_import_batches.php": "a6514785fd3eb6af6e40fe585e5d40d35b7386c5cf8b533fe393cdced4344db7",
+    "backend/database/migrations/2026_10_03_000005_create_release_planning.php": "26a730222291bc2734c913b016b7d740ee4d422f6f744cb79e1f034509a55048",
+    "backend/database/migrations/2026_10_03_000006_create_movie_nights.php": "52d17973d9c15b9b0c97ed93a500feb32fa27a6dc4a77ad03207f297c3eed58e",
+    "backend/database/migrations/2026_10_03_000007_create_offline_watch_receipts.php": "c54537206c2a42c8d92e173ae2c8e70a77d0884fbbf052a7d77b74f3be6177ec"
+  }
+}

@@ -159,7 +159,7 @@ class MediaEventService
 
     private function meaningfulQuery(User $user): Builder
     {
-        return MediaEvent::forUser($user)->whereIn('event_type', [
+        return MediaEvent::forUser($user)->where(fn ($query) => $query->whereNull('metadata->watch_removed')->orWhere('metadata->watch_removed', false))->whereIn('event_type', [
             MediaEventType::MovieWatched->value,
             MediaEventType::EpisodeWatched->value,
             MediaEventType::RatingCreated->value,
@@ -178,6 +178,7 @@ class MediaEventService
     private function query(User $user, array $filters): Builder
     {
         return MediaEvent::forUser($user)
+            ->where(fn ($query) => $query->whereNull('metadata->watch_removed')->orWhere('metadata->watch_removed', false))
             ->when(! filled($filters['event_type'] ?? null), fn (Builder $query) => $query->where('event_type', '!=', MediaEventType::PlaybackProgressed->value))
             ->when(filled($filters['event_type'] ?? null), fn (Builder $query) => $query->where('event_type', $filters['event_type']))
             ->when(filled($filters['source'] ?? null), fn (Builder $query) => $query->where('source', $filters['source']))

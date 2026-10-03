@@ -1,3 +1,4 @@
+import { PersonalQueue } from "./v2/LibraryTools.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -390,12 +391,15 @@ function QuickActions({ onNavigate }) {
 export function HomeExperience({ apiClient, dashboard, onNavigate, onOpen, onRefreshDashboard, onSessionExpired }) {
   const [upcoming, setUpcoming] = useState([]);
   const [continueItems, setContinueItems] = useState([]);
+  const [queueVersion, setQueueVersion] = useState(0);
   const tonightMovies = useMemo(() => dashboard.moviesToCheckOut || [], [dashboard.moviesToCheckOut]);
 
   return (
     <div className="home-experience">
       <HomeWelcome profile={dashboard.profile} />
+      <details className="v2-panel"><summary>Manage your queue · pins, paused shows, and time available</summary><PersonalQueue apiClient={apiClient} onOpen={onOpen} onSessionExpired={onSessionExpired} onChanged={() => setQueueVersion(value => value + 1)} /></details>
       <ContinueWatching
+        key={queueVersion}
         apiClient={apiClient}
         onItemsLoaded={setContinueItems}
         onNavigate={onNavigate}

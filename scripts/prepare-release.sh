@@ -41,12 +41,13 @@ git bundle create "$output/source.bundle" HEAD
 tar -czf "$output/frontend.tar.gz" -C "$build/dist" .
 cp "$root/scripts/deploy-release.sh" "$output/deploy.sh"
 cp "$root/scripts/release-assets.py" "$output/release-assets.py"
+cp "$root/scripts/migration-plan.py" "$output/migration-plan.py"
 {
   for key in MEDIAHUB_SERVER_HOSTNAME MEDIAHUB_SERVER_USER MEDIAHUB_SERVER_APP_DIR MEDIAHUB_SERVER_BACKUP_ROOT MEDIAHUB_LIVE_URL; do printf '%s=%q\n' "$key" "${!key}"; done
   printf 'MEDIAHUB_BRANCH=%q\n' "$branch"
 } > "$output/release.env"
-chmod 644 "$output/COMMIT" "$output/source.bundle" "$output/frontend.tar.gz" "$output/deploy.sh" "$output/release-assets.py" "$output/release.env"
-(cd "$output" && sha256sum COMMIT source.bundle frontend.tar.gz deploy.sh release-assets.py release.env > SHA256SUMS && chmod 644 SHA256SUMS && sha256sum --check SHA256SUMS)
+chmod 644 "$output/COMMIT" "$output/source.bundle" "$output/frontend.tar.gz" "$output/deploy.sh" "$output/release-assets.py" "$output/release.env" "$output/migration-plan.py"
+(cd "$output" && sha256sum COMMIT source.bundle frontend.tar.gz deploy.sh release-assets.py migration-plan.py release.env > SHA256SUMS && chmod 644 SHA256SUMS && sha256sum --check SHA256SUMS)
 printf 'Prepared %s at %s\n' "$target" "$output"
 printf 'On the configured server, run: sudo -u %q bash %q\n' "$MEDIAHUB_SERVER_USER" "$output/deploy.sh"
 printf 'Append --check for production preflight without applying the release.\n'

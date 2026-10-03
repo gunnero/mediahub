@@ -21,7 +21,7 @@ export function readAppRoute() {
     profileMode: params.get("view") === "edit" ? "edit" : "view",
     settingsTab: ["privacy", "import-export"].includes(params.get("tab")) ? params.get("tab") : "profile",
     discovery: discoveryFilters(detail && background === "discover" ? window.history.state?.mediahubDiscovery : {
-      mode: params.get("source"), query: params.get("query"), type: params.get("type"), category: params.get("category"), page: params.get("page"),
+      ...Object.fromEntries(["genre", "year", "language", "max_runtime", "min_rating", "hide_watched"].map(key => [key, params.get(key)])), mode: params.get("source"), query: params.get("query"), type: params.get("type"), category: params.get("category"), page: params.get("page"),
     }),
   };
 }

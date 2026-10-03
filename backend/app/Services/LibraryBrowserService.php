@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
 use App\Models\MediaLink;
+use App\Models\MediaPreference;
 use App\Models\Movie;
 use App\Models\MovieWatch;
 use App\Models\Note;
@@ -32,6 +33,7 @@ class LibraryBrowserService
     public function movies(User $user, array $filters): array
     {
         $query = Movie::forUser($user);
+        app(PersonalLibraryService::class)->apply($query, $user, 'movie', $filters);
 
         $this->applySearch($query, $filters['search'] ?? null, 'movies.title');
 
@@ -64,6 +66,7 @@ class LibraryBrowserService
     public function shows(User $user, array $filters): array
     {
         $query = Show::forUser($user);
+        app(PersonalLibraryService::class)->apply($query, $user, 'show', $filters);
 
         $this->applySearch($query, $filters['search'] ?? null, 'shows.title');
 
@@ -106,10 +109,13 @@ class LibraryBrowserService
             ->whereNotNull('show_id')
             ->groupBy('show_id');
 
+        $preferences = MediaPreference::where('user_id', $user->id)->where('media_type', 'show')->get();
         $shows = Show::forUser($user)
+            ->whereNotIn('shows.id', $preferences->whereIn('status', ['paused', 'dropped'])->pluck('media_id'))
             ->joinSub($latestWatches, 'latest_watches', 'latest_watches.show_id', '=', 'shows.id')
             ->select('shows.*')
             ->addSelect('latest_watches.latest_watch_at')
+            ->orderByDesc(MediaPreference::select('pinned')->where('user_id', $user->id)->where('media_type', 'show')->whereColumn('media_id', 'shows.id')->limit(1))
             ->orderByDesc('latest_watch_at')
             ->limit($candidateLimit)
             ->get();

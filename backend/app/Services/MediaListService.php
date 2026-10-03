@@ -31,6 +31,8 @@ class MediaListService
             'name' => trim((string) $data['name']),
             'description' => filled($data['description'] ?? null) ? trim((string) $data['description']) : null,
             'visibility' => 'private',
+            'rules' => $data['rules'] ?? null,
+            'cover_style' => $data['cover_style'] ?? 'gold',
         ]);
     }
 
@@ -38,6 +40,8 @@ class MediaListService
     {
         $this->assertOwned($user, $list);
         $list->fill([
+            ...(array_key_exists('rules', $data) ? ['rules' => $data['rules']] : []),
+            ...(array_key_exists('cover_style', $data) ? ['cover_style' => $data['cover_style']] : []),
             ...(array_key_exists('name', $data) ? ['name' => trim((string) $data['name'])] : []),
             ...(array_key_exists('description', $data) ? ['description' => filled($data['description']) ? trim((string) $data['description']) : null] : []),
         ])->save();
@@ -54,6 +58,7 @@ class MediaListService
     public function addItem(User $user, MediaList $list, string $type, int $id): MediaListItem
     {
         $this->assertOwned($user, $list);
+        abort_if($list->rules !== null, 422, 'Smart collections update automatically. Change the rules to change their contents.');
         $this->ownedMedia($user, $type, $id);
         $position = (int) MediaListItem::forUser($user)->where('media_list_id', $list->id)->max('position') + 1;
 
@@ -102,9 +107,13 @@ class MediaListService
             'name' => $list->name,
             'description' => $list->description,
             'visibility' => $list->visibility,
+            'rules' => $list->rules,
+            'coverStyle' => $list->cover_style,
+            'shared' => $list->share_token_hash !== null,
             'itemsCount' => $list->items->count(),
-            'items' => $list->items->map(fn (MediaListItem $item): array => $this->itemSummary($user, $item))->all(),
+            'items' => $list->rules === null ? $list->items->map(fn (MediaListItem $item): array => $this->itemSummary($user, $item))->all() : [],
             'updatedAt' => $list->updated_at?->toIso8601String(),
+            ...($list->rules !== null ? app(SmartCollectionService::class)->items($user, $list) : []),
         ];
     }
 

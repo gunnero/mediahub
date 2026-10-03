@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Episode;
 use App\Models\EpisodeWatch;
 use App\Models\MediaList;
+use App\Models\MediaPreference;
 use App\Models\Movie;
 use App\Models\MovieWatch;
 use App\Models\Note;
@@ -29,11 +30,14 @@ class UserExportService
             'episode_watches' => $this->episodeWatchRows($user),
             'ratings' => $this->ratingRows($user),
             'notes' => $this->noteRows($user),
+            'library_preferences' => MediaPreference::where('user_id', $user->id)->orderBy('id')->get(['media_type', 'media_id', 'pinned', 'status', 'tags'])->toArray(),
             'lists' => MediaList::forUser($user)->with(['items' => fn ($query) => $query->forUser($user)])->get()->map(fn (MediaList $list): array => [
                 'id' => $list->id,
                 'name' => $list->name,
                 'description' => $list->description,
                 'visibility' => $list->visibility,
+                'rules' => $list->rules,
+                'cover_style' => $list->cover_style,
                 'items' => $list->items->map(fn ($item): array => ['media_type' => $item->media_type, 'media_id' => $item->media_id, 'position' => $item->position])->all(),
             ])->all(),
         ];

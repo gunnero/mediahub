@@ -32,6 +32,15 @@ class ReleaseAssetsTest(unittest.TestCase):
             (self.public / name).write_text(text)
         self.commit = 'a' * 40
 
+    def test_service_worker_switches_after_the_index_and_is_readable(self):
+        (self.frontend / 'sw.js').write_text('new worker')
+        (self.public / 'sw.js').write_text('old worker')
+        assets.stage(self.frontend, self.public, self.commit)
+        self.assertEqual((self.public / 'sw.js').read_text(), 'old worker')
+        assets.publish(self.public, self.commit)
+        self.assertEqual((self.public / 'sw.js').read_text(), 'new worker')
+        self.assertEqual((self.public / 'sw.js').stat().st_mode & 0o777, 0o644)
+
     def test_private_umask_never_reaches_public_files_and_index_switch_is_separate(self):
         private = self.root / 'private.env'
         private.write_text('private configuration')
@@ -82,7 +91,7 @@ class LocalReleaseTest(unittest.TestCase):
         self.release = self.root / 'release'
         self.source.mkdir()
         (self.source / 'scripts').mkdir()
-        for name in ['deploy-mediahub.sh', 'scripts/prepare-release.sh', 'scripts/deploy-release.sh', 'scripts/release-assets.py']:
+        for name in ['deploy-mediahub.sh', 'scripts/prepare-release.sh', 'scripts/deploy-release.sh', 'scripts/release-assets.py', 'scripts/migration-plan.py']:
             shutil.copy2(ROOT / name, self.source / name)
         (self.source / '.gitignore').write_text('.mediahub-deploy.env\nnode_modules/\ndist/\nbackend/.env\nbackend/vendor/\nbackend/storage/\nbackend/bootstrap/cache/\nbackend/database/*.sqlite\nbackend/public/index.html\nbackend/public/assets/\n')
         (self.source / 'backend/public').mkdir(parents=True)
@@ -186,6 +195,25 @@ else:
             with sqlite3.connect(db) as connection:
                 self.assertEqual(connection.execute('select value from sample').fetchone(), ('preserved',))
         self.assertEqual(self.deploy().returncode, 0)
+
+    def test_reviewed_additive_migration_can_deploy_and_changed_hash_is_rejected(self):
+        import hashlib
+        folder = self.source / 'backend/database/migrations'
+        folder.mkdir(parents=True)
+        migration = folder / 'new.php'
+        migration.write_text('reviewed additive migration')
+        plan = {'additive': {'backend/database/migrations/new.php': hashlib.sha256(migration.read_bytes()).hexdigest()}}
+        (self.source / 'scripts/release-migrations.json').write_text(json.dumps(plan))
+        self.git('add', '.'); self.git('commit', '-m', 'Reviewed additive schema'); self.git('push')
+        shutil.rmtree(self.release); self.prepare()
+        self.assertEqual(self.deploy('--check').returncode, 0)
+        migration.write_text('changed migration not reviewed')
+        self.git('add', '.'); self.git('commit', '-m', 'Changed schema'); self.git('push')
+        shutil.rmtree(self.release); self.prepare()
+        result = self.deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Migration differs', result.stderr)
+        self.assertFalse((self.root / 'backups').exists())
 
     def test_corrupt_package_and_dirty_checkout_stop_before_mutation(self):
         (self.production / 'version').write_text('local work')

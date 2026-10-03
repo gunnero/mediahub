@@ -11,3 +11,5 @@ Artisan::command('inspire', function () {
 Schedule::command('mediahub:sync-episode-catalog --all --sleep-ms=50')
     ->dailyAt('03:30')
     ->withoutOverlapping(360);
+
+Schedule::command('mediahub:deliver-reminders')->everyFiveMinutes()->withoutOverlapping(10);
