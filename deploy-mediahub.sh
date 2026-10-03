@@ -12,6 +12,12 @@ if [[ -f "$PRIVATE_CONFIG" ]]; then
   set +a
 fi
 
+case "${MEDIAHUB_DEPLOY_TRANSPORT:-}" in
+  local) exec bash "$ROOT_DIR/scripts/prepare-release.sh" "$@" ;;
+  ssh) ;;
+  *) printf 'Set MEDIAHUB_DEPLOY_TRANSPORT=local in the private profile. Legacy SSH requires an explicit ssh value.\n' >&2; exit 1 ;;
+esac
+
 log() { printf '[mediahub deploy] %s\n' "$*"; }
 fail() { printf '[mediahub deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 quote() { printf '%q' "$1"; }

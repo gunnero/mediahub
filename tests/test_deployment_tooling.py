@@ -10,12 +10,15 @@ PUBLIC_FILES = [
     ROOT / "rollback-mediahub.sh",
     ROOT / ".mediahub-deploy.env.example",
     ROOT / "docs/infrastructure/DEPLOYMENT.md",
+    ROOT / "scripts/prepare-release.sh",
+    ROOT / "scripts/deploy-release.sh",
+    ROOT / "scripts/release-assets.py",
 ]
 
 
 class DeploymentToolingTest(unittest.TestCase):
     def test_shell_scripts_are_valid(self):
-        for script in ("deploy-mediahub.sh", "rollback-mediahub.sh"):
+        for script in ("deploy-mediahub.sh", "rollback-mediahub.sh", "scripts/prepare-release.sh", "scripts/deploy-release.sh"):
             result = subprocess.run(
                 ["bash", "-n", str(ROOT / script)],
                 check=False,
@@ -28,7 +31,7 @@ class DeploymentToolingTest(unittest.TestCase):
         combined = "\n".join(path.read_text() for path in PUBLIC_FILES)
         self.assertIsNone(re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", combined))
         self.assertNotIn("/Users/", combined)
-        targets = re.findall(r"^MEDIAHUB_SSH_TARGET=(\S+)$", combined, re.MULTILINE)
+        targets = re.findall(r"^# MEDIAHUB_SSH_TARGET=(\S+)$", combined, re.MULTILINE)
         self.assertEqual(targets, ["deploy@example-host"])
 
     def test_frontend_sync_is_additive(self):

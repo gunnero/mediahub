@@ -1295,6 +1295,34 @@ describe("Media detail request lifecycle", () => {
     await waitFor(() => expect(within(navigation).getByRole("button", { name: "Movies", exact: true })).toHaveClass("active"));
   });
 
+  it("preserves discovery filters and pagination through title details, Back, and reload", async () => {
+    const href = "/discover?query=story&type=movie&category=popular&page=2";
+    window.history.replaceState({}, "", href);
+    setupDetailRequests((path, options, movies) => jsonResponse({ item: movies[0] }));
+    const baseFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn((path, options) => {
+      if (path.startsWith("/api/v1/discover/")) return jsonResponse({ items: [{ media_type: "movie", tmdb_id: 7, title: "First movie", already_in_library: true, existing_library_id: 101 }], pagination: { totalPages: 3 } });
+      return baseFetch(path, options);
+    }));
+    const first = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open First movie details" }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    expect(screen.getByLabelText("Search movies and shows")).toHaveValue("story");
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(href));
+    first.unmount();
+    render(<App />);
+    await screen.findByRole("button", { name: "Open First movie details" });
+    expect(screen.getByLabelText("Media type")).toHaveValue("movie");
+    expect(screen.getByLabelText("Search movies and shows")).toHaveValue("story");
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(window.location.search).toContain("page=3"));
+    await act(async () => window.history.back());
+    await waitFor(() => expect(screen.getByText("Page 2 of 3")).toBeInTheDocument());
+  });
+
   it("opens a copied title URL after authentication and closes to its library", async () => {
     window.history.replaceState({}, "", "/movies/101");
     setupDetailRequests((path, options, movies) => jsonResponse({ item: movies[0] }));

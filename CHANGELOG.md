@@ -6,11 +6,15 @@ Notable public-facing repository and product changes are recorded here. MediaHub
 
 ### Added
 
+- Discovery pagination and URL-based search, category, media type, and page restoration.
+- A local, application-owner deployment package with immutable source/assets, private recovery backups, and HTTPS asset checks before publishing the index.
 - Bookmarkable sections and movie, show, and episode details, with browser Back/Forward navigation and direct links after sign-in.
 - Log a past movie or episode watch with a local date and time; watch history and diary entries retain the chosen time.
 
 ### Fixed
 
+- Cancel stale discovery searches and previews, restore keyboard focus when previews close, and support Escape and Tab navigation.
+- Show save status and recoverable errors for discovery, lists, alerts, and notification settings; prevent duplicate submissions and retry refreshes without repeating successful writes.
 - Validate complete compatibility-import snapshots before writing, add a no-write preview, and require explicit replacement with a private backup. Protect existing annotations and media relationships from orphaning.
 - Cancel obsolete media-detail requests and ignore late responses, errors, and watch-action refreshes after the selected title changes or closes.
 

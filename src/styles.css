@@ -30,6 +30,22 @@
   padding-bottom: 36px;
 }
 
+.action-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.discovery-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
 .screen-intro {
   margin-bottom: 24px;
   max-width: 760px;

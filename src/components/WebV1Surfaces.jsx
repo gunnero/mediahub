@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   CalendarDots,
@@ -14,6 +14,8 @@ import {
   Trash,
 } from "@phosphor-icons/react";
 import { apiRequest, SessionExpiredError } from "../lib/api.js";
+import { discoveryFilters } from "../lib/discovery.js";
+import { useAsyncAction } from "../lib/useAsyncAction.js";
 import { PrivacyControls } from "./ProfileSurfaces.jsx";
 
 function encodeQuery(params) {
@@ -32,7 +34,26 @@ function Artwork({ item }) {
   return item?.poster ? <img alt="" loading="lazy" src={item.poster} /> : <span className="neutral-poster" role="img" aria-label={`No poster for ${item?.title || "title"}`}><span>{initials(item?.title)}</span></span>;
 }
 
-export function DiscoveryPreviewModal({ actions, error = "", loading = false, onClose, preview }) {
+export function DiscoveryPreviewModal({ actions, error = "", feedback, loading = false, onClose, preview }) {
+  const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!preview) return undefined;
+    const previousFocus = document.activeElement;
+    dialogRef.current?.querySelector(".modal-close")?.focus();
+    function handleKey(event) {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCloseRef.current?.(); }
+      if (event.key !== "Tab") return;
+      const buttons = [...dialogRef.current.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')];
+      const first = buttons[0]; const last = buttons.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    // Capture Escape before the always-mounted library detail listener.
+    document.addEventListener("keydown", handleKey, true);
+    return () => { document.removeEventListener("keydown", handleKey, true); if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, [preview?.media_type, preview?.tmdb_id, Boolean(preview)]);
   if (!preview) return null;
   const cast = preview.people?.cast || [];
   const creators = preview.people?.directors || [];
@@ -51,7 +72,7 @@ export function DiscoveryPreviewModal({ actions, error = "", loading = false, on
     ...(preview.genres || []),
   ].filter(Boolean);
 
-  return <div className="discovery-preview discovery-preview-expanded" role="dialog" aria-modal="true" aria-label={`${preview.title} discovery preview`}>
+  return <div ref={dialogRef} className="discovery-preview discovery-preview-expanded" role="dialog" aria-modal="true" aria-label={`${preview.title} discovery preview`}>
     {preview.backdrop ? <div className="discovery-preview-backdrop" aria-hidden="true"><img alt="" src={preview.backdrop} /></div> : null}
     <button className="modal-close" onClick={onClose} type="button" aria-label="Close discovery preview">×</button>
     <div className="discovery-preview-art"><Artwork item={preview} /></div>
@@ -64,14 +85,19 @@ export function DiscoveryPreviewModal({ actions, error = "", loading = false, on
       {actions ? <div className="discovery-preview-actions discovery-preview-actions--top" role="group" aria-label="Quick actions">{actions}</div> : null}
       {preview.watched ? <p className="discovery-memory-state"><CheckCircle size={17} weight="fill" /> You watched this{preview.watched_count > 1 ? ` ${preview.watched_count} times` : ""}.</p> : null}
       <section className="discovery-detail-section"><strong>Plot</strong><p>{preview.overview || "No overview is available yet."}</p></section>
-      {loading ? <div className="empty-strip compact">Loading complete movie details...</div> : null}
+      {loading ? <div className="empty-strip compact">Loading complete details...</div> : null}
       {error ? <div className="detail-error">{error}</div> : null}
+      {feedback}
       {cast.length || creators.length ? <section className="discovery-detail-section people-section"><div className="detail-section-heading"><strong>Cast & creators</strong><span>{cast.length + creators.length} people</span></div><div className="people-grid">{[...creators, ...cast].map((person, index) => <article key={`${person.id || person.name}-${index}`}>{person.image ? <img alt="" loading="lazy" src={person.image} /> : <span className="person-fallback">{initials(person.name)}</span>}<span><strong>{person.name}</strong><small>{person.role || "Cast"}</small></span></article>)}</div></section> : null}
       {production.length ? <section className="discovery-detail-section production-section"><div className="detail-section-heading"><strong>Production</strong></div><div className="metadata-strip">{production.map((fact) => <span key={fact}>{fact}</span>)}</div></section> : null}
       {actions ? <div className="discovery-preview-actions discovery-preview-actions--bottom" role="group" aria-label="Actions after details">{actions}</div> : null}
       {!preview.already_in_library ? <p className="discovery-action-help"><strong>Library</strong> saves the title to your permanent collection. <strong>Watchlist</strong> saves it and marks it as something you plan to watch.</p> : null}
     </div>
   </div>;
+}
+
+function ActionFeedback({ action }) {
+  return <>{action.error ? <div className="detail-error" role="alert">{action.error} <button className="text-action" disabled={action.pending} onClick={action.retry} type="button">{action.refreshOnly ? "Retry refresh" : "Try again"}</button></div> : null}{action.status ? <div className="settings-status" role="status">{action.status}</div> : null}</>;
 }
 
 function useSafeLoad(loader, dependencies, onSessionExpired) {
@@ -91,16 +117,30 @@ function useSafeLoad(loader, dependencies, onSessionExpired) {
   return [state, setState];
 }
 
-export function DiscoverSection({ apiClient = apiRequest, initialType = "all", navigationKey = 0, onLibraryChanged, onOpen, onSessionExpired }) {
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState("discover");
-  const [type, setType] = useState(initialType);
-  const [category, setCategory] = useState("trending");
-  const [state, setState] = useState({ loading: true, error: "", items: [] });
-  const [adding, setAdding] = useState("");
+export function DiscoverSection({ apiClient = apiRequest, filters, onFiltersChange, initialType = "all", navigationKey = 0, onLibraryChanged, onOpen, onSessionExpired }) {
+  const [localFilters, setLocalFilters] = useState(() => discoveryFilters({ type: initialType }));
+  const currentFilters = filters || localFilters;
+  const { query, mode, type, category, page } = currentFilters;
+  const [reload, setReload] = useState(0);
+  const [state, setState] = useState({ loading: true, error: "", items: [], totalPages: 0 });
+  const action = useAsyncAction(onSessionExpired);
+  const adding = action.pending;
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequest = useRef(null);
+  const sessionExpired = useRef(onSessionExpired);
+  sessionExpired.current = onSessionExpired;
+
+  function changeFilters(changes, options) {
+    const next = discoveryFilters({ ...currentFilters, page: 1, ...changes });
+    closePreview();
+    action.clear();
+    if (onFiltersChange) onFiltersChange(next, options);
+    else setLocalFilters(next);
+  }
+
+  useEffect(() => () => { previewRequest.current?.abort(); previewRequest.current = null; }, []);
   const categories = [
     ["trending", "Trending"],
     ["popular", "Popular"],
@@ -110,76 +150,92 @@ export function DiscoverSection({ apiClient = apiRequest, initialType = "all", n
   ];
 
   useEffect(() => {
-    setType(initialType);
+    if (!filters) setLocalFilters(discoveryFilters({ type: initialType }));
   }, [initialType, navigationKey]);
 
   useEffect(() => {
     const safeQuery = query.trim();
     if (mode === "library" && safeQuery.length < 2) {
-      setState({ loading: false, error: "", items: [] });
+      setState({ loading: false, error: "", items: [], totalPages: 0 });
       return undefined;
     }
     const controller = new AbortController();
+    setState((current) => ({ ...current, loading: true, error: "" }));
     const timer = window.setTimeout(async () => {
-      setState((current) => ({ ...current, loading: true, error: "" }));
       try {
         const endpoint = mode === "discover"
           ? safeQuery.length >= 2
-            ? `/api/v1/discover/search?${encodeQuery({ query: safeQuery, type, page: 1 })}`
-            : `/api/v1/discover/browse?${encodeQuery({ category, type, page: 1 })}`
+            ? `/api/v1/discover/search?${encodeQuery({ query: safeQuery, type, page })}`
+            : `/api/v1/discover/browse?${encodeQuery({ category, type, page })}`
           : `/api/v1/library/search?${encodeQuery({ query: safeQuery, type, limit: 30 })}`;
         const payload = await apiClient(endpoint, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         const items = mode === "discover" ? payload.items || [] : [
           ...(payload.movies || []),
           ...(payload.shows || []),
           ...(payload.episodes || []),
         ];
-        setState({ loading: false, error: payload.status === "disabled" ? "Discovery is unavailable until TMDB is enabled." : "", items });
+        const error = payload.status === "disabled" ? "Discovery is unavailable until TMDB is enabled." : payload.status === "unavailable" ? "Discovery is temporarily unavailable. Try again." : "";
+        setState({ loading: false, error, items, totalPages: Math.min(500, Math.max(0, Number(payload.pagination?.totalPages) || 0)) });
       } catch (error) {
-        if (error?.name === "AbortError") return;
-        if (error instanceof SessionExpiredError) onSessionExpired?.();
-        else setState({ loading: false, error: error.message || "Search is temporarily unavailable.", items: [] });
+        if (controller.signal.aborted || error?.name === "AbortError") return;
+        if (error instanceof SessionExpiredError) sessionExpired.current?.();
+        else setState((current) => ({ ...current, loading: false, error: error.message || "Search is temporarily unavailable." }));
       }
     }, 350);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [apiClient, category, mode, onSessionExpired, query, type]);
+  }, [apiClient, category, mode, page, query, reload, type]);
 
-  async function add(item, action) {
-    setAdding(`${item.media_type}-${item.tmdb_id}-${action}`);
-    setState((current) => ({ ...current, error: "" }));
-    try {
-      const plural = item.media_type === "show" ? "shows" : "movies";
-      const payload = await apiClient(`/api/v1/discover/${plural}/${item.tmdb_id}/add`, { method: "POST", body: { action } });
-      setState((current) => ({ ...current, items: current.items.map((candidate) => candidate.tmdb_id === item.tmdb_id && candidate.media_type === item.media_type ? { ...candidate, already_in_library: true, existing_library_id: payload.item?.id } : candidate) }));
-      setPreview((current) => current?.tmdb_id === item.tmdb_id && current?.media_type === item.media_type ? { ...current, already_in_library: true, existing_library_id: payload.item?.id } : current);
-      await onLibraryChanged?.();
-    } catch (error) {
-      if (error instanceof SessionExpiredError) onSessionExpired?.();
-      else setState((current) => ({ ...current, error: error.message || "This title could not be added." }));
-    } finally { setAdding(""); }
+  function add(item, kind) {
+    if (!item) return;
+    const plural = item.media_type === "show" ? "shows" : "movies";
+    return action.run({
+      save: () => apiClient(`/api/v1/discover/${plural}/${item.tmdb_id}/add`, { method: "POST", body: { action: kind } }),
+      onSaved: (payload) => {
+        const updated = { already_in_library: true, existing_library_id: payload.item?.id };
+        setState((current) => ({ ...current, items: current.items.map((candidate) => candidate.tmdb_id === item.tmdb_id && candidate.media_type === item.media_type ? { ...candidate, ...updated } : candidate) }));
+        setPreview((current) => current?.tmdb_id === item.tmdb_id && current?.media_type === item.media_type ? { ...current, ...updated } : current);
+      },
+      refresh: () => onLibraryChanged?.(),
+      success: "Title added.",
+    });
+  }
+
+  function closePreview() {
+    previewRequest.current?.abort();
+    previewRequest.current = null;
+    setPreview(null);
+    setPreviewLoading(false);
+    setPreviewError("");
   }
 
   async function openPreview(item) {
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
     setPreview(item);
     setPreviewLoading(true);
     setPreviewError("");
     try {
-      const payload = await apiClient(`/api/v1/discover/${item.media_type}/${item.tmdb_id}`);
-      if (payload?.item) setPreview((current) => current?.tmdb_id === item.tmdb_id ? { ...current, ...payload.item } : current);
+      const payload = await apiClient(`/api/v1/discover/${item.media_type}/${item.tmdb_id}`, { signal: controller.signal });
+      if (previewRequest.current !== controller) return;
+      if (payload?.item) setPreview((current) => ({ ...current, ...payload.item, already_in_library: current.already_in_library || payload.item.already_in_library, existing_library_id: current.existing_library_id || payload.item.existing_library_id }));
       else setPreviewError("Complete details are temporarily unavailable.");
     } catch (error) {
-      if (error instanceof SessionExpiredError) onSessionExpired?.();
+      if (previewRequest.current !== controller || error?.name === "AbortError") return;
+      if (error instanceof SessionExpiredError) sessionExpired.current?.();
       else setPreviewError("Complete details are temporarily unavailable. The basic title information is still shown.");
     } finally {
-      setPreviewLoading(false);
+      if (previewRequest.current === controller) setPreviewLoading(false);
     }
   }
 
   function openResult(item, canonicalItem) {
     if (mode === "library" || item.already_in_library) {
+      closePreview();
       onOpen?.(canonicalItem);
       return;
     }
@@ -189,10 +245,11 @@ export function DiscoverSection({ apiClient = apiRequest, initialType = "all", n
 
   return <section className="web-v1-screen discover-screen">
     <header className="screen-intro"><span className="eyebrow">Find your next story</span><h2>Discover</h2><p>Search your entertainment memory or explore movies and shows beyond your library.</p></header>
-    <div className="segmented-control" aria-label="Search source"><button className={mode === "library" ? "active" : ""} onClick={() => setMode("library")} type="button">My Library</button><button className={mode === "discover" ? "active" : ""} onClick={() => setMode("discover")} type="button">Discover</button></div>
-    <div className="discovery-search-row"><label><MagnifyingGlass size={20} /><input aria-label="Search movies and shows" autoFocus onChange={(event) => setQuery(event.target.value)} placeholder={mode === "discover" ? "Search TMDB movies and shows" : "Search your movies, shows, and episodes"} type="search" value={query} /></label><select aria-label="Media type" onChange={(event) => setType(event.target.value)} value={type}><option value="all">Movies and shows</option><option value="movie">Movies</option><option value="show">Shows</option>{mode === "library" ? <option value="episode">Episodes</option> : null}</select></div>
-    {mode === "discover" && query.trim().length < 2 ? <div className="discovery-categories" role="tablist" aria-label="Discovery categories">{categories.map(([id, label]) => <button aria-selected={category === id} className={category === id ? "active" : ""} key={id} onClick={() => setCategory(id)} role="tab" type="button">{label}</button>)}</div> : null}
-    {state.error ? <div className="detail-error">{state.error}</div> : null}
+    <div className="segmented-control" aria-label="Search source"><button className={mode === "library" ? "active" : ""} onClick={() => changeFilters({ mode: "library" })} type="button">My Library</button><button className={mode === "discover" ? "active" : ""} onClick={() => changeFilters({ mode: "discover" })} type="button">Discover</button></div>
+    <div className="discovery-search-row"><label><MagnifyingGlass size={20} /><input aria-label="Search movies and shows" autoFocus maxLength={120} onChange={(event) => changeFilters({ query: event.target.value }, { replace: true })} placeholder={mode === "discover" ? "Search TMDB movies and shows" : "Search your movies, shows, and episodes"} type="search" value={query} /></label><select aria-label="Media type" onChange={(event) => changeFilters({ type: event.target.value })} value={type}><option value="all">Movies and shows</option><option value="movie">Movies</option><option value="show">Shows</option>{mode === "library" ? <option value="episode">Episodes</option> : null}</select></div>
+    {mode === "discover" && query.trim().length < 2 ? <div className="discovery-categories" role="tablist" aria-label="Discovery categories">{categories.map(([id, label]) => <button aria-selected={category === id} className={category === id ? "active" : ""} key={id} onClick={() => changeFilters({ category: id })} role="tab" type="button">{label}</button>)}</div> : null}
+    {state.error ? <div className="detail-error" role="alert">{state.error} <button className="text-action" disabled={state.loading} onClick={() => setReload((value) => value + 1)} type="button">Retry search</button></div> : null}
+    {!preview ? <ActionFeedback action={action} /> : null}
     {state.loading ? <div className="empty-strip compact">Searching...</div> : null}
     {!state.loading && mode === "library" && query.trim().length < 2 ? <div className="empty-strip compact">Type at least two characters to search your library</div> : null}
     {!state.loading && mode === "discover" && query.trim().length < 2 && !state.items.length && !state.error ? <div className="empty-strip compact">No titles are available in this category right now</div> : null}
@@ -203,7 +260,8 @@ export function DiscoverSection({ apiClient = apiRequest, initialType = "all", n
       const canonicalItem = { ...item, kind: mediaType, movieId: mediaType === "movie" ? (item.existing_library_id || item.movieId || item.id) : undefined, showId: mediaType === "show" ? (item.existing_library_id || item.showId || item.id) : undefined, episodeId: mediaType === "episode" ? (item.episodeId || item.id) : undefined };
       return <article className="discovery-result" key={`${mediaType}-${item.tmdb_id || item.id}`}><button className="discovery-art" onClick={() => openResult(item, canonicalItem)} type="button"><Artwork item={item} /></button><div><span className="eyebrow">{mediaType}</span><button className="discovery-title" aria-label={`Open ${item.title} details`} onClick={() => openResult(item, canonicalItem)} type="button"><h3>{item.title}</h3></button><small>{item.year || item.releaseYear || "Year unavailable"}</small>{item.watched ? <b className="discovery-watched"><CheckCircle size={15} weight="fill" /> {item.watched_count > 1 ? `Watched ${item.watched_count} times` : "Watched"}</b> : null}<p>{item.overview || item.subtitle || "No overview is available yet."}</p>{mode === "discover" ? <div className="result-actions">{item.already_in_library ? <button className="secondary-action" onClick={() => onOpen?.(canonicalItem)} type="button"><CheckCircle size={17} /> Already in Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => add(item, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => add(item, "watchlist")} type="button">Add to Watchlist</button>{mediaType === "movie" ? <button className="text-action" disabled={Boolean(adding)} onClick={() => add(item, "watched")} type="button">Mark Watched</button> : null}</>}</div> : <button className="secondary-action" onClick={() => onOpen?.(canonicalItem)} type="button">Open details</button>}</div></article>;
     })}</div>
-    <DiscoveryPreviewModal actions={<div className="modal-actions">{preview?.already_in_library ? <button className="primary-action" onClick={() => openResult(preview, { ...preview, kind: preview.media_type, movieId: preview.media_type === "movie" ? preview.existing_library_id : undefined, showId: preview.media_type === "show" ? preview.existing_library_id : undefined })} type="button">Open in My Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => add(preview, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => add(preview, "watchlist")} type="button">Add to Watchlist</button></>}</div>} error={previewError} loading={previewLoading} onClose={() => setPreview(null)} preview={preview} />
+    {mode === "discover" && (state.totalPages > 1 || page > 1) ? <nav className="library-pagination discovery-pagination" aria-label="Discovery pages"><button className="secondary-action" disabled={state.loading || page <= 1} onClick={() => changeFilters({ page: page - 1 })} aria-label="Previous page" type="button">Previous</button><span aria-live="polite">Page {page}{state.totalPages ? ` of ${state.totalPages}` : ""}</span><button className="secondary-action" disabled={state.loading || Boolean(state.error) || page >= state.totalPages} onClick={() => changeFilters({ page: page + 1 })} aria-label="Next page" type="button">Next</button></nav> : null}
+    <DiscoveryPreviewModal feedback={<ActionFeedback action={action} />} actions={<div className="modal-actions">{preview?.already_in_library ? <button className="primary-action" onClick={() => openResult(preview, { ...preview, kind: preview.media_type, movieId: preview.media_type === "movie" ? preview.existing_library_id : undefined, showId: preview.media_type === "show" ? preview.existing_library_id : undefined })} type="button">Open in My Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => add(preview, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => add(preview, "watchlist")} type="button">Add to Watchlist</button></>}</div>} error={previewError} loading={previewLoading} onClose={closePreview} preview={preview} />
   </section>;
 }
 
@@ -270,11 +328,23 @@ function alertMatchesFilter(alert, filter) {
 export function AlertsSection({ apiClient = apiRequest, onAlertsChanged, onOpen, onSessionExpired }) {
   const [reload, setReload] = useState(0);
   const [filter, setFilter] = useState("all");
-  const [state] = useSafeLoad(() => apiClient("/api/v1/alerts"), [apiClient, reload], onSessionExpired);
+  const [state, setState] = useSafeLoad(() => apiClient("/api/v1/alerts"), [apiClient, reload], onSessionExpired);
   const items = (state.data?.alerts || []).filter((item) => alertMatchesFilter(item, filter));
-  async function read(alert) { await apiClient(`/api/v1/alerts/${alert.id}/read`, { method: "POST" }); setReload((value) => value + 1); await onAlertsChanged?.(); }
-  async function readAll() { await apiClient("/api/v1/alerts/read-all", { method: "POST" }); setReload((value) => value + 1); await onAlertsChanged?.(); }
-  return <section className="web-v1-screen alerts-screen"><header className="screen-intro"><span className="eyebrow">Stay current</span><h2>Alerts</h2><p>Release reminders and library issues that deserve your attention.</p></header><div className="alerts-toolbar"><div className="segmented-control">{[["all", "All"], ["new-episodes", "New episodes"], ["upcoming", "Upcoming"], ["movies", "Movies"], ["reminders", "Reminders"]].map(([id, label]) => <button className={filter === id ? "active" : ""} key={id} onClick={() => setFilter(id)} type="button">{label}</button>)}</div><button className="text-action" onClick={readAll} type="button">Mark all read</button></div>{state.error ? <div className="detail-error">{state.error}</div> : null}{state.loading ? <div className="empty-strip compact">Loading alerts...</div> : null}<div className="alerts-list">{items.map((alert) => <article className={alert.unread ? "unread" : ""} key={alert.id}><button onClick={() => onOpen?.({ ...alert, ...alert.payload })} type="button"><Bell size={22} /><span><strong>{alert.title}</strong><small>{alert.subtitle}</small></span><em>{alert.dueText}</em></button>{alert.unread ? <button aria-label={`Mark ${alert.title} read`} className="text-action" onClick={() => read(alert)} type="button">Mark read</button> : null}</article>)}</div>{!state.loading && !items.length ? <div className="empty-strip compact">No alerts in this view</div> : null}</section>;
+  const action = useAsyncAction(onSessionExpired);
+  async function refresh() {
+    const data = await apiClient("/api/v1/alerts");
+    setState({ loading: false, error: "", data });
+    await onAlertsChanged?.();
+  }
+  function markRead(alert) {
+    return action.run({
+      save: () => apiClient(alert ? `/api/v1/alerts/${alert.id}/read` : "/api/v1/alerts/read-all", { method: "POST" }),
+      onSaved: () => setState((current) => ({ ...current, data: { ...current.data, alerts: (current.data?.alerts || []).map((item) => !alert || item.id === alert.id ? { ...item, unread: false } : item) } })),
+      refresh,
+      success: alert ? "Alert marked read." : "All alerts marked read.",
+    });
+  }
+  return <section className="web-v1-screen alerts-screen"><header className="screen-intro"><span className="eyebrow">Stay current</span><h2>Alerts</h2><p>Release reminders and library issues that deserve your attention.</p></header><div className="alerts-toolbar"><div className="segmented-control">{[["all", "All"], ["new-episodes", "New episodes"], ["upcoming", "Upcoming"], ["movies", "Movies"], ["reminders", "Reminders"]].map(([id, label]) => <button className={filter === id ? "active" : ""} key={id} onClick={() => setFilter(id)} type="button">{label}</button>)}</div><button className="text-action" disabled={action.pending || state.loading} onClick={() => markRead(null)} type="button">Mark all read</button></div><ActionFeedback action={action} />{state.error ? <div className="detail-error" role="alert">{state.error} <button className="text-action" onClick={() => setReload((value) => value + 1)} type="button">Retry loading alerts</button></div> : null}{state.loading ? <div className="empty-strip compact">Loading alerts...</div> : null}<div className="alerts-list">{items.map((alert) => <article className={alert.unread ? "unread" : ""} key={alert.id}><button onClick={() => onOpen?.({ ...alert, ...alert.payload })} type="button"><Bell size={22} /><span><strong>{alert.title}</strong><small>{alert.subtitle}</small></span><em>{alert.dueText}</em></button>{alert.unread ? <button aria-label={`Mark ${alert.title} read`} className="text-action" disabled={action.pending} onClick={() => markRead(alert)} type="button">Mark read</button> : null}</article>)}</div>{!state.loading && !items.length ? <div className="empty-strip compact">No alerts in this view</div> : null}</section>;
 }
 
 export function StatsSection({ apiClient = apiRequest, onSessionExpired }) {
@@ -339,8 +409,7 @@ export function ListsSection({ apiClient = apiRequest, onOpen, onSessionExpired 
   const [query, setQuery] = useState("");
   const [listQuery, setListQuery] = useState("");
   const [search, setSearch] = useState([]);
-  const [error, setError] = useState("");
-  const [state] = useSafeLoad(() => apiClient("/api/v1/lists"), [apiClient, reload], onSessionExpired);
+  const [state, setState] = useSafeLoad(() => apiClient("/api/v1/lists"), [apiClient, reload], onSessionExpired);
   const lists = state.data?.lists || [];
   const visibleLists = lists.filter((list) => list.name.toLowerCase().includes(listQuery.trim().toLowerCase()));
   const selected = lists.find((list) => list.id === selectedId) || lists[0] || null;
@@ -348,28 +417,71 @@ export function ListsSection({ apiClient = apiRequest, onOpen, onSessionExpired 
   useEffect(() => { if (!selectedId && lists[0]) setSelectedId(lists[0].id); }, [lists, selectedId]);
   useEffect(() => { setRename(selected?.name || ""); setRenaming(false); }, [selected?.id, selected?.name]);
 
-  async function create(event) { event.preventDefault(); if (!name.trim()) return; await apiClient("/api/v1/lists", { method: "POST", body: { name: name.trim() } }); setName(""); setReload((value) => value + 1); }
-  async function removeList() { if (!selected) return; await apiClient(`/api/v1/lists/${selected.id}`, { method: "DELETE" }); setSelectedId(null); setReload((value) => value + 1); }
-  async function renameList(event) { event.preventDefault(); if (!selected || !rename.trim()) return; await apiClient(`/api/v1/lists/${selected.id}`, { method: "PATCH", body: { name: rename.trim() } }); setRenaming(false); setReload((value) => value + 1); }
-  async function searchLibrary(event) { event.preventDefault(); if (query.trim().length < 2) return; try { const payload = await apiClient(`/api/v1/library/search?${encodeQuery({ query: query.trim(), type: "all", limit: 20 })}`); setSearch([...(payload.movies || []), ...(payload.shows || [])]); } catch (searchError) { setError(searchError.message || "Library search failed."); } }
-  async function add(item) { if (!selected) return; const type = item.kind || item.media_type; await apiClient(`/api/v1/lists/${selected.id}/items`, { method: "POST", body: { media_type: type, media_id: type === "movie" ? (item.movieId || item.id) : (item.showId || item.id) } }); setReload((value) => value + 1); }
-  async function remove(item) { await apiClient(`/api/v1/lists/${selected.id}/items/${item.id}`, { method: "DELETE" }); setReload((value) => value + 1); }
-  async function move(item, direction) { const items = [...selected.items]; const index = items.findIndex((candidate) => candidate.id === item.id); const target = index + direction; if (target < 0 || target >= items.length) return; [items[index], items[target]] = [items[target], items[index]]; await apiClient(`/api/v1/lists/${selected.id}/reorder`, { method: "PATCH", body: { item_ids: items.map((candidate) => candidate.id) } }); setReload((value) => value + 1); }
+  const action = useAsyncAction(onSessionExpired);
+  const searchAction = useAsyncAction(onSessionExpired);
+  async function refresh() {
+    const data = await apiClient("/api/v1/lists");
+    setState({ loading: false, error: "", data });
+  }
+  function save(path, method, body, onSaved, success) {
+    return action.run({ save: () => apiClient(path, { method, ...(body ? { body } : {}) }), onSaved, refresh, success });
+  }
+  function create(event) {
+    event.preventDefault(); if (!name.trim()) return;
+    return save("/api/v1/lists", "POST", { name: name.trim() }, (payload) => { setName(""); if (payload.list?.id) setSelectedId(payload.list.id); }, "List created.");
+  }
+  function removeList() {
+    if (!selected) return;
+    const id = selected.id;
+    return save(`/api/v1/lists/${id}`, "DELETE", null, () => {
+      setSelectedId(null);
+      setState((current) => ({ ...current, data: { ...current.data, lists: current.data.lists.filter((list) => list.id !== id) } }));
+    }, "List deleted.");
+  }
+  function renameList(event) {
+    event.preventDefault(); if (!selected || !rename.trim()) return;
+    return save(`/api/v1/lists/${selected.id}`, "PATCH", { name: rename.trim() }, () => setRenaming(false), "List renamed.");
+  }
+  function searchLibrary(event) {
+    event.preventDefault(); if (query.trim().length < 2) return;
+    return searchAction.run({ pending: "Searching…", save: () => apiClient(`/api/v1/library/search?${encodeQuery({ query: query.trim(), type: "all", limit: 20 })}`), onSaved: (payload) => setSearch([...(payload.movies || []), ...(payload.shows || [])]), success: "Search complete." });
+  }
+  function add(item) {
+    if (!selected) return;
+    const type = item.kind || item.media_type;
+    return save(`/api/v1/lists/${selected.id}/items`, "POST", { media_type: type, media_id: type === "movie" ? (item.movieId || item.id) : (item.showId || item.id) }, null, "Title added to list.");
+  }
+  function remove(item) { return save(`/api/v1/lists/${selected.id}/items/${item.id}`, "DELETE", null, null, "Title removed from list."); }
+  function move(item, direction) {
+    const items = [...selected.items]; const index = items.findIndex((candidate) => candidate.id === item.id); const target = index + direction;
+    if (target < 0 || target >= items.length) return;
+    [items[index], items[target]] = [items[target], items[index]];
+    return save(`/api/v1/lists/${selected.id}/reorder`, "PATCH", { item_ids: items.map((candidate) => candidate.id) }, null, "List order saved.");
+  }
 
-  return <section className="web-v1-screen lists-screen"><header className="screen-intro"><span className="eyebrow">Your collections</span><h2>Your Lists</h2><p>Private, hand-built collections for the stories you want to remember together.</p></header>{error || state.error ? <div className="detail-error">{error || state.error}</div> : null}<div className="lists-layout"><aside><form onSubmit={create}><label><span>Create List</span><input aria-label="New list name" onChange={(event) => setName(event.target.value)} placeholder="Watch with family" value={name} /></label><button aria-label="Create list" className="icon-action" type="submit"><Plus /></button></form><label className="list-filter"><span>Search Lists</span><input aria-label="Search lists" onChange={(event) => setListQuery(event.target.value)} placeholder="Find a list" type="search" value={listQuery} /></label>{visibleLists.map((list) => <button className={selected?.id === list.id ? "active" : ""} key={list.id} onClick={() => setSelectedId(list.id)} type="button"><ListBullets /><span><strong>{list.name}</strong><small>{list.itemsCount} items · Private</small></span></button>)}{lists.length > 0 && visibleLists.length === 0 ? <div className="empty-strip compact">No lists match your search</div> : null}</aside><div className="list-detail">{selected ? <><header><div><span className="eyebrow">Private list</span>{renaming ? <form className="list-rename-form" onSubmit={renameList}><input aria-label="Rename list" autoFocus onChange={(event) => setRename(event.target.value)} value={rename} /><button className="secondary-action" type="submit">Save</button><button className="text-action" onClick={() => setRenaming(false)} type="button">Cancel</button></form> : <h3>{selected.name}</h3>}</div><div className="list-header-actions"><button aria-label="Rename list" className="icon-action" onClick={() => setRenaming(true)} type="button"><PencilSimple /></button><button aria-label="Delete list" className="icon-action danger" onClick={removeList} type="button"><Trash /></button></div></header><div className="list-items">{selected.items.map((item, index) => <article key={item.id}><button className="list-item-main" onClick={() => onOpen?.({ ...item, kind: item.mediaType, movieId: item.mediaType === "movie" ? item.mediaId : undefined, showId: item.mediaType === "show" ? item.mediaId : undefined })} type="button"><span className="list-position">{index + 1}</span><span className="list-art"><Artwork item={item} /></span><span><strong>{item.title}</strong><small>{item.mediaType} · {item.year || "Year unavailable"}</small></span></button><div><button aria-label={`Move ${item.title} up`} className="icon-action" disabled={index === 0} onClick={() => move(item, -1)} type="button"><CaretLeft /></button><button aria-label={`Move ${item.title} down`} className="icon-action" disabled={index === selected.items.length - 1} onClick={() => move(item, 1)} type="button"><CaretRight /></button><button aria-label={`Remove ${item.title}`} className="icon-action danger" onClick={() => remove(item)} type="button"><Trash /></button></div></article>)}</div><form className="list-search" onSubmit={searchLibrary}><label><MagnifyingGlass /><input aria-label="Search library for list" onChange={(event) => setQuery(event.target.value)} placeholder="Find a movie or show" value={query} /></label><button className="secondary-action" type="submit">Search library</button></form><div className="list-search-results">{search.map((item) => <button key={`${item.kind}-${item.id}`} onClick={() => add(item)} type="button"><Plus /><span><strong>{item.title}</strong><small>{item.kind}</small></span></button>)}</div></> : <div className="empty-strip compact">Create your first private list</div>}</div></div></section>;
+  return <section className="web-v1-screen lists-screen"><header className="screen-intro"><span className="eyebrow">Your collections</span><h2>Your Lists</h2><p>Private, hand-built collections for the stories you want to remember together.</p></header><ActionFeedback action={action} /><ActionFeedback action={searchAction} />{state.error ? <div className="detail-error" role="alert">{state.error} <button className="text-action" onClick={() => setReload((value) => value + 1)} type="button">Retry loading lists</button></div> : null}<fieldset className="action-fieldset" disabled={state.loading || action.pending || Boolean(action.error && action.refreshOnly)}><div className="lists-layout"><aside><form onSubmit={create}><label><span>Create List</span><input aria-label="New list name" onChange={(event) => { action.clear(); setName(event.target.value); }} placeholder="Watch with family" value={name} /></label><button aria-label="Create list" className="icon-action" type="submit"><Plus /></button></form><label className="list-filter"><span>Search Lists</span><input aria-label="Search lists" onChange={(event) => setListQuery(event.target.value)} placeholder="Find a list" type="search" value={listQuery} /></label>{visibleLists.map((list) => <button className={selected?.id === list.id ? "active" : ""} key={list.id} onClick={() => { action.clear(); setSelectedId(list.id); }} type="button"><ListBullets /><span><strong>{list.name}</strong><small>{list.itemsCount} items · Private</small></span></button>)}{lists.length > 0 && visibleLists.length === 0 ? <div className="empty-strip compact">No lists match your search</div> : null}</aside><div className="list-detail">{selected ? <><header><div><span className="eyebrow">Private list</span>{renaming ? <form className="list-rename-form" onSubmit={renameList}><input aria-label="Rename list" autoFocus onChange={(event) => { action.clear(); setRename(event.target.value); }} value={rename} /><button className="secondary-action" type="submit">Save</button><button className="text-action" onClick={() => setRenaming(false)} type="button">Cancel</button></form> : <h3>{selected.name}</h3>}</div><div className="list-header-actions"><button aria-label="Rename list" className="icon-action" onClick={() => setRenaming(true)} type="button"><PencilSimple /></button><button aria-label="Delete list" className="icon-action danger" onClick={removeList} type="button"><Trash /></button></div></header><div className="list-items">{selected.items.map((item, index) => <article key={item.id}><button className="list-item-main" onClick={() => onOpen?.({ ...item, kind: item.mediaType, movieId: item.mediaType === "movie" ? item.mediaId : undefined, showId: item.mediaType === "show" ? item.mediaId : undefined })} type="button"><span className="list-position">{index + 1}</span><span className="list-art"><Artwork item={item} /></span><span><strong>{item.title}</strong><small>{item.mediaType} · {item.year || "Year unavailable"}</small></span></button><div><button aria-label={`Move ${item.title} up`} className="icon-action" disabled={index === 0} onClick={() => move(item, -1)} type="button"><CaretLeft /></button><button aria-label={`Move ${item.title} down`} className="icon-action" disabled={index === selected.items.length - 1} onClick={() => move(item, 1)} type="button"><CaretRight /></button><button aria-label={`Remove ${item.title}`} className="icon-action danger" onClick={() => remove(item)} type="button"><Trash /></button></div></article>)}</div><form className="list-search" onSubmit={searchLibrary}><label><MagnifyingGlass /><input aria-label="Search library for list" onChange={(event) => setQuery(event.target.value)} placeholder="Find a movie or show" value={query} /></label><button className="secondary-action" disabled={searchAction.pending} type="submit">Search library</button></form><div className="list-search-results">{search.map((item) => <button key={`${item.kind}-${item.id}`} onClick={() => add(item)} type="button"><Plus /><span><strong>{item.title}</strong><small>{item.kind}</small></span></button>)}</div></> : <div className="empty-strip compact">Create your first private list</div>}</div></div></fieldset></section>;
 }
 
 export function WebSettingsSection({ apiClient = apiRequest, initialSection = "profile", onSessionExpired }) {
   const [section, setSection] = useState(initialSection);
   const [reload, setReload] = useState(0);
-  const [status, setStatus] = useState("");
+  const action = useAsyncAction(onSessionExpired);
   const [settingsState] = useSafeLoad(() => apiClient("/api/v1/settings"), [apiClient], onSessionExpired);
-  const [preferencesState] = useSafeLoad(() => apiClient("/api/v1/notification-preferences"), [apiClient, reload], onSessionExpired);
+  const [preferencesState, setPreferencesState] = useSafeLoad(() => apiClient("/api/v1/notification-preferences"), [apiClient, reload], onSessionExpired);
   const settings = settingsState.data || {};
   const preferences = preferencesState.data?.preferences || {};
   const sections = [["profile", "Profile"], ["privacy", "Privacy"], ["notifications", "Notifications"], ["import-export", "Import & Export"], ["metadata", "Metadata"], ["account", "Account"], ["about", "About"]];
   useEffect(() => setSection(initialSection), [initialSection]);
-  async function toggle(key) { setStatus("Saving..."); await apiClient("/api/v1/notification-preferences", { method: "PATCH", body: { [key]: !preferences[key === "new_episodes" ? "newEpisodes" : key === "movie_releases" ? "movieReleases" : key === "in_app_enabled" ? "inAppEnabled" : key === "email_enabled" ? "emailEnabled" : key] } }); setStatus("Preferences saved."); setReload((value) => value + 1); }
+  function toggle(key) {
+    const field = { new_episodes: "newEpisodes", movie_releases: "movieReleases", in_app_enabled: "inAppEnabled", email_enabled: "emailEnabled" }[key] || key;
+    const checked = !preferences[field];
+    return action.run({
+      save: () => apiClient("/api/v1/notification-preferences", { method: "PATCH", body: { [key]: checked } }),
+      onSaved: () => setPreferencesState((current) => ({ ...current, data: { ...current.data, preferences: { ...current.data?.preferences, [field]: checked } } })),
+      refresh: async () => { const data = await apiClient("/api/v1/notification-preferences"); setPreferencesState({ loading: false, error: "", data }); },
+      success: "Preferences saved.",
+    });
+  }
 
-  return <section className="web-v1-screen settings-screen"><header className="screen-intro"><span className="eyebrow">Your MediaHub</span><h2>Settings</h2><p>Manage your private account, notifications, metadata, and data ownership.</p></header><nav className="settings-nav" aria-label="Settings sections">{sections.map(([id, label]) => <button className={section === id ? "active" : ""} key={id} onClick={() => setSection(id)} type="button">{label}</button>)}</nav>{settingsState.error || preferencesState.error ? <div className="detail-error">{settingsState.error || preferencesState.error}</div> : null}{status ? <div className="settings-status">{status}</div> : null}{section === "profile" ? <div className="settings-editorial"><h3>Profile</h3><dl><div><dt>Name</dt><dd>{settings.profile?.name}</dd></div><div><dt>Email</dt><dd>{settings.profile?.email}</dd></div><div><dt>Account</dt><dd>{settings.profile?.role}</dd></div></dl></div> : null}{section === "privacy" ? <PrivacyControls apiClient={apiClient} onSessionExpired={onSessionExpired} /> : null}{section === "notifications" ? <div className="settings-editorial preference-list"><h3>Notifications</h3><p>In-app alerts are enabled by default. Email remains off until you choose otherwise.</p>{[["new_episodes", "New episodes", preferences.newEpisodes], ["movie_releases", "Movie releases", preferences.movieReleases], ["reminders", "Unfinished show reminders", preferences.reminders], ["in_app_enabled", "In-app notifications", preferences.inAppEnabled], ["email_enabled", "Email notifications", preferences.emailEnabled]].map(([key, label, checked]) => <label className="toggle-row" key={key}><span>{label}</span><input checked={Boolean(checked)} onChange={() => toggle(key)} type="checkbox" /></label>)}</div> : null}{section === "import-export" ? <div className="settings-editorial"><h3>Import & Export</h3><p>TV Time imports remain available through the private import workflow. Exported files contain your library and tracking data, never playback credentials, locators, or application secrets.</p><dl><div><dt>Last TV Time import</dt><dd>{settings.import?.lastImportAt ? new Date(settings.import.lastImportAt).toLocaleString() : "No import recorded"}</dd></div><div><dt>Import mode</dt><dd>Private assisted import</dd></div></dl><div className="export-actions"><a className="primary-action" href="/api/v1/exports/json"><DownloadSimple /> Download full JSON</a>{(settings.export?.csvDatasets || []).map((dataset) => <a className="text-action" href={`/api/v1/exports/csv/${dataset}`} key={dataset}>CSV: {dataset.replaceAll("-", " ")}</a>)}</div></div> : null}{section === "metadata" ? <div className="settings-editorial"><h3>Metadata</h3><p>TMDB is the primary metadata provider. IMDb IDs are preserved as secondary references.</p><dl>{["movies", "shows", "episodes"].map((type) => <div key={type}><dt>{type}</dt><dd>{settings.metadata?.[type]?.enriched || 0} / {settings.metadata?.[type]?.total || 0} enriched</dd></div>)}</dl></div> : null}{section === "account" ? <div className="settings-editorial"><h3>Account</h3><p>Export your data before requesting account deletion. Self-service deletion is not enabled in V1.</p><div className="data-warning">Deleting an account is permanent and should only happen after a verified export.</div></div> : null}{section === "about" ? <div className="settings-editorial"><h3>About MediaHub</h3><p>Your entertainment memory for discovery, tracking, ratings, notes, history, and collections.</p><dl><div><dt>Version</dt><dd>{settings.version || "1.0.0"}</dd></div><div><dt>Metadata</dt><dd>TMDB primary · IMDb secondary</dd></div></dl></div> : null}</section>;
+  return <section className="web-v1-screen settings-screen"><header className="screen-intro"><span className="eyebrow">Your MediaHub</span><h2>Settings</h2><p>Manage your private account, notifications, metadata, and data ownership.</p></header><nav className="settings-nav" aria-label="Settings sections">{sections.map(([id, label]) => <button className={section === id ? "active" : ""} key={id} onClick={() => setSection(id)} type="button">{label}</button>)}</nav>{settingsState.error || preferencesState.error ? <div className="detail-error">{settingsState.error || preferencesState.error}{preferencesState.error ? <button className="text-action" onClick={() => setReload((value) => value + 1)} type="button">Retry loading preferences</button> : null}</div> : null}<ActionFeedback action={action} />{section === "profile" ? <div className="settings-editorial"><h3>Profile</h3><dl><div><dt>Name</dt><dd>{settings.profile?.name}</dd></div><div><dt>Email</dt><dd>{settings.profile?.email}</dd></div><div><dt>Account</dt><dd>{settings.profile?.role}</dd></div></dl></div> : null}{section === "privacy" ? <PrivacyControls apiClient={apiClient} onSessionExpired={onSessionExpired} /> : null}{section === "notifications" ? <div className="settings-editorial preference-list"><h3>Notifications</h3><p>In-app alerts are enabled by default. Email remains off until you choose otherwise.</p>{[["new_episodes", "New episodes", preferences.newEpisodes], ["movie_releases", "Movie releases", preferences.movieReleases], ["reminders", "Unfinished show reminders", preferences.reminders], ["in_app_enabled", "In-app notifications", preferences.inAppEnabled], ["email_enabled", "Email notifications", preferences.emailEnabled]].map(([key, label, checked]) => <label className="toggle-row" key={key}><span>{label}</span><input disabled={action.pending || preferencesState.loading || Boolean(preferencesState.error) || Boolean(action.error && action.refreshOnly)} checked={Boolean(checked)} onChange={() => toggle(key)} type="checkbox" /></label>)}</div> : null}{section === "import-export" ? <div className="settings-editorial"><h3>Import & Export</h3><p>TV Time imports remain available through the private import workflow. Exported files contain your library and tracking data, never playback credentials, locators, or application secrets.</p><dl><div><dt>Last TV Time import</dt><dd>{settings.import?.lastImportAt ? new Date(settings.import.lastImportAt).toLocaleString() : "No import recorded"}</dd></div><div><dt>Import mode</dt><dd>Private assisted import</dd></div></dl><div className="export-actions"><a className="primary-action" href="/api/v1/exports/json"><DownloadSimple /> Download full JSON</a>{(settings.export?.csvDatasets || []).map((dataset) => <a className="text-action" href={`/api/v1/exports/csv/${dataset}`} key={dataset}>CSV: {dataset.replaceAll("-", " ")}</a>)}</div></div> : null}{section === "metadata" ? <div className="settings-editorial"><h3>Metadata</h3><p>TMDB is the primary metadata provider. IMDb IDs are preserved as secondary references.</p><dl>{["movies", "shows", "episodes"].map((type) => <div key={type}><dt>{type}</dt><dd>{settings.metadata?.[type]?.enriched || 0} / {settings.metadata?.[type]?.total || 0} enriched</dd></div>)}</dl></div> : null}{section === "account" ? <div className="settings-editorial"><h3>Account</h3><p>Export your data before requesting account deletion. Self-service deletion is not enabled in V1.</p><div className="data-warning">Deleting an account is permanent and should only happen after a verified export.</div></div> : null}{section === "about" ? <div className="settings-editorial"><h3>About MediaHub</h3><p>Your entertainment memory for discovery, tracking, ratings, notes, history, and collections.</p><dl><div><dt>Version</dt><dd>{settings.version || "1.0.0"}</dd></div><div><dt>Metadata</dt><dd>TMDB primary · IMDb secondary</dd></div></dl></div> : null}</section>;
 }

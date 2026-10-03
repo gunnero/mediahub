@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { discoveryFilters } from "./discovery.js";
 
 const sections = new Set(["home", "discover", "movies", "shows", "history", "calendar", "alerts", "stats", "lists", "settings", "player", "profile", "friends", "invite-friends"]);
 
@@ -19,7 +20,9 @@ export function readAppRoute() {
     detail,
     profileMode: params.get("view") === "edit" ? "edit" : "view",
     settingsTab: ["privacy", "import-export"].includes(params.get("tab")) ? params.get("tab") : "profile",
-    discoverType: ["movie", "show"].includes(params.get("type")) ? params.get("type") : "all",
+    discovery: discoveryFilters(detail && background === "discover" ? window.history.state?.mediahubDiscovery : {
+      mode: params.get("source"), query: params.get("query"), type: params.get("type"), category: params.get("category"), page: params.get("page"),
+    }),
   };
 }
 
