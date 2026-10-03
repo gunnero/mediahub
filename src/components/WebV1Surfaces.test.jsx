@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AlertsSection, CalendarSection, DiscoverSection, DiscoveryPreviewModal, ListsSection, StatsSection, WebSettingsSection } from "./WebV1Surfaces.jsx";
+import { SessionExpiredError } from "../lib/api.js";
 
 afterEach(() => cleanup());
 
@@ -181,6 +182,7 @@ describe("MediaHub Web V1 surfaces", () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     render(<ListsSection apiClient={apiClient} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create list", exact: true })).toBeEnabled());
     fireEvent.change(screen.getByLabelText(/new list name/i), { target: { value: "Favorites" } });
     fireEvent.click(screen.getByRole("button", { name: /create list/i }));
     expect((await screen.findAllByText("Favorites")).length).toBeGreaterThan(0);
@@ -234,5 +236,172 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(screen.queryByRole("button", { name: /^providers$/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /import & export/i }));
     expect(screen.getByRole("link", { name: /download full json/i })).toHaveAttribute("href", "/api/v1/exports/json");
+  });
+});
+
+function deferred() {
+  let resolve; let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+const discoverMovie = { media_type: "movie", tmdb_id: 7, title: "First story" };
+const discoverShow = { media_type: "show", tmdb_id: 7, title: "Second story" };
+
+describe("Discovery reliability", () => {
+  it("paginates browse and search, resets filters to page one, and stops at the last page", async () => {
+    const apiClient = vi.fn(async (path) => ({ status: "ready", items: [discoverMovie], pagination: { totalPages: 2 } }));
+    render(<DiscoverSection apiClient={apiClient} />);
+    await screen.findByText("First story");
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("page=2"), expect.any(Object)));
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Media type"), { target: { value: "show" } });
+    await waitFor(() => expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("type=show&page=1"), expect.any(Object)));
+    fireEvent.change(screen.getByLabelText("Search movies and shows"), { target: { value: "story" } });
+    await waitFor(() => expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("discover/search?query=story&type=show&page=1"), expect.any(Object)));
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(apiClient).toHaveBeenCalledWith(expect.stringContaining("discover/search?query=story&type=show&page=2"), expect.any(Object)));
+  });
+
+  it("ignores an old search response even when the client ignores cancellation", async () => {
+    const old = deferred();
+    const apiClient = vi.fn((path) => path.includes("category=trending") ? old.promise : Promise.resolve({ items: [discoverShow] }));
+    render(<DiscoverSection apiClient={apiClient} />);
+    await waitFor(() => expect(apiClient).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
+    await screen.findByText("Second story");
+    await act(async () => old.resolve({ items: [discoverMovie] }));
+    expect(screen.queryByText("First story")).not.toBeInTheDocument();
+  });
+
+  it.each(["success", "failure", "expired"])("ignores late preview %s for a different media type with the same TMDB ID", async (outcome) => {
+    const old = deferred(); const current = deferred(); const expired = vi.fn(); let firstSignal;
+    const apiClient = vi.fn((path, options) => {
+      if (path.includes("/browse?")) return Promise.resolve({ items: [discoverMovie, discoverShow] });
+      if (path.endsWith("/movie/7")) { firstSignal = options.signal; return old.promise; }
+      return current.promise;
+    });
+    render(<DiscoverSection apiClient={apiClient} onSessionExpired={expired} />);
+    const first = await screen.findByRole("button", { name: "Open First story details" });
+    first.focus();
+    fireEvent.click(first);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(first).toHaveFocus();
+    expect(firstSignal.aborted).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Open Second story details" }));
+    await act(async () => outcome === "success" ? old.resolve({ item: { ...discoverMovie, overview: "Wrong plot" } }) : old.reject(outcome === "expired" ? new SessionExpiredError() : new Error("Old failure")));
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Second story discovery preview");
+    expect(screen.getByText("Loading complete details...")).toBeInTheDocument();
+    expect(screen.queryByText("Wrong plot")).not.toBeInTheDocument();
+    expect(expired).not.toHaveBeenCalled();
+    await act(async () => current.resolve({ item: { ...discoverShow, overview: "Correct plot" } }));
+    expect(screen.getByText("Correct plot")).toBeInTheDocument();
+  });
+
+  it("shows unavailable discovery as an error and allows retry", async () => {
+    const apiClient = vi.fn().mockResolvedValueOnce({ status: "unavailable", items: [] }).mockResolvedValue({ items: [discoverMovie] });
+    render(<DiscoverSection apiClient={apiClient} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("temporarily unavailable");
+    expect(screen.queryByText("No titles are available in this category right now")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry search" }));
+    await screen.findByText("First story");
+  });
+});
+
+describe("Mutation feedback and retries", () => {
+  it("prevents duplicate list creation, preserves a failed draft, and retries the save", async () => {
+    const pending = deferred(); let writes = 0; let lists = [];
+    const apiClient = vi.fn(async (path, options = {}) => {
+      if (options.method === "POST") {
+        writes += 1;
+        if (writes === 1) return pending.promise;
+        lists = [{ id: 1, name: options.body.name, items: [], itemsCount: 0 }];
+        return { list: lists[0] };
+      }
+      return { lists };
+    });
+    render(<ListsSection apiClient={apiClient} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create list", exact: true })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("New list name"), { target: { value: "Weekend" } });
+    const create = screen.getByRole("button", { name: "Create list" });
+    fireEvent.click(create); fireEvent.click(create);
+    expect(writes).toBe(1);
+    expect(create).toBeDisabled();
+    await act(async () => pending.reject(new Error("Save failed")));
+    expect(screen.getByRole("alert")).toHaveTextContent("Save failed");
+    expect(screen.getByLabelText("New list name")).toHaveValue("Weekend");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByRole("heading", { name: "Weekend" });
+    expect(writes).toBe(2);
+  });
+
+  it("retries only the read after list creation succeeds but refresh fails", async () => {
+    let created = false; let failRefresh = true; let writes = 0;
+    const apiClient = vi.fn(async (path, options = {}) => {
+      if (options.method === "POST") { created = true; writes += 1; return { list: { id: 1 } }; }
+      if (created && failRefresh) throw new Error("Read failed");
+      return { lists: created ? [{ id: 1, name: "Weekend", items: [], itemsCount: 0 }] : [] };
+    });
+    render(<ListsSection apiClient={apiClient} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create list", exact: true })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("New list name"), { target: { value: "Weekend" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create list" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Saved, but the view could not refresh");
+    failRefresh = false;
+    fireEvent.click(screen.getByRole("button", { name: "Retry refresh" }));
+    await screen.findByRole("heading", { name: "Weekend" });
+    expect(writes).toBe(1);
+  });
+
+  it("reports alert failures, blocks duplicate writes, and refreshes the badge after retry", async () => {
+    const pending = deferred(); let writes = 0; const onAlertsChanged = vi.fn();
+    const apiClient = vi.fn(async (path, options = {}) => {
+      if (!options.method) return { alerts: [{ id: 1, title: "New episode", unread: writes < 2 }] };
+      writes += 1; if (writes === 1) return pending.promise; return {};
+    });
+    render(<AlertsSection apiClient={apiClient} onAlertsChanged={onAlertsChanged} />);
+    const button = await screen.findByRole("button", { name: "Mark New episode read" });
+    fireEvent.click(button); fireEvent.click(button);
+    expect(writes).toBe(1);
+    await act(async () => pending.reject(new Error("Could not mark read")));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not mark read");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(onAlertsChanged).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: "Mark New episode read" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed preference unchanged, then saves without duplicate patches", async () => {
+    let preferences = { reminders: true }; let writes = 0; const pending = deferred();
+    const apiClient = vi.fn(async (path, options = {}) => {
+      if (options.method === "PATCH") { writes += 1; if (writes === 1) return pending.promise; preferences = { reminders: false }; }
+      return path.endsWith("settings") ? {} : { preferences };
+    });
+    render(<WebSettingsSection initialSection="notifications" apiClient={apiClient} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Unfinished show reminders" });
+    await waitFor(() => expect(checkbox).toBeChecked());
+    fireEvent.click(checkbox); fireEvent.click(checkbox);
+    expect(writes).toBe(1);
+    expect(checkbox).toBeDisabled();
+    await act(async () => pending.reject(new Error("Preferences unavailable")));
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole("alert")).toHaveTextContent("Preferences unavailable");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(checkbox).not.toBeChecked());
+    expect(writes).toBe(2);
+  });
+
+  it("handles expired sessions during a list mutation", async () => {
+    const expired = vi.fn();
+    const apiClient = vi.fn(async (path, options = {}) => { if (options.method) throw new SessionExpiredError(); return { lists: [] }; });
+    render(<ListsSection apiClient={apiClient} onSessionExpired={expired} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create list", exact: true })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("New list name"), { target: { value: "Weekend" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create list" }));
+    await waitFor(() => expect(expired).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
   });
 });

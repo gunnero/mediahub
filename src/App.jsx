@@ -18,6 +18,7 @@ import {
 import { getUnreadCount } from "./lib/dashboard.js";
 import { apiRequest, SessionExpiredError } from "./lib/api.js";
 import { useAppRoute } from "./lib/navigation.js";
+import { discoveryHref } from "./lib/discovery.js";
 import { WatchDateForm } from "./components/WatchDateForm.jsx";
 import { PlayerSection, SettingsSection } from "./components/MediaHubSurfaces.jsx";
 import { HomeExperience } from "./components/HomeExperience.jsx";
@@ -1564,7 +1565,7 @@ function FocusSection({
   }
 
   if (activeSection === "discover") {
-    return <DiscoverSection apiClient={apiClient} initialType={discoverIntent.type} navigationKey={discoverIntent.key} onLibraryChanged={onRefreshDashboard} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
+    return <DiscoverSection apiClient={apiClient} filters={discoverIntent.filters} onFiltersChange={discoverIntent.onChange} onLibraryChanged={onRefreshDashboard} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
   }
 
   if (activeSection === "shows") {
@@ -1674,7 +1675,7 @@ export function App() {
   const settingsInitialSection = route.settingsTab;
   const [historyIntent, setHistoryIntent] = useState({ type: "all", key: 0 });
   const [movieIntent, setMovieIntent] = useState({ status: "all", sort: "latest_watched", key: 0 });
-  const discoverIntent = { type: route.discoverType, key: route.href };
+  const discoverIntent = { filters: route.discovery, onChange: (filters, options) => navigate(discoveryHref(filters), options) };
   const searchInputRef = useRef(null);
   const detailSelectionRef = useRef(null);
 
@@ -1943,7 +1944,7 @@ export function App() {
     const path = mediaDetailPath(item);
     if (path && !("category" in item)) {
       navigate(path.replace("/api/v1/library", ""), {
-        state: { mediahubSection: activeSection, mediahubDetailParent: route.href },
+        state: { mediahubSection: activeSection, mediahubDetailParent: route.href, mediahubDiscovery: route.discovery },
       });
     }
     return showItem(item);

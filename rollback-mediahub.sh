@@ -12,6 +12,11 @@ if [[ -f "$PRIVATE_CONFIG" ]]; then
   set +a
 fi
 
+if [[ "${MEDIAHUB_DEPLOY_TRANSPORT:-}" != ssh ]]; then
+  printf 'Legacy rollback is disabled for local releases. Deploy a reviewed revert on main; preserve the current database. See docs/infrastructure/DEPLOYMENT.md.\n' >&2
+  exit 1
+fi
+
 log() { printf '[mediahub rollback] %s\n' "$*"; }
 fail() { printf '[mediahub rollback] ERROR: %s\n' "$*" >&2; exit 1; }
 quote() { printf '%q' "$1"; }
