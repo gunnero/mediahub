@@ -47,6 +47,7 @@ class MediaDiaryBackfillService
                     'title' => $watch->movie->title,
                     'media_type' => 'movie',
                     'watched_at' => $watch->watched_at->toIso8601String(),
+                    'watch_id' => $watch->id,
                     'runtime' => $watch->runtime,
                     'watch_number' => $watchNumber,
                 ], $this->source($watch->source), $watch->watched_at, $key);
@@ -75,6 +76,7 @@ class MediaDiaryBackfillService
                 'media_type' => 'episode',
                 'show_id' => $watch->show_id,
                 'watched_at' => $watch->watched_at->toIso8601String(),
+                'watch_id' => $watch->id,
                 'runtime' => $watch->runtime,
             ], $this->source($watch->source), $watch->watched_at, $key);
         });

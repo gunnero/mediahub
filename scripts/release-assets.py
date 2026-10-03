@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 
-PUBLIC_FILES = {"index.html", "favicon.svg", "mediahub-pinned-tab.svg", "site.webmanifest"}
+PUBLIC_FILES = {"index.html", "favicon.svg", "mediahub-pinned-tab.svg", "site.webmanifest", "sw.js"}
 
 
 def validate(source):
@@ -70,9 +70,11 @@ def stage(source, public, commit):
         if file.is_dir():
             destination.mkdir(exist_ok=True)
             destination.chmod(0o755)
-        elif relative != Path("index.html"):
+        elif relative not in [Path("index.html"), Path("sw.js")]:
             destination.parent.mkdir(parents=True, exist_ok=True)
             atomic_copy(file, destination)
+    if (source / "sw.js").is_file():
+        atomic_copy(source / "sw.js", public / "assets" / f"mediahub-sw-{commit}.js")
     staged = public / "assets" / f"mediahub-release-check-{commit}.html"
     atomic_copy(source / "index.html", staged)
     # Probe the actual files through HTTP before switching the active index.
@@ -82,7 +84,10 @@ def stage(source, public, commit):
 def verify(source, url, index_path):
     source = Path(source)
     assets = validate(source)
-    for remote, local in [(index_path, source / "index.html"), *[(name, source / name.lstrip("/")) for name in assets]]:
+    if (source / "sw.js").is_file():
+        worker = "/sw.js" if index_path == "/" else index_path.replace("mediahub-release-check-", "mediahub-sw-").replace(".html", ".js")
+        assets.append(worker)
+    for remote, local in [(index_path, source / "index.html"), *[(name, source / ("sw.js" if "mediahub-sw-" in name else name.lstrip("/"))) for name in assets]]:
         data = subprocess.check_output(["curl", "--noproxy", "*", "--fail", "--silent", "--show-error", "--max-time", "30", url.rstrip("/") + remote])
         if hashlib.sha256(data).digest() != hashlib.sha256(local.read_bytes()).digest():
             raise ValueError(f"HTTP content mismatch: {remote}")
@@ -96,6 +101,10 @@ def publish(public, commit):
     if staged.is_symlink() or (public / "index.html").is_symlink() or staged.stat().st_mode & 0o777 != 0o644:
         raise ValueError("Unsafe staged index permissions or link")
     os.replace(staged, public / "index.html")
+    worker = public / "assets" / f"mediahub-sw-{commit}.js"
+    if worker.is_file():
+        atomic_copy(worker, public / "sw.js")
+        worker.unlink()
 
 
 if __name__ == "__main__":

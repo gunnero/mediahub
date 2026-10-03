@@ -1,3 +1,9 @@
+import { OfflineLibrary, OfflineStatus, SaveOfflinePage, useOfflineState } from "./components/v2/OfflineLibrary.jsx";
+import { clearOffline, readOffline } from "./lib/offline.js";
+import { PublicCollection } from "./components/v2/Collections.jsx";
+import { WatchHistoryEditor } from "./components/v2/WatchHistoryEditor.jsx";
+import { LibraryTools } from "./components/v2/LibraryTools.jsx";
+import "./components/v2/v2.css";
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
@@ -45,6 +51,9 @@ export { PlayerSection, SettingsSection } from "./components/MediaHubSurfaces.js
 const generatedPosterPattern = /\/assets\/generated\/movie-poster-\d+\.png(?:[?#].*)?$/;
 
 function resolvePublicRoute(pathname) {
+  if (pathname === "/offline") return { type: "offline" };
+  const collection = pathname.match(/^\/collections\/([a-zA-Z0-9]{48})$/);
+  if (collection) return { type: "collection", value: collection[1] };
   const profileMatch = pathname.match(/^\/u\/([^/]+)\/?$/);
   if (profileMatch) return { type: "profile", value: safeDecodeRouteValue(profileMatch[1]) };
   const inviteMatch = pathname.match(/^\/invite\/([^/]+)\/?$/);
@@ -565,6 +574,7 @@ export function MovieLibrary({
   onSessionExpired,
   showProviderStatus = false,
 }) {
+  const [selected, setSelected] = useState([]);
   const [searchDraft, setSearchDraft] = useState(initialSearch);
   const [filters, setFilters] = useState({
     search: initialSearch,
@@ -667,11 +677,12 @@ export function MovieLibrary({
           { value: "year", label: "Year" },
         ]}
       />
+<LibraryTools type="movie" items={payload.items} filters={filters} onFilters={next => { setFilters(next); setSearchDraft(next.search || ""); setSelected([]); }} selected={selected} onSelected={setSelected} apiClient={apiClient} onSessionExpired={onSessionExpired} onChanged={async () => setFilters(current => ({ ...current }))} />
       <LibraryState error={error} loading={loading}>
         {payload.items.length ? (
           <div className="library-grid">
             {payload.items.map((item) => (
-              <LibraryCard item={item} key={item.id} onOpen={onOpen} showProviderStatus={showProviderStatus} />
+              <div className="v2-select-card" key={item.id}><label><input type="checkbox" aria-label={`Select ${item.title}`} checked={selected.includes(item.movieId || item.id)} onChange={e => setSelected(current => e.target.checked ? [...current, item.movieId || item.id] : current.filter(id => id !== (item.movieId || item.id)))} />Select</label><LibraryCard item={item} onOpen={onOpen} showProviderStatus={showProviderStatus} /></div>
             ))}
           </div>
         ) : (
@@ -693,6 +704,7 @@ export function ShowLibrary({
   onSessionExpired,
   showProviderStatus = false,
 }) {
+  const [selected, setSelected] = useState([]);
   const [searchDraft, setSearchDraft] = useState(initialSearch);
   const [filters, setFilters] = useState({
     search: initialSearch,
@@ -792,11 +804,12 @@ export function ShowLibrary({
           { value: "progress", label: "Progress" },
         ]}
       />
+<LibraryTools type="show" items={payload.items} filters={filters} onFilters={next => { setFilters(next); setSearchDraft(next.search || ""); setSelected([]); }} selected={selected} onSelected={setSelected} apiClient={apiClient} onSessionExpired={onSessionExpired} onChanged={async () => setFilters(current => ({ ...current }))} />
       <LibraryState error={error} loading={loading}>
         {payload.items.length ? (
           <div className="library-grid">
             {payload.items.map((item) => (
-              <LibraryCard item={item} key={item.id} onOpen={onOpen} showProviderStatus={showProviderStatus} />
+              <div className="v2-select-card" key={item.id}><label><input type="checkbox" aria-label={`Select ${item.title}`} checked={selected.includes(item.showId || item.id)} onChange={e => setSelected(current => e.target.checked ? [...current, item.showId || item.id] : current.filter(id => id !== (item.showId || item.id)))} />Select</label><LibraryCard item={item} onOpen={onOpen} showProviderStatus={showProviderStatus} /></div>
             ))}
           </div>
         ) : (
@@ -909,6 +922,7 @@ export function HistorySection({
         </div>
         <span>{formatNumber(payload.pagination?.total || payload.items.length)} watches</span>
       </div>
+      <SaveOfflinePage label={`History · page ${filters.page}`} items={payload.items} apiClient={apiClient} />
       <form className="library-toolbar history-toolbar" onSubmit={submitSearch}>
         <label>
           <span>Search history</span>
@@ -1225,6 +1239,9 @@ export function TimelinePanel({ timeline }) {
 }
 
 export function DetailModal({
+  apiClient = apiRequest,
+  onHistoryChanged,
+  onSessionExpired,
   item,
   detail,
   detailError = "",
@@ -1255,7 +1272,7 @@ export function DetailModal({
     setActiveTab("overview");
     setSelectedSeason(detail?.seasons?.[0]?.seasonNumber ?? null);
     setNoteBody(detail?.notes?.[0]?.body || "");
-  }, [detail?.id, detail?.kind, detail?.notes, detail?.seasons]);
+  }, [detail?.id, detail?.kind]);
 
   useEffect(() => {
     closeButtonRef.current?.focus();
@@ -1489,7 +1506,7 @@ export function DetailModal({
               ) : null}
 
               {activeTab === "history" ? (
-                <section className="detail-section"><div className="detail-section-heading"><strong>Watch history</strong><span>{detail.watchedCount || detail.watchHistory?.length || 0} watches</span></div><div className="watch-history compact-history">{detail.watchHistory?.length ? detail.watchHistory.map((watch) => <div key={watch.id}><span><b>{watch.watchNumber ? `Watch #${watch.watchNumber}` : "Watch"}</b>{shortDate(watch.watchedAt) || "Unknown date"}</span><strong>{sourceLabel(watch.source)}</strong></div>) : <em>No watch history yet</em>}</div></section>
+                <WatchHistoryEditor key={`${detail.kind}-${detail.id}`} detail={detail} apiClient={apiClient} onChanged={onHistoryChanged} onSessionExpired={onSessionExpired} />
               ) : null}
 
               {playerEnabled && activeTab === "provider" ? (
@@ -1651,6 +1668,7 @@ function FocusSection({
 }
 
 export function App() {
+  const { online: isOnline } = useOfflineState();
   const { route, navigate, closeMedia } = useAppRoute();
   const publicRoute = resolvePublicRoute(window.location.pathname);
   const pendingFriendInvite = new URLSearchParams(window.location.search).get("friend-invite");
@@ -1860,6 +1878,8 @@ export function App() {
   }
 
   async function handleLogout() {
+    if (readOffline().entries.length && !window.confirm("Signing out clears pending offline watches from this device. Sign out anyway?")) return;
+    clearOffline();
     clearDetail();
     try {
       await apiRequest("/api/v1/auth/logout", { method: "POST" });
@@ -2096,6 +2116,10 @@ export function App() {
     });
   }
 
+  if (publicRoute?.type === "offline" || (!isOnline && readOffline().owner)) return <OfflineLibrary />;
+
+  if (publicRoute?.type === "collection") return <PublicCollection token={publicRoute.value} />;
+
   if (publicRoute?.type === "profile") {
     return <PublicProfilePage preview={new URLSearchParams(window.location.search).get("preview") === "public"} slug={publicRoute.value} />;
   }
@@ -2201,7 +2225,10 @@ export function App() {
           </div>
         </div>
       </main>
+      <OfflineStatus />
       <DetailModal
+        onHistoryChanged={async () => { await refreshMediaDetail(selectedDetail); await refreshDashboard(); }}
+        onSessionExpired={expireSession}
         actionError={detailActionError}
         actionPending={detailActionPending}
         detail={selectedDetail}

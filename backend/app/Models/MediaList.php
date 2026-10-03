@@ -9,7 +9,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MediaList extends Model
 {
-    protected $fillable = ['user_id', 'name', 'description', 'visibility'];
+    protected $fillable = ['user_id', 'name', 'description', 'visibility', 'rules', 'cover_style', 'share_token_hash'];
+
+    protected $hidden = ['share_token_hash'];
+
+    protected function casts(): array
+    {
+        return ['rules' => 'array'];
+    }
 
     public function user(): BelongsTo
     {

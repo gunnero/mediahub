@@ -105,6 +105,22 @@ class TMDBClientService
     /**
      * @return array<string, mixed>|null
      */
+    public function discoverFiltered(string $type, array $filters, int $page = 1): ?array
+    {
+        return $this->get('/discover/'.($type === 'show' ? 'tv' : 'movie'), array_filter([
+            'language' => 'en-US', 'page' => $page, 'include_adult' => false,
+            'sort_by' => ($filters['category'] ?? '') === 'top_rated' ? 'vote_average.desc' : 'popularity.desc',
+            ($type === 'show' ? 'air_date.gte' : 'primary_release_date.gte') => ($filters['category'] ?? '') === 'upcoming' ? now()->toDateString() : null,
+            'with_runtime.gte' => isset($filters['max_runtime']) ? 1 : null,
+            'with_genres' => $filters['genre_id'] ?? null,
+            'with_original_language' => $filters['language'] ?? null,
+            'with_runtime.lte' => $filters['max_runtime'] ?? null,
+            'vote_average.gte' => $filters['min_rating'] ?? null,
+            'vote_count.gte' => 20,
+            $type === 'show' ? 'first_air_date_year' : 'primary_release_year' => $filters['year'] ?? null,
+        ], fn ($value) => $value !== null && $value !== ''));
+    }
+
     public function getMovie(int $tmdbId): ?array
     {
         return $this->get('/movie/'.$tmdbId, [

@@ -17,10 +17,11 @@ I designed and implemented the public repository: the Laravel API, React product
 ## Core capabilities
 
 - Personal movie and television library
-- Append-only watch diary and history
+- Watch diary and history with individual edits and conflict-safe undo
 - Discovery, search, calendars, alerts, and recommendations
 - Ratings, private notes, collections, and statistics
-- Data export and compatibility imports
+- Previewed compatibility imports, verified recovery, and data exports
+- Bulk library tools, rule-based collections, release reminders, and offline watch logging
 - Opt-in profiles and friendship controls with private-by-default settings
 - Administrative review tools and background metadata jobs
 
@@ -29,7 +30,7 @@ I designed and implemented the public repository: the Laravel API, React product
 MediaHub is under active development. It is not presented as a public service, does not claim users, customers, or revenue, and does not provide a shared stream catalog. Third-party imports are compatibility features rather than the product identity.
 
 - **Implemented:** user-owned library and diary, ratings, notes, collections, discovery, statistics, imports and exports, opt-in profiles, friendship controls, and administrative review tools.
-- **In development:** product coherence, deterministic demo fixtures, trustworthy import status, accessibility coverage, and operational readiness.
+- **In development:** product coherence, deterministic demo fixtures, accessibility coverage, and operational readiness.
 - **Future ideas:** native clients and optional membership capabilities described in planning documents. Planned work is not an implemented feature or delivery commitment.
 
 ## Architecture overview
@@ -99,6 +100,7 @@ The latest tagged milestone is [`v1.0.0-rc1.1`](https://github.com/gunnero/media
 
 ## Documentation map
 
+- [V2 features, verification, and rollout](docs/mediahub/V2_DELIVERY.md)
 - [Product scope](docs/mediahub/WEB_PRODUCT_SCOPE.md)
 - [Canonical media contract](docs/mediahub/CANONICAL_MEDIA_CONTRACT.md)
 - [Architecture](docs/architecture.md)

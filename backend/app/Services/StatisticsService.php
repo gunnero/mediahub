@@ -13,12 +13,15 @@ use Illuminate\Support\Collection;
 class StatisticsService
 {
     /** @return array<string, mixed> */
-    public function forUser(User $user): array
+    public function forUser(User $user, array $filters = []): array
     {
+        $timezone = $user->timezone ?: config('app.timezone');
+        $start = isset($filters['from']) ? CarbonImmutable::parse($filters['from'], $timezone)->startOfDay()->utc() : null;
+        $end = isset($filters['to']) ? CarbonImmutable::parse($filters['to'], $timezone)->endOfDay()->utc() : null;
         $movieWatches = MovieWatch::forUser($user)
             ->whereHas('movie', fn ($query) => $query->forUser($user))
             ->with(['movie' => fn ($query) => $query->forUser($user)->select(['id', 'user_id', 'title', 'genres'])])
-            ->watched()
+            ->watched()->when($start, fn ($q) => $q->where('watched_at', '>=', $start))->when($end, fn ($q) => $q->where('watched_at', '<=', $end))
             ->get(['id', 'user_id', 'movie_id', 'watched_at', 'runtime', 'watch_count']);
         $episodeWatches = EpisodeWatch::forUser($user)
             ->whereHas('episode', fn ($query) => $query->forUser($user))
@@ -26,21 +29,22 @@ class StatisticsService
             ->with([
                 'episode' => fn ($query) => $query->forUser($user)->select(['id', 'user_id', 'show_id']),
                 'show' => fn ($query) => $query->forUser($user)->select(['id', 'user_id', 'title', 'genres']),
-            ])->watched()
+            ])->watched()->when($start, fn ($q) => $q->where('watched_at', '>=', $start))->when($end, fn ($q) => $q->where('watched_at', '<=', $end))
             ->get(['id', 'user_id', 'show_id', 'episode_id', 'watched_at', 'runtime']);
         $movieWatchEvents = (int) $movieWatches->sum(fn (MovieWatch $watch): int => max(1, $watch->watch_count));
         $episodeWatchEvents = $episodeWatches->count();
         $allWatches = $movieWatches->map(fn (MovieWatch $watch): array => $this->watchPoint(
-            $watch->watched_at,
+            $watch->watched_at?->copy()->setTimezone($timezone),
             $watch->runtime * max(1, $watch->watch_count),
             'movie',
             max(1, $watch->watch_count),
         ))
-            ->concat($episodeWatches->map(fn (EpisodeWatch $watch): array => $this->watchPoint($watch->watched_at, $watch->runtime, 'episode', 1)))
+            ->concat($episodeWatches->map(fn (EpisodeWatch $watch): array => $this->watchPoint($watch->watched_at?->copy()->setTimezone($timezone), $watch->runtime, 'episode', 1)))
             ->filter(fn (array $point): bool => filled($point['date']));
         $totalMinutes = $allWatches->sum('minutes');
         $uniqueMovieCount = $movieWatches->pluck('movie_id')->filter()->unique()->count();
         $uniqueEpisodeCount = $episodeWatches->pluck('episode_id')->filter()->unique()->count();
+        $ratings = Rating::forUser($user)->when($start, fn ($q) => $q->where('updated_at', '>=', $start))->when($end, fn ($q) => $q->where('updated_at', '<=', $end))->get();
         $topMovies = $movieWatches
             ->groupBy('movie_id')
             ->map(function (Collection $watches): array {
@@ -59,6 +63,10 @@ class StatisticsService
             ->all();
 
         return [
+            'range' => ['from' => $filters['from'] ?? null, 'to' => $filters['to'] ?? null, 'timezone' => $timezone],
+            'dailyActivity' => $this->groupActivity($allWatches, 'Y-m-d'),
+            'genreTrends' => $movieWatches->groupBy(fn ($watch) => $watch->watched_at->copy()->setTimezone($timezone)->format('Y-m'))->map(fn ($watches, $period) => ['period' => $period, 'genres' => $this->genreDistribution($watches, collect())])->sortBy('period')->values()->all(),
+            'ratingTrends' => $ratings->groupBy(fn ($rating) => $rating->updated_at->copy()->setTimezone($timezone)->format('Y-m'))->map(fn ($ratings, $period) => ['period' => $period, 'average' => round($ratings->avg('rating'), 1), 'count' => $ratings->count()])->sortBy('period')->values()->all(),
             'summary' => [
                 'moviesWatched' => $movieWatchEvents,
                 'episodesWatched' => $episodeWatchEvents,
@@ -72,7 +80,7 @@ class StatisticsService
             'monthlyActivity' => $this->groupActivity($allWatches, 'Y-m'),
             'yearlyActivity' => $this->groupActivity($allWatches, 'Y'),
             'genres' => $this->genreDistribution($movieWatches, $episodeWatches),
-            'ratings' => Rating::forUser($user)->selectRaw('rating, COUNT(*) as items_count')->groupBy('rating')->orderBy('rating')->get()->map(fn (Rating $rating): array => ['rating' => $rating->rating, 'count' => (int) $rating->items_count])->all(),
+            'ratings' => $ratings->groupBy('rating')->map(fn ($items, $rating): array => ['rating' => (int) $rating, 'count' => $items->count()])->sortBy('rating')->values()->all(),
             'topMovies' => $topMovies,
             'topShows' => $episodeWatches->groupBy('show_id')->map(fn (Collection $watches): array => ['id' => $watches->first()?->show_id, 'title' => $watches->first()?->show?->title ?? 'Untitled show', 'episodes' => $watches->count(), 'minutes' => (int) $watches->sum('runtime')])->sortByDesc('episodes')->take(10)->values()->all(),
         ];

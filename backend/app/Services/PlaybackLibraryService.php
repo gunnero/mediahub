@@ -16,6 +16,7 @@ use App\Models\PlaybackSource;
 use App\Models\PlaybackSourceItem;
 use App\Models\Show;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -594,7 +595,7 @@ class PlaybackLibraryService
         $watch = MovieWatch::create([
             'user_id' => $user->id,
             'movie_id' => $movie->id,
-            'watched_at' => $data['watched_at'] ?? now(),
+            'watched_at' => isset($data['watched_at']) ? CarbonImmutable::parse($data['watched_at'])->utc() : now(),
             'runtime' => $data['runtime'] ?? $movie->runtime,
             'watch_count' => 1,
             'source' => 'manual',
@@ -604,6 +605,7 @@ class PlaybackLibraryService
             'title' => $movie->title,
             'media_type' => 'movie',
             'watched_at' => $watch->watched_at?->toIso8601String(),
+            'watch_id' => $watch->id,
             'runtime' => $watch->runtime,
         ], MediaEventSource::Manual, $watch->watched_at);
 
@@ -625,7 +627,7 @@ class PlaybackLibraryService
             'user_id' => $user->id,
             'show_id' => $episode->show_id,
             'episode_id' => $episode->id,
-            'watched_at' => $data['watched_at'] ?? now(),
+            'watched_at' => isset($data['watched_at']) ? CarbonImmutable::parse($data['watched_at'])->utc() : now(),
             'runtime' => $data['runtime'] ?? $episode->runtime,
             'source' => 'manual',
         ]);
@@ -635,8 +637,13 @@ class PlaybackLibraryService
             'media_type' => 'episode',
             'show_id' => $episode->show_id,
             'watched_at' => $watch->watched_at?->toIso8601String(),
+            'watch_id' => $watch->id,
             'runtime' => $watch->runtime,
         ], MediaEventSource::Manual, $watch->watched_at);
+
+        if ($episode->show) {
+            app(CanonicalWatchHistoryService::class)->recalculateShow($user, $episode->show);
+        }
 
         return $watch->refresh();
     }

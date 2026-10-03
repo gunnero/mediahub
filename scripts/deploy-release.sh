@@ -45,7 +45,7 @@ before="$(git rev-parse HEAD)"
 git fetch --no-tags "$release/source.bundle" HEAD
 [[ "$(git rev-parse FETCH_HEAD)" == "$target" ]] || fail 'Bundle revision mismatch'
 git merge-base --is-ancestor "$before" "$target" || fail 'Release would not fast-forward production'
-[[ -z "$(git diff --name-only "$before" "$target" -- backend/database/migrations)" ]] || fail 'Schema changes require a separately reviewed migration plan'
+migrations="$(python3 "$release/migration-plan.py" "$before" "$target")" || fail 'Migration plan verification failed'
 umask 022
 frontend="$(mktemp -d)"
 tar -xzf "$release/frontend.tar.gz" --no-same-owner -C "$frontend"
@@ -63,6 +63,10 @@ printf '%s\n' "$target" > "$backup/commit-after.txt"
 sha256sum backend/.env > "$backup/environment.sha256"
 git bundle create "$backup/source-before.bundle" HEAD
 tar -czf "$backup/runtime-before.tar.gz" --exclude=backend/public/storage backend/vendor backend/public
+if [[ -f backend/storage/app/private/webpush/keys.json ]]; then
+  cp backend/storage/app/private/webpush/keys.json "$backup/webpush-keys.json"
+  chmod 600 "$backup/webpush-keys.json"
+fi
 python3 - "$db" "$backup/database.sqlite" <<'PY'
 import sqlite3, sys
 from pathlib import Path
@@ -75,6 +79,9 @@ dest.close()
 source.close()
 PY
 (cd "$backup" && sha256sum commit-before.txt commit-after.txt source-before.bundle runtime-before.tar.gz database.sqlite > SHA256SUMS && sha256sum --check SHA256SUMS)
+if [[ -f "$backup/webpush-keys.json" ]]; then
+  (cd "$backup" && sha256sum webpush-keys.json >> SHA256SUMS && sha256sum --check SHA256SUMS)
+fi
 printf 'Verified recovery backup: %s\n' "$backup"
 php backend/artisan down --retry=60
 maintenance=1
@@ -84,6 +91,12 @@ umask 022
 php backend/artisan filament:assets
 umask 077
 php backend/artisan config:clear
+if [[ -n "$migrations" ]]; then
+  migration_args=()
+  while IFS= read -r migration; do migration_args+=("--path=${migration#backend/}"); done <<< "$migrations"
+  (cd backend && php artisan migrate --force "${migration_args[@]}")
+  php backend/artisan mediahub:configure-push
+fi
 php backend/artisan config:cache
 php backend/artisan route:cache
 php backend/artisan view:cache

@@ -6,6 +6,7 @@ use App\Enums\MediaEventSource;
 use App\Enums\MediaEventType;
 use App\Models\Episode;
 use App\Models\Movie;
+use App\Models\Rating;
 use App\Models\Show;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -74,7 +75,7 @@ class DiscoveryService
 
         return [
             'status' => 'ready',
-            'items' => $items,
+            'items' => $this->visibleResults($user, $items),
             'pagination' => [
                 'page' => $page,
                 'totalPages' => max((int) ($movies['total_pages'] ?? 0), (int) ($shows['total_pages'] ?? 0)),
@@ -183,7 +184,7 @@ class DiscoveryService
 
         return [
             'status' => 'ready',
-            'items' => $items,
+            'items' => $this->visibleResults($user, $items),
             'pagination' => [
                 'page' => $page,
                 'totalPages' => (int) ($results['total_pages'] ?? 0),
@@ -225,13 +226,83 @@ class DiscoveryService
             'status' => 'ready',
             'category' => $category,
             'type' => $type,
-            'items' => $items->take(40)->all(),
+            'items' => $this->visibleResults($user, $items->take(40)->all()),
             'pagination' => [
                 'page' => $page,
                 'totalPages' => max((int) ($movies['total_pages'] ?? 0), (int) ($shows['total_pages'] ?? 0)),
                 'totalResults' => (int) ($movies['total_results'] ?? 0) + (int) ($shows['total_results'] ?? 0),
             ],
         ];
+    }
+
+    private function visibleResults(User $user, array $items): array
+    {
+        $dismissed = DB::table('discovery_dismissals')->where('user_id', $user->id)->get()->map(fn ($row) => $row->media_type.':'.$row->tmdb_id)->all();
+
+        return array_values(array_filter($items, fn ($item) => ! in_array($item['media_type'].':'.$item['tmdb_id'], $dismissed, true)));
+    }
+
+    public function curated(User $user, array $filters): array
+    {
+        $page = (int) ($filters['page'] ?? 1);
+        if (! $this->tmdb->enabled()) {
+            return $this->emptySearch('disabled', $page);
+        }
+        $taste = collect();
+        foreach (['movie' => Movie::class, 'show' => Show::class] as $kind => $model) {
+            $ratings = Rating::forUser($user)->where('media_type', $kind)->pluck('rating', 'media_id');
+            $model::forUser($user)->where(function ($query) use ($kind, $ratings, $user): void {
+                $query->whereIn('id', $ratings->filter(fn ($rating) => $rating >= 7)->keys())
+                    ->orWhereHas($kind === 'movie' ? 'watches' : 'episodeWatches', fn ($q) => $q->forUser($user)->watched());
+            })->get(['id', 'genres'])->each(function ($media) use ($taste, $ratings): void {
+                foreach ($media->genres ?? [] as $genre) {
+                    $name = is_array($genre) ? ($genre['name'] ?? '') : $genre;
+                    if ($name !== '' && ($ratings[$media->id] ?? 7) >= 7) {
+                        $taste[$name] = ($taste[$name] ?? 0) + (isset($ratings[$media->id]) ? $ratings[$media->id] - 5 : 1);
+                    }
+                }
+            });
+        }
+        $taste = $taste->sortDesc();
+        $items = collect();
+        $totalPages = 0;
+        $totalResults = 0;
+        foreach (['movie', 'show'] as $type) {
+            if (($filters['type'] ?? 'all') !== 'all' && $filters['type'] !== $type) {
+                continue;
+            }
+            $genres = $type === 'movie' ? self::MOVIE_GENRES : self::SHOW_GENRES;
+            $genre = $filters['genre'] ?? null;
+            if (! $genre && ($filters['category'] ?? '') === 'recommended') {
+                $genre = $taste->keys()->first(fn ($name) => in_array($name, $genres, true));
+            }
+            $genreId = $genre ? array_search($genre, $genres, true) : null;
+            if ($genre && $genreId === false) {
+                continue;
+            }
+            $result = $this->tmdb->discoverFiltered($type, [...$filters, 'genre_id' => $genreId], $page);
+            if ($result === null) {
+                return $this->emptySearch('unavailable', $page);
+            }
+            $rows = collect($result['results'] ?? [])->filter(fn ($row) => is_array($row) && isset($row['id']));
+            $existing = $type === 'movie' ? $this->existingMovies($user, $rows->pluck('id')->all()) : $this->existingShows($user, $rows->pluck('id')->all());
+            $dismissed = DB::table('discovery_dismissals')->where('user_id', $user->id)->where('media_type', $type)->pluck('tmdb_id')->all();
+            foreach ($rows as $row) {
+                $item = $this->searchResult($row, $type, $existing->get((int) $row['id']));
+                if (in_array((int) $row['id'], $dismissed) || (filter_var($filters['hide_watched'] ?? false, FILTER_VALIDATE_BOOLEAN) && $item['watched'])) {
+                    continue;
+                }
+                $matched = collect($item['genres'] ?? [])->first(fn ($name) => isset($taste[$name]));
+                $item['reason'] = $matched ? 'Matches your interest in '.$matched : 'Popular with viewers; rate more titles to refine your suggestions.';
+                $item['tasteScore'] = $matched ? $taste[$matched] : 0;
+                $items->push($item);
+            }
+            $totalPages = max($totalPages, (int) ($result['total_pages'] ?? 0));
+            $totalResults += (int) ($result['total_results'] ?? 0);
+        }
+
+        return ['status' => 'ready', 'items' => $items->sortByDesc('tasteScore')->values()->all(),
+            'pagination' => ['page' => $page, 'totalPages' => $totalPages, 'totalResults' => $totalResults]];
     }
 
     public function addMovie(User $user, int $tmdbId, string $action): Movie

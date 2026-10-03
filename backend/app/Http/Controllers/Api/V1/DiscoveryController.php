@@ -7,10 +7,39 @@ use App\Services\DiscoveryService;
 use App\Services\MediaDetailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class DiscoveryController extends Controller
 {
+    public function curated(Request $request, DiscoveryService $discovery): JsonResponse
+    {
+        $data = $request->validate(['type' => 'nullable|in:all,movie,show', 'page' => 'nullable|integer|min:1|max:500',
+            'category' => 'nullable|in:recommended,trending,popular,now_playing,upcoming,top_rated',
+            'genre' => 'nullable|string|max:40', 'year' => 'nullable|integer|min:1888|max:2100',
+            'language' => 'nullable|regex:/^[a-z]{2}$/', 'max_runtime' => 'nullable|integer|min:1|max:1440',
+            'min_rating' => 'nullable|numeric|min:0|max:10', 'hide_watched' => 'nullable|boolean']);
+
+        return response()->json($discovery->curated($request->user(), $data));
+    }
+
+    public function dismiss(Request $request): JsonResponse
+    {
+        $data = $request->validate(['type' => 'required|in:movie,show', 'tmdb_id' => 'required|integer|min:1']);
+        DB::table('discovery_dismissals')->updateOrInsert([
+            'user_id' => $request->user()->id, 'media_type' => $data['type'], 'tmdb_id' => $data['tmdb_id'],
+        ], ['created_at' => now(), 'updated_at' => now()]);
+
+        return response()->json(['dismissed' => true]);
+    }
+
+    public function resetDismissals(Request $request)
+    {
+        DB::table('discovery_dismissals')->where('user_id', $request->user()->id)->delete();
+
+        return response()->noContent();
+    }
+
     public function detail(Request $request, string $type, int $tmdbId, DiscoveryService $discovery): JsonResponse
     {
         abort_unless(in_array($type, ['movie', 'show'], true), 404);

@@ -167,9 +167,9 @@ describe("MediaHub Web V1 surfaces", () => {
   it("renders database-backed stats", async () => {
     const apiClient = vi.fn().mockResolvedValue({ summary: { moviesWatched: 12, episodesWatched: 80, showsCompleted: 3, totalWatchHours: 71.5, rewatchCount: 2, longestStreakDays: 5 }, monthlyActivity: [], yearlyActivity: [{ period: "2026", watches: 92, minutes: 4290 }], genres: [{ genre: "Drama", count: 8 }], ratings: [{ rating: 9, count: 4 }], topShows: [], topMovies: [] });
     render(<StatsSection apiClient={apiClient} />);
-    expect(await screen.findByText("71.5")).toBeInTheDocument();
+    expect((await screen.findAllByText("71.5")).length).toBeGreaterThan(0);
     expect(screen.getByText("Drama")).toBeInTheDocument();
-    expect(screen.getByText("2026")).toBeInTheDocument();
+    expect(screen.getAllByText("2026").length).toBeGreaterThan(0);
     expect(screen.getByText("9/10")).toBeInTheDocument();
   });
 
