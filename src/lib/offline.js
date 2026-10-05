@@ -1,4 +1,5 @@
 import { apiRequest } from "./api.js";
+import { registerServiceWorker } from "./serviceWorker.js";
 const KEY = "mediahub-offline-v2";
 export function readOffline() {
   try { const data = JSON.parse(localStorage.getItem(KEY)); return data?.version === 2 ? data : { version: 2, owner: null, pages: [], entries: [] }; }
@@ -12,7 +13,7 @@ export async function cacheOfflinePage(label, items, apiClient = apiRequest) {
   if (current.owner && current.owner !== user.id) throw new Error("Clear the previous account’s offline data before saving this account.");
   const safe = items.map(item => ({ id: item.id, kind: item.kind, movieId: item.movieId, showId: item.showId, episodeId: item.episodeId, title: item.title, subtitle: item.subtitle, watchedAt: item.watchedAt }));
   if (!navigator.serviceWorker) throw new Error("Offline pages require a browser with service worker support.");
-  await navigator.serviceWorker.register("/sw.js");
+  await registerServiceWorker();
   await navigator.serviceWorker.ready;
   // Preserve watches or pages saved while the application shell was installing.
   current = readOffline();

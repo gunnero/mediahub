@@ -24,6 +24,7 @@ export default defineConfig({
   plugins: [react(), { name: 'version-offline-shell', apply: 'build', closeBundle() {
     const html = readFileSync('dist/index.html', 'utf8');
     const version = createHash('sha256').update(html).digest('hex').slice(0, 16);
+    writeFileSync('dist/index.html', html.replace('<head>', `<head>\n    <meta name="mediahub-build" content="${version}" />`));
     writeFileSync('dist/sw.js', readFileSync('public/sw.js', 'utf8').replaceAll('__BUILD_ID__', version));
   } }],
 });

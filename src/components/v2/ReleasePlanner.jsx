@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { apiRequest } from "../../lib/api.js";
+import { registerServiceWorker } from "../../lib/serviceWorker.js";
 import { Feedback, ResourceState, useAsyncAction, useResource } from "./shared.jsx";
 
 export function ReleasePlanner({ apiClient = apiRequest, onSessionExpired }) {
@@ -11,7 +12,7 @@ export function ReleasePlanner({ apiClient = apiRequest, onSessionExpired }) {
   const prefs = draft || settings.data?.settings || {};
   async function push(enable) {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error("This browser does not support push. On iPhone, install MediaHub on your Home Screen first.");
-    const registration = await navigator.serviceWorker.register('/sw.js');
+    const registration = await registerServiceWorker();
     await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
     if (!enable) {
