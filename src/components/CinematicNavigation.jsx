@@ -21,10 +21,17 @@ export function CinematicNavigation({ activeSection, alertsCount = 0, features =
   const searchButtonRef = useRef(null);
   const localSearchRef = useRef(null);
   const inputRef = searchInputRef || localSearchRef;
+  const previousSectionRef = useRef(activeSection);
   const secondaryItems = [...moreItems, ...(features.webPlayerEnabled ? [["player", "Player", Play]] : [])];
   const activeGroup = libraryItems.some(([id]) => id === activeSection) ? "library" : secondaryItems.some(([id]) => id === activeSection) ? "more" : activeSection;
 
-  useEffect(() => { setMenu(null); }, [activeSection]);
+  useEffect(() => {
+    // An initial effect must not dismiss a menu opened just after the first render.
+    if (previousSectionRef.current !== activeSection) {
+      previousSectionRef.current = activeSection;
+      setMenu(null);
+    }
+  }, [activeSection]);
   useEffect(() => {
     function dismiss(event) {
       if (!rootRef.current?.contains(event.target)) setMenu(null);
