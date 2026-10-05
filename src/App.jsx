@@ -7,18 +7,10 @@ import "./components/v2/v2.css";
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
-  CalendarDots,
-  ChartBar,
   CheckCircle,
   Clock,
-  Compass,
   FilmSlate,
-  GearSix,
-  House,
-  ListBullets,
-  MagnifyingGlass,
   Play,
-  TelevisionSimple,
   X,
 } from "@phosphor-icons/react";
 import { getUnreadCount } from "./lib/dashboard.js";
@@ -28,6 +20,7 @@ import { discoveryHref } from "./lib/discovery.js";
 import { WatchDateForm } from "./components/WatchDateForm.jsx";
 import { PlayerSection, SettingsSection } from "./components/MediaHubSurfaces.jsx";
 import { HomeExperience } from "./components/HomeExperience.jsx";
+import { CinematicNavigation } from "./components/CinematicNavigation.jsx";
 import {
   AlertsSection,
   CalendarSection,
@@ -38,7 +31,6 @@ import {
   WebSettingsSection,
 } from "./components/WebV1Surfaces.jsx";
 import {
-  AccountMenu,
   FriendInviteLandingPage,
   FriendsSection,
   InviteFriendsSection,
@@ -69,19 +61,6 @@ function safeDecodeRouteValue(value) {
   }
 }
 
-const navItems = [
-  { id: "home", label: "Home", icon: House },
-  { id: "discover", label: "Discover", icon: Compass },
-  { id: "movies", label: "Movies", icon: FilmSlate },
-  { id: "shows", label: "Shows", icon: TelevisionSimple },
-  { id: "history", label: "History", icon: Clock },
-  { id: "calendar", label: "Calendar", icon: CalendarDots },
-  { id: "alerts", label: "Alerts", icon: Bell },
-  { id: "stats", label: "Stats", icon: ChartBar },
-  { id: "lists", label: "Lists", icon: ListBullets },
-  { id: "settings", label: "Settings", icon: GearSix },
-  { id: "player", label: "Player", icon: Play, feature: "webPlayerEnabled" },
-];
 
 const fallbackData = {
   features: {
@@ -293,59 +272,6 @@ function Logo() {
   );
 }
 
-export function Sidebar({ activeSection, alertsCount, features = {}, onSelect }) {
-  const activeItemRef = useRef(null);
-
-  useEffect(() => {
-    const activeItem = activeItemRef.current;
-    const isMobileNavigation = window.matchMedia?.("(max-width: 820px)")?.matches;
-
-    if (!activeItem || !isMobileNavigation) return;
-
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    activeItem.scrollIntoView?.({
-      behavior: reduceMotion ? "auto" : "smooth",
-      block: "nearest",
-      inline: "center",
-    });
-  }, [activeSection]);
-
-  return (
-    <aside className="sidebar">
-      <Logo />
-      <nav className="main-nav" aria-label="Main navigation">
-        {navItems.filter((item) => !item.feature || features[item.feature]).map((item) => {
-          const Icon = item.icon;
-          const active = activeSection === item.id;
-          const unreadLabel = item.id === "alerts" && alertsCount > 0
-            ? `${item.label}, ${alertsCount} unread alert${alertsCount === 1 ? "" : "s"}`
-            : item.label;
-          return (
-            <button
-              aria-label={unreadLabel}
-              className={`nav-item ${active ? "active" : ""}`}
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              ref={active ? activeItemRef : null}
-              type="button"
-            >
-              <Icon size={24} />
-              <span>{item.label}</span>
-              {item.id === "alerts" && alertsCount > 0 ? (
-                <b aria-hidden="true" className="nav-alert-badge">{alertsCount > 99 ? "99+" : alertsCount}</b>
-              ) : null}
-            </button>
-          );
-        })}
-      </nav>
-      <div className="sidebar-footer">
-        <span>Private entertainment memory</span>
-        <strong>v1.0.0</strong>
-      </div>
-    </aside>
-  );
-}
-
 export function getDashboardUnreadCount(dashboard, readAlerts = new Set()) {
   const serverUnread = Number(dashboard?.stats?.alertsUnread);
   const baseline = dashboard?.stats?.alertsUnread != null && Number.isFinite(serverUnread)
@@ -405,25 +331,6 @@ function LoginScreen({ error, onLogin, submitting }) {
         </button>
       </form>
     </div>
-  );
-}
-
-function Topbar({ onAccountAction, profile, query, onQueryChange, onLogout, searchInputRef, showSearch = true }) {
-  return (
-    <header className="topbar">
-      {showSearch ? <label className="search-box">
-        <MagnifyingGlass size={22} />
-        <input
-          ref={searchInputRef}
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search shows, movies, episodes..."
-        />
-      </label> : <div className="topbar-search-spacer" />}
-      <div className="topbar-actions">
-        <AccountMenu onLogout={onLogout} onNavigate={onAccountAction} profile={profile} />
-      </div>
-    </header>
   );
 }
 
@@ -1269,10 +1176,10 @@ export function DetailModal({
   const closeButtonRef = useRef(null);
 
   useEffect(() => {
-    setActiveTab("overview");
-    setSelectedSeason(detail?.seasons?.[0]?.seasonNumber ?? null);
+    setActiveTab(item?.initialTab === "episodes" && detail?.kind === "show" ? "episodes" : "overview");
+    setSelectedSeason(item?.initialTab === "episodes" ? detail?.nextUnwatchedEpisode?.seasonNumber ?? detail?.seasons?.[0]?.seasonNumber ?? null : detail?.seasons?.[0]?.seasonNumber ?? null);
     setNoteBody(detail?.notes?.[0]?.body || "");
-  }, [detail?.id, detail?.kind]);
+  }, [detail?.id, detail?.kind, item?.initialTab]);
 
   useEffect(() => {
     closeButtonRef.current?.focus();
@@ -1695,6 +1602,7 @@ export function App() {
   const [movieIntent, setMovieIntent] = useState({ status: "all", sort: "latest_watched", key: 0 });
   const discoverIntent = { filters: route.discovery, onChange: (filters, options) => navigate(discoveryHref(filters), options) };
   const searchInputRef = useRef(null);
+  const searchToggleRef = useRef(null);
   const detailSelectionRef = useRef(null);
 
   useEffect(() => () => {
@@ -1930,7 +1838,14 @@ export function App() {
 
   function handleHomeNavigation(action) {
     if (action === "search") {
-      searchInputRef.current?.focus();
+      searchToggleRef.current?.click();
+      return;
+    }
+    if (action === "watchlist") {
+      setQuery("");
+      setMovieIntent(current => ({ status: "watchlist", sort: "newest_added", key: current.key + 1 }));
+      clearDetail();
+      navigate("/movies");
       return;
     }
     if (action === "add-movie" || action === "add-show") {
@@ -2162,23 +2077,21 @@ export function App() {
   const singleColumnSection = !homeSection;
 
   return (
-    <div className="app-shell">
-      <Sidebar
+    <div className={`app-shell cinema-shell${homeSection ? " cinema-home-page" : ""}`}>
+      <CinematicNavigation
         activeSection={activeSection}
         alertsCount={unreadCount}
         features={dashboard.features}
         onSelect={selectSection}
+        onAccountAction={handleAccountAction}
+        profile={{ ...dashboard.profile, name: dashboard.profile.name || authUser?.name }}
+        query={query}
+        onLogout={handleLogout}
+        onQueryChange={value => { setQuery(value); if (value.trim().length >= 2 && !homeSection) { clearDetail(); navigate("/"); } }}
+        searchInputRef={searchInputRef}
+        searchToggleRef={searchToggleRef}
       />
-      <main className="dashboard-shell">
-        <Topbar
-          onAccountAction={handleAccountAction}
-          profile={{ ...dashboard.profile, name: dashboard.profile.name || authUser?.name }}
-          query={query}
-          onLogout={handleLogout}
-          onQueryChange={setQuery}
-          searchInputRef={searchInputRef}
-          showSearch={activeSection !== "movies"}
-        />
+      <main className="dashboard-shell" id="main-content">
         {isEmptyLibrary ? (
           <div className="data-warning">Your library is empty.</div>
         ) : null}

@@ -1,5 +1,6 @@
+import { CinematicHome } from "./CinematicHome.jsx";
 import { PersonalQueue } from "./v2/LibraryTools.jsx";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   CalendarDots,
@@ -61,14 +62,6 @@ function addDays(date, amount) {
   const next = new Date(date);
   next.setDate(next.getDate() + amount);
   return next;
-}
-
-function formatWelcomeDate(date = new Date()) {
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  }).format(date);
 }
 
 function formatEventTime(value) {
@@ -148,17 +141,6 @@ function LazyHomeSection({ children, label, minHeight = 260 }) {
   );
 }
 
-function HomeWelcome({ profile }) {
-  const displayName = profile?.displayName || profile?.name || profile?.username || "there";
-  const now = new Date();
-  return (
-    <header className="home-welcome">
-      <time dateTime={isoDate(now)}>{formatWelcomeDate(now)}</time>
-      <h1>Welcome back, {displayName}</h1>
-    </header>
-  );
-}
-
 function ContinueWatching({ apiClient, onItemsLoaded, onNavigate, onOpen, onRefreshDashboard, onSessionExpired, playbackEnabled }) {
   const railRef = useRef(null);
   const [version, setVersion] = useState(0);
@@ -198,7 +180,7 @@ function ContinueWatching({ apiClient, onItemsLoaded, onNavigate, onOpen, onRefr
   }
 
   function move(direction) {
-    railRef.current?.scrollBy({ left: direction * Math.max(320, railRef.current.clientWidth * 0.78), behavior: "smooth" });
+    railRef.current?.scrollBy({ left: direction * Math.max(320, railRef.current.clientWidth * 0.78), behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ? "auto" : "smooth" });
   }
 
   function handleRailKeyDown(event) {
@@ -217,7 +199,7 @@ function ContinueWatching({ apiClient, onItemsLoaded, onNavigate, onOpen, onRefr
         action={state.items.length > 1 ? <div className="home-carousel-controls"><button aria-label="Previous continue item" onClick={() => move(-1)} type="button"><CaretLeft /></button><button aria-label="Next continue item" onClick={() => move(1)} type="button"><CaretRight /></button></div> : null}
       />
       {state.loading ? <div aria-label="Loading Continue Watching" className="home-continue-skeleton" role="status"><span /><span /></div> : null}
-      {!state.loading && state.items.length ? <div className={`home-continue-rail${state.items.length === 1 ? " single" : ""}`} onKeyDown={handleRailKeyDown} ref={railRef} role="region" tabIndex="0" aria-label="Continue Watching items">{state.items.map((item) => <article className="home-continue-card" key={item.id}>
+      {!state.loading && state.items.length ? <div className={`home-continue-rail${state.items.length === 1 ? " single" : ""}`} onKeyDown={handleRailKeyDown} ref={railRef} role="region" tabIndex="0" aria-label="Continue Watching items">{state.items.map((item) => <article className="home-continue-card" key={item.id || item.episodeId}>
         <div className="home-continue-art">
           <HomeArtwork backdrop eager item={item} />
           <span className="home-continue-poster"><HomeArtwork eager item={item} /></span>
@@ -238,25 +220,6 @@ function ContinueWatching({ apiClient, onItemsLoaded, onNavigate, onOpen, onRefr
       {state.error ? <div className="home-inline-error">{state.error}</div> : null}
     </section>
   );
-}
-
-function TonightSection({ continueItems, movies, upcoming, onNavigate, onOpen }) {
-  const shortMovies = movies.filter((movie) => movie.runtime > 0 && movie.runtime <= 120);
-  const movieCandidates = shortMovies.length ? shortMovies : movies;
-  const today = new Date();
-  const dayNumber = Math.floor(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000);
-  const movie = movieCandidates.length ? movieCandidates[dayNumber % movieCandidates.length] : null;
-  const continuation = continueItems[0];
-  const release = upcoming[0];
-  const choice = movie
-    ? { ...movie, eyebrow: "From your watchlist", heading: movie.title, meta: movie.runtime ? `${movie.runtime} min${movie.runtime <= 120 ? " · Under two hours" : " · From your watchlist"}` : "Unwatched movie", reason: movie.runtime > 0 && movie.runtime <= 120 ? "Because it is unwatched, already in your watchlist, and fits a shorter evening." : "Because it is unwatched and already in your watchlist.", action: "View movie" }
-    : continuation
-      ? { ...continuation, eyebrow: "Your next episode", heading: `Continue ${continuation.showTitle}`, meta: `${continuation.code}${continuation.runtime ? ` · ${continuation.runtime} min` : ""}`, reason: "Because this is the next unfinished episode in your library.", action: "Resume episode" }
-      : release
-        ? { ...release, eyebrow: "Coming up", heading: release.title, meta: release.subtitle || "From your release calendar", reason: "Because it belongs to a followed show or a movie on your watchlist.", action: "View details" }
-        : null;
-
-  return <section className="home-section tonight-section"><SectionHeading compact eyebrow="For this evening" title="Tonight" />{choice ? <article className="tonight-feature"><div className="tonight-feature-copy"><span className="eyebrow">{choice.eyebrow}</span><h3>{choice.heading}</h3><p className="tonight-meta">{choice.meta}</p><p>{choice.reason}</p><button className="primary-action" onClick={() => onOpen(choice)} type="button">{choice.action}<ArrowRight size={17} /></button></div><button aria-label={`Open ${choice.heading}`} className="tonight-feature-art" onClick={() => onOpen(choice)} type="button"><HomeArtwork backdrop item={choice} /></button></article> : <HomeEmptyState icon={Sparkle} title="Tonight is open" body="Add a movie to your watchlist or start a show to make this space useful." actionLabel="Discover something" onAction={() => onNavigate("discover")} />}</section>;
 }
 
 function HomePosterRow({ items, onOpen }) {
@@ -389,15 +352,13 @@ function QuickActions({ onNavigate }) {
 }
 
 export function HomeExperience({ apiClient, dashboard, onNavigate, onOpen, onRefreshDashboard, onSessionExpired }) {
-  const [upcoming, setUpcoming] = useState([]);
   const [continueItems, setContinueItems] = useState([]);
   const [queueVersion, setQueueVersion] = useState(0);
-  const tonightMovies = useMemo(() => dashboard.moviesToCheckOut || [], [dashboard.moviesToCheckOut]);
 
   return (
-    <div className="home-experience">
-      <HomeWelcome profile={dashboard.profile} />
-      <details className="v2-panel"><summary>Manage your queue · pins, paused shows, and time available</summary><PersonalQueue apiClient={apiClient} onOpen={onOpen} onSessionExpired={onSessionExpired} onChanged={() => setQueueVersion(value => value + 1)} /></details>
+    <div className="home-experience cinema-home">
+      <CinematicHome apiClient={apiClient} dashboard={dashboard} continueItems={continueItems} onNavigate={onNavigate} onOpen={onOpen} onSessionExpired={onSessionExpired} />
+      <div className="cinema-home-extras">
       <ContinueWatching
         key={queueVersion}
         apiClient={apiClient}
@@ -408,13 +369,14 @@ export function HomeExperience({ apiClient, dashboard, onNavigate, onOpen, onRef
         onSessionExpired={onSessionExpired}
         playbackEnabled={Boolean(dashboard.features?.webPlayerEnabled)}
       />
-      <TonightSection continueItems={continueItems} movies={tonightMovies} onNavigate={onNavigate} onOpen={onOpen} upcoming={upcoming} />
-      <RecentlyAdded apiClient={apiClient} onNavigate={onNavigate} onOpen={onOpen} onSessionExpired={onSessionExpired} />
-      <UpcomingSection apiClient={apiClient} onLoaded={setUpcoming} onNavigate={onNavigate} onOpen={onOpen} onSessionExpired={onSessionExpired} />
+      <details className="v2-panel cinema-queue-manager"><summary>Manage your queue</summary><p>Pin a favorite, pause a show, or find something that fits your evening.</p><PersonalQueue apiClient={apiClient} onOpen={onOpen} onSessionExpired={onSessionExpired} onChanged={() => setQueueVersion(value => value + 1)} /></details>
+      <LazyHomeSection label="Recently added"><RecentlyAdded apiClient={apiClient} onNavigate={onNavigate} onOpen={onOpen} onSessionExpired={onSessionExpired} /></LazyHomeSection>
+      <UpcomingSection apiClient={apiClient} onNavigate={onNavigate} onOpen={onOpen} onSessionExpired={onSessionExpired} />
       <LazyHomeSection label="Entertainment Diary"><DiaryPreview onNavigate={onNavigate} timeline={dashboard.timeline} /></LazyHomeSection>
       <LazyHomeSection label="Pinned Lists"><PinnedListsSection apiClient={apiClient} onNavigate={onNavigate} onSessionExpired={onSessionExpired} /></LazyHomeSection>
       <LazyHomeSection label="Friends"><FriendsHomeSection apiClient={apiClient} onNavigate={onNavigate} onSessionExpired={onSessionExpired} /></LazyHomeSection>
       <LazyHomeSection label="Quick Actions" minHeight={180}><QuickActions onNavigate={onNavigate} /></LazyHomeSection>
+      </div>
     </div>
   );
 }

@@ -13,9 +13,16 @@ import {
   PlayerSection,
   SettingsSection,
   ShowLibrary,
-  Sidebar,
   TimelinePanel,
 } from "./App.jsx";
+import { CinematicNavigation } from "./components/CinematicNavigation.jsx";
+
+function selectNavigation(name) {
+  const navigation = screen.getByRole("navigation", { name: "Main navigation" });
+  const group = ["Movies", "Shows"].includes(name) ? "Library" : ["History", "Stats", "Lists", "Settings", "Player"].includes(name) ? "More" : null;
+  if (group) { fireEvent.click(within(navigation).getByRole("button", { name: group, exact: true })); fireEvent.click(within(navigation).getByRole("menuitem", { name, exact: true })); }
+  else fireEvent.click(within(navigation).getByRole("button", { name, exact: true }));
+}
 
 const movieItem = {
   id: "movie-watch-1",
@@ -148,7 +155,7 @@ describe("Settings page layout", () => {
 
     expect(await screen.findByText("Continue Watching")).toBeInTheDocument();
     expect(container.querySelectorAll(".lazy-home-section").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    selectNavigation("Settings");
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(container.querySelector(".lazy-home-section")).not.toBeInTheDocument();
@@ -165,7 +172,7 @@ describe("Settings page layout", () => {
     const { container } = render(<App />);
 
     await screen.findByText("Continue Watching");
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    selectNavigation("Settings");
     await screen.findByRole("heading", { name: "Settings" });
 
     expect(container.querySelector(".dashboard-grid")).toHaveClass("settings-dashboard-grid");
@@ -181,6 +188,7 @@ describe("Home page navigation and page-specific hero rules", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Recently Added" });
 
+    fireEvent.click(screen.getByRole("button", { name: "Search your library" }));
     const search = screen.getByPlaceholderText("Search shows, movies, episodes...");
     fireEvent.change(search, { target: { value: "Something" } });
     expect(screen.getByRole("heading", { name: "Results for “Something”" })).toBeInTheDocument();
@@ -189,7 +197,7 @@ describe("Home page navigation and page-specific hero rules", () => {
 
     expect(search).toHaveValue("");
     expect(screen.queryByRole("heading", { name: "Results for “Something”" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Tonight" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "From your watchlist" })).toBeInTheDocument();
   });
 
   it("uses the existing app navigation from the new Home experience", async () => {
@@ -198,13 +206,13 @@ describe("Home page navigation and page-specific hero rules", () => {
     expect(await screen.findByRole("heading", { name: "Recently Added" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Upcoming" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    selectNavigation("History");
     expect(await screen.findByRole("heading", { name: "Watch history" })).toBeInTheDocument();
     expect(screen.getByLabelText("History type")).toHaveValue("all");
 
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     await screen.findByRole("heading", { name: "Recently Added" });
-    fireEvent.click(screen.getByRole("navigation", { name: "Main navigation" }).querySelector('.nav-item[aria-label="Movies"]'));
+    selectNavigation("Movies");
     expect(await screen.findByRole("heading", { name: "Movies" })).toBeInTheDocument();
     expect(screen.getByLabelText("Movie status")).toHaveValue("all");
   });
@@ -215,7 +223,7 @@ describe("Home page navigation and page-specific hero rules", () => {
     await screen.findByRole("heading", { name: "Quick Actions" });
 
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
-    expect(screen.getByPlaceholderText("Search shows, movies, episodes...")).toHaveFocus();
+    await waitFor(() => expect(screen.getByPlaceholderText("Search shows, movies, episodes...")).toHaveFocus());
 
     let quickActions = screen.getByRole("heading", { name: "Quick Actions" }).closest("section");
     fireEvent.click(within(quickActions).getByRole("button", { name: "Movies" }));
@@ -239,7 +247,7 @@ describe("Home page navigation and page-specific hero rules", () => {
     expect(await screen.findByRole("heading", { name: "Discover" })).toBeInTheDocument();
     expect(container.querySelector(".hero-panel")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Shows" }));
+    selectNavigation("Shows");
     expect(await screen.findByRole("heading", { name: "Shows" })).toBeInTheDocument();
     expect(screen.getByText("Recent show")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue watching" })).toBeInTheDocument();
@@ -566,65 +574,55 @@ describe("Web navigation feature flags", () => {
   });
 
   it("identifies unread alerts and keeps their badge inside the Alerts destination", () => {
-    const { rerender } = render(<Sidebar activeSection="stats" alertsCount={4} onSelect={vi.fn()} />);
+    const { rerender } = render(<CinematicNavigation activeSection="stats" alertsCount={4} onSelect={vi.fn()} />);
 
     const alerts = screen.getByRole("button", { name: "Alerts, 4 unread alerts" });
-    const stats = screen.getByRole("button", { name: "Stats" });
+    const stats = screen.getByRole("button", { name: "More" });
     const badge = within(alerts).getByText("4");
     expect(badge).toHaveClass("nav-alert-badge");
     expect(badge).toHaveAttribute("aria-hidden", "true");
     expect(within(stats).queryByText("4")).not.toBeInTheDocument();
 
-    rerender(<Sidebar activeSection="stats" alertsCount={1} onSelect={vi.fn()} />);
+    rerender(<CinematicNavigation activeSection="stats" alertsCount={1} onSelect={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Alerts, 1 unread alert" })).toBeInTheDocument();
 
-    rerender(<Sidebar activeSection="stats" alertsCount={0} onSelect={vi.fn()} />);
+    rerender(<CinematicNavigation activeSection="stats" alertsCount={0} onSelect={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Alerts" })).toBeInTheDocument();
     expect(screen.queryByText("1")).not.toBeInTheDocument();
   });
 
-  it("anchors the mobile unread badge inside its navigation destination", () => {
-    const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
-
-    expect(css).toMatch(/\.nav-item \.nav-alert-badge\s*\{[^}]*top:\s*3px;[^}]*right:\s*7px;[^}]*left:\s*auto;[^}]*margin:\s*0;/s);
+  it("keeps library and advanced destinations reachable through labelled menus", () => {
+    const onSelect = vi.fn();
+    render(<CinematicNavigation activeSection="home" onSelect={onSelect} />);
+    selectNavigation("Movies");
+    expect(onSelect).toHaveBeenCalledWith("movies");
+    selectNavigation("Settings");
+    expect(onSelect).toHaveBeenCalledWith("settings");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("hides Player by default and reveals it only when explicitly enabled", () => {
-    const { rerender } = render(<Sidebar activeSection="home" alertsCount={0} onSelect={vi.fn()} />);
-
-    expect(screen.queryByRole("button", { name: /player/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /home/i })).toHaveAttribute("aria-label", "Home");
-    expect(screen.getByRole("button", { name: /lists/i })).toBeInTheDocument();
-
-    rerender(<Sidebar activeSection="home" alertsCount={0} features={{ webPlayerEnabled: true }} onSelect={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /player/i })).toBeInTheDocument();
+    const { rerender } = render(<CinematicNavigation activeSection="home" onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.queryByRole("menuitem", { name: "Player" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Lists" })).toBeInTheDocument();
+    rerender(<CinematicNavigation activeSection="home" features={{ webPlayerEnabled: true }} onSelect={vi.fn()} />);
+    expect(screen.getByRole("menuitem", { name: "Player" })).toBeInTheDocument();
   });
 
-  it("keeps the active destination visible in the mobile navigation dock", async () => {
-    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
-    const scrollIntoView = vi.fn();
-    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
-    vi.stubGlobal("matchMedia", vi.fn((query) => ({
-      matches: query === "(max-width: 820px)",
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })));
-
-    const { rerender } = render(<Sidebar activeSection="home" alertsCount={0} onSelect={vi.fn()} />);
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
-    scrollIntoView.mockClear();
-
-    rerender(<Sidebar activeSection="settings" alertsCount={0} onSelect={vi.fn()} />);
-
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "center",
-    }));
-
-    window.HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+  it("supports keyboard navigation and restores focus when a menu is dismissed", async () => {
+    render(<CinematicNavigation activeSection="settings" onSelect={vi.fn()} />);
+    const more = screen.getByRole("button", { name: "More" });
+    expect(more).toHaveAttribute("aria-current", "page");
+    fireEvent.keyDown(more, { key: "ArrowDown" });
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: "History" })).toHaveFocus());
+    fireEvent.keyDown(document.activeElement, { key: "End" });
+    expect(screen.getByRole("menuitem", { name: "Settings" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
   });
+
 });
 
 const unlinkedCatalogItem = {
@@ -1040,11 +1038,11 @@ describe("Library browser", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Recently Added" });
 
-    fireEvent.click(screen.getByRole("navigation", { name: "Main navigation" }).querySelector('.nav-item[aria-label="Movies"]'));
+    selectNavigation("Movies");
 
     expect(await screen.findByRole("heading", { name: "Movies" })).toBeInTheDocument();
     expect(screen.getByLabelText("Search movies")).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Search shows, movies, episodes...")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search shows, movies, episodes...")).not.toBeVisible();
   });
 });
 
@@ -1277,7 +1275,7 @@ describe("Media detail request lifecycle", () => {
   async function openMovieLibrary() {
     render(<App />);
     const navigation = await screen.findByRole("navigation", { name: "Main navigation" });
-    fireEvent.click(within(navigation).getByRole("button", { name: "Movies", exact: true }));
+    selectNavigation("Movies");
     await screen.findByRole("button", { name: "Open First movie", exact: true });
   }
 
@@ -1286,13 +1284,13 @@ describe("Media detail request lifecycle", () => {
     stubAppApi();
     render(<App />);
     const navigation = await screen.findByRole("navigation", { name: "Main navigation" });
-    expect(within(navigation).getByRole("button", { name: "History", exact: true })).toHaveClass("active");
-    fireEvent.click(within(navigation).getByRole("button", { name: "Movies", exact: true }));
+    expect(within(navigation).getByRole("button", { name: "More", exact: true })).toHaveClass("active");
+    selectNavigation("Movies");
     expect(window.location.pathname).toBe("/movies");
     await act(async () => window.history.back());
-    await waitFor(() => expect(within(navigation).getByRole("button", { name: "History", exact: true })).toHaveClass("active"));
+    await waitFor(() => expect(within(navigation).getByRole("button", { name: "More", exact: true })).toHaveClass("active"));
     await act(async () => window.history.forward());
-    await waitFor(() => expect(within(navigation).getByRole("button", { name: "Movies", exact: true })).toHaveClass("active"));
+    await waitFor(() => expect(within(navigation).getByRole("button", { name: "Library", exact: true })).toHaveClass("active"));
   });
 
   it("preserves discovery filters and pagination through title details, Back, and reload", async () => {
