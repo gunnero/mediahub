@@ -21,6 +21,8 @@ gdpr-data.zip
 *gdpr*.csv
 qa/
 design-qa.md
+# Local design references and QA captures can contain personal library data.
+docs/design/
 .DS_Store
 .mediahub-deploy.env
 __pycache__/

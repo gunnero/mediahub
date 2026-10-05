@@ -84,10 +84,14 @@ def stage(source, public, commit):
 def verify(source, url, index_path):
     source = Path(source)
     assets = validate(source)
+    checks = [(index_path, source / "index.html"), *[(name, source / name.lstrip("/")) for name in assets]]
     if (source / "sw.js").is_file():
         worker = "/sw.js" if index_path == "/" else index_path.replace("mediahub-release-check-", "mediahub-sw-").replace(".html", ".js")
-        assets.append(worker)
-    for remote, local in [(index_path, source / "index.html"), *[(name, source / ("sw.js" if "mediahub-sw-" in name else name.lstrip("/"))) for name in assets]]:
+        version = re.search(r'<meta name="mediahub-build" content="([a-f0-9]{16})"', (source / "index.html").read_text())
+        if index_path == "/" and version:
+            worker += "?build=" + version.group(1)
+        checks.append((worker, source / "sw.js"))
+    for remote, local in checks:
         data = subprocess.check_output(["curl", "--noproxy", "*", "--fail", "--silent", "--show-error", "--max-time", "30", url.rstrip("/") + remote])
         if hashlib.sha256(data).digest() != hashlib.sha256(local.read_bytes()).digest():
             raise ValueError(f"HTTP content mismatch: {remote}")

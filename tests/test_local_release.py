@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('release_assets', ROOT / 'scripts/release-assets.py')
@@ -40,6 +41,27 @@ class ReleaseAssetsTest(unittest.TestCase):
         assets.publish(self.public, self.commit)
         self.assertEqual((self.public / 'sw.js').read_text(), 'new worker')
         self.assertEqual((self.public / 'sw.js').stat().st_mode & 0o777, 0o644)
+
+    def test_verification_uses_the_browser_worker_url_when_cdn_caches_the_old_worker(self):
+        version = '0123456789abcdef'
+        html = (self.frontend / 'index.html').read_text()
+        (self.frontend / 'index.html').write_text(f'<meta name="mediahub-build" content="{version}" />' + html)
+        (self.frontend / 'sw.js').write_text('new worker')
+        requested = []
+
+        def fetch(command):
+            path = command[-1].removeprefix('https://example.test')
+            requested.append(path)
+            if path == '/sw.js':
+                return b'cached old worker'
+            if path == f'/sw.js?build={version}':
+                return b'new worker'
+            return (self.frontend / (path.lstrip('/') or 'index.html')).read_bytes()
+
+        with patch.object(assets.subprocess, 'check_output', side_effect=fetch):
+            assets.verify(self.frontend, 'https://example.test', '/')
+        self.assertIn(f'/sw.js?build={version}', requested)
+        self.assertNotIn('/sw.js', requested)
 
     def test_private_umask_never_reaches_public_files_and_index_switch_is_separate(self):
         private = self.root / 'private.env'

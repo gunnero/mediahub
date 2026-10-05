@@ -20,7 +20,7 @@ function apiFixture(overrides = {}) {
   return vi.fn(async (path, options = {}) => {
     if (path.startsWith("/api/v1/library/continue-watching")) return { items: [{ id: 81, episodeId: 81, showId: 8, kind: "episode", title: "Hello, Ms. Cobel", showTitle: "Severance", code: "S02E01", runtime: 48, poster: "/severance.jpg", backdrop: "/severance-wide.jpg", progress: 40 }] };
     if (path.startsWith("/api/v1/library/movies?sort=newest_added")) return { items: [{ id: 42, movieId: 42, kind: "movie", title: "Arrival", runtime: 116, poster: "/arrival.jpg", meta: "2016 · 116 min" }], pagination: { hasMore: false } };
-    if (path.startsWith("/api/v1/library/shows?sort=newest_added")) return { items: [{ id: 8, showId: 8, kind: "show", title: "Severance", poster: "/severance.jpg", meta: "8/19 watched" }], pagination: { hasMore: false } };
+    if (path.startsWith("/api/v1/library/shows?")) return { items: [{ id: 8, showId: 8, kind: "show", title: "Severance", poster: "/severance.jpg", meta: "8/19 watched", watchedEpisodes: 8, airedEpisodes: 19, progress: 42 }], pagination: { hasMore: false } };
     if (path.startsWith("/api/v1/calendar?")) return { items: [{ id: "episode-91", kind: "episode", episodeId: 91, showId: 8, date: new Date().toISOString().slice(0, 10), title: "Severance", subtitle: "S02E02 · Goodbye" }] };
     if (path === "/api/v1/friends") return { friends: [{ friendshipId: 2, profile: { slug: "helly", displayName: "Helly" } }] };
     if (path === "/api/v1/profiles/helly") return { content: { favoriteMovies: [{ id: 77, movieId: 77, title: "Moon", poster: "/moon.jpg" }], publicLists: [{ id: 4, name: "Quiet sci-fi", itemsCount: 7 }] } };
@@ -40,6 +40,7 @@ class ImmediateIntersectionObserver {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -50,13 +51,12 @@ describe("HomeExperience", () => {
     const onOpen = vi.fn();
     render(<HomeExperience apiClient={apiClient} dashboard={dashboard} onNavigate={vi.fn()} onOpen={onOpen} onRefreshDashboard={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: "Welcome back, Gunner" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Severance" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your shows" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Severance", level: 1 })).toBeInTheDocument();
     expect(screen.getByText("48 min episode")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View episode" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Tonight" })).toBeInTheDocument();
-    expect(screen.getByText("Because it is unwatched, already in your watchlist, and fits a shorter evening.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "From your watchlist" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recently Added" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Upcoming" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Entertainment Diary" })).toBeInTheDocument();
@@ -71,25 +71,29 @@ describe("HomeExperience", () => {
     expect(screen.queryByText(/provider_url|stream_url|private watch history/i)).not.toBeInTheDocument();
   });
 
-  it("rotates Tonight across eligible unwatched watchlist movies by day", () => {
-    const rotatingDashboard = {
-      ...dashboard,
-      moviesToCheckOut: [
-        { id: "watchlist-1", kind: "movie", movieId: 1, title: "First Choice", runtime: 100 },
-        { id: "watchlist-2", kind: "movie", movieId: 2, title: "Second Choice", runtime: 110 },
-      ],
-    };
+  it("opens the featured show's episodes and filters the full watchlist", async () => {
+    const onOpen = vi.fn();
+    const onNavigate = vi.fn();
+    render(<HomeExperience apiClient={apiFixture()} dashboard={dashboard} onNavigate={onNavigate} onOpen={onOpen} />);
+    await screen.findAllByText("8 of 19 episodes watched");
+    fireEvent.click(screen.getByRole("button", { name: "Open episodes", exact: true }));
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: "show", showId: 8, initialTab: "episodes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Browse your watchlist" }));
+    expect(onNavigate).toHaveBeenCalledWith("watchlist");
+  });
 
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-07T12:00:00Z"));
-    const firstDay = render(<HomeExperience apiClient={apiFixture()} dashboard={rotatingDashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
-    const firstTitle = screen.getByText(/Choice$/).textContent;
-    firstDay.unmount();
-
-    vi.setSystemTime(new Date("2026-08-08T12:00:00Z"));
-    render(<HomeExperience apiClient={apiFixture()} dashboard={rotatingDashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
-    expect(screen.getByText(/Choice$/).textContent).not.toBe(firstTitle);
-    vi.useRealTimers();
+  it("opens a queued show's catalog even when it is outside the recent show shelf", async () => {
+    const baseApi = apiFixture();
+    const apiClient = vi.fn(path => path.startsWith("/api/v1/library/continue-watching")
+      ? Promise.resolve({ items: [{ episodeId: 901, showId: 90, kind: "episode", showTitle: "Pinned show", title: "Next episode", progress: 25 }] })
+      : baseApi(path));
+    const onOpen = vi.fn();
+    render(<HomeExperience apiClient={apiClient} dashboard={dashboard} onNavigate={vi.fn()} onOpen={onOpen} />);
+    await screen.findByRole("heading", { name: "Pinned show", level: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Open episodes", exact: true }));
+    const opened = onOpen.mock.calls[0][0];
+    expect(opened).toMatchObject({ kind: "show", showId: 90, initialTab: "episodes" });
+    expect(opened).not.toHaveProperty("episodeId");
   });
 
   it("renders upcoming releases as semantic, readable cards and opens the selected release", async () => {
@@ -125,15 +129,15 @@ describe("HomeExperience", () => {
     expect(phoneStyles).not.toMatch(/grid-auto-columns:\s*88%/);
   });
 
-  it("uses an unwatched watchlist movie even when none are under two hours", () => {
+  it("shows the existing watchlist without excluding longer movies", () => {
     const longMovieDashboard = {
       ...dashboard,
       moviesToCheckOut: [{ id: "watchlist-long", kind: "movie", movieId: 3, title: "Long Movie", runtime: 145 }],
     };
 
     render(<HomeExperience apiClient={apiFixture()} dashboard={longMovieDashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "Long Movie" })).toBeInTheDocument();
-    expect(screen.getByText("Because it is unwatched and already in your watchlist.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Long Movie" })).toBeInTheDocument();
+    expect(screen.getByText("2h 25m")).toBeInTheDocument();
   });
 
   it("marks the next episode finished through canonical watch history", async () => {
@@ -168,7 +172,8 @@ describe("HomeExperience", () => {
     const apiClient = apiFixture();
     render(<HomeExperience apiClient={apiClient} dashboard={dashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
 
-    await screen.findByRole("heading", { name: "Recently Added" });
+    await screen.findByRole("heading", { name: "Severance", level: 1 });
+    expect(apiClient).not.toHaveBeenCalledWith("/api/v1/library/movies?sort=newest_added&per_page=8");
     expect(apiClient).not.toHaveBeenCalledWith("/api/v1/friends");
     expect(apiClient).not.toHaveBeenCalledWith("/api/v1/lists");
     expect(apiClient).not.toHaveBeenCalledWith("/api/v1/profile");
@@ -186,7 +191,7 @@ describe("HomeExperience", () => {
     apiClient.mockImplementation(async (path, options = {}) => {
       if (path.startsWith("/api/v1/library/continue-watching")) return { items: [] };
       if (path.startsWith("/api/v1/library/movies?sort=newest_added")) return { items: [], pagination: {} };
-      if (path.startsWith("/api/v1/library/shows?sort=newest_added")) return { items: [], pagination: {} };
+      if (path.startsWith("/api/v1/library/shows?")) return { items: [], pagination: {} };
       if (path.startsWith("/api/v1/calendar?")) return { items: [] };
       if (path === "/api/v1/friends") return { friends: [] };
       if (path === "/api/v1/lists") return { lists: [] };
@@ -215,7 +220,7 @@ describe("HomeExperience", () => {
 
     render(<HomeExperience apiClient={apiClient} dashboard={dashboard} onNavigate={vi.fn()} onOpen={vi.fn()} />);
 
-    expect(await screen.findByRole("heading", { name: "The Bear" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "The Bear", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous continue item" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Continue Watching items" })).toHaveAttribute("tabindex", "0");
   });

@@ -19,3 +19,5 @@ Mobile Home upcoming releases should use full-width, consistently sized vertical
 Unread counts belong visually and accessibly to Alerts. Keep the badge fully inside the Alerts destination, announce what the count means, and refresh it immediately after alert read actions.
 
 When implementing from a selected generated mock, treat that image as the source of truth for layout, component anatomy, density, spacing, color, typography, visible content, and hierarchy.
+
+The approved October 2026 redesign is generated option 1 (Cinematic Home): full-width artwork-led hero, gold tracking action, compact top navigation, three show tiles, and a compact watchlist. Use the existing library API and retain all tracking features. Adapt the selected desktop composition for tablets and phones: readable hero copy, 44px touch targets, accessible mobile navigation, safe-area spacing, and no page overflow. The private local visual reference is docs/design/cinematic-home-reference.png. Keep this reference and personal-library QA captures in the ignored docs/design directory; public screenshots must follow the synthetic-data screenshot policy.
