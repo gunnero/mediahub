@@ -70,7 +70,7 @@ export function CinematicHome({ apiClient, dashboard, continueItems, onNavigate,
           {progress.remaining > 0 ? <p className="cinema-remaining">{progress.remaining} episode{progress.remaining === 1 ? "" : "s"} remaining</p> : null}
           <div className="cinema-hero-actions">
             <button className="primary-action" onClick={() => onOpen({ ...featured, initialTab: "episodes" })} type="button">Open episodes<ArrowRight size={19} /></button>
-            <button className="secondary-action" onClick={() => onOpen(featured)} type="button">View show</button>
+            <button className="secondary-action" onClick={() => onOpen({ ...featured, initialTab: "overview" })} type="button">View show</button>
           </div>
         </div>
       </> : <div className="cinema-hero-copy"><span className="eyebrow">Your personal cinema</span><h1>Your next story starts here.</h1><p>Keep the movies you love and the shows you follow in one place.</p><button className="primary-action" onClick={() => onNavigate("discover")} type="button">Discover something<ArrowRight size={19} /></button></div>}

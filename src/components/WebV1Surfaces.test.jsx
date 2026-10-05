@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AlertsSection, CalendarSection, DiscoverSection, DiscoveryPreviewModal, ListsSection, StatsSection, WebSettingsSection } from "./WebV1Surfaces.jsx";
+import { AlertsSection, CalendarSection, DiscoverSection, DiscoveryDetailPage, ListsSection, StatsSection, WebSettingsSection } from "./WebV1Surfaces.jsx";
 import { SessionExpiredError } from "../lib/api.js";
 
 afterEach(() => cleanup());
@@ -11,9 +11,9 @@ afterEach(() => cleanup());
 describe("MediaHub Web V1 surfaces", () => {
   it("shows synchronized actions near the preview title and after its details", () => {
     const actions = <div className="modal-actions"><button className="primary-action" type="button">Add to Library</button><button className="secondary-action" type="button">Add to Watchlist</button></div>;
-    render(<DiscoveryPreviewModal actions={actions} onClose={vi.fn()} preview={{ media_type: "movie", title: "Heat", overview: "Crime saga.", production: { companies: ["Forward Pass"] } }} />);
+    render(<DiscoveryDetailPage actions={actions} onClose={vi.fn()} preview={{ media_type: "movie", title: "Heat", overview: "Crime saga.", production: { companies: ["Forward Pass"] } }} />);
 
-    const dialog = screen.getByRole("dialog", { name: /heat discovery preview/i });
+    const dialog = screen.getByRole("region", { name: /heat discovery preview/i });
     const quickActions = within(dialog).getByRole("group", { name: /quick actions/i });
     const actionsAfterDetails = within(dialog).getByRole("group", { name: /actions after details/i });
     const metadata = dialog.querySelector(".discovery-preview-content > .metadata-strip");
@@ -80,37 +80,15 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(screen.getByText("Production").closest(".detail-section-heading")).toBeInTheDocument();
   });
 
-  it("keeps discovery preview artwork in its column so details stay visible", () => {
-    const css = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
-    const mobileBlockStart = css.lastIndexOf("@media (max-width: 820px)");
-    const mobileBlockOpen = css.indexOf("{", mobileBlockStart);
-    let mobileBlockEnd = mobileBlockOpen;
-    let mobileBlockDepth = 0;
-    for (; mobileBlockEnd < css.length; mobileBlockEnd += 1) {
-      if (css[mobileBlockEnd] === "{") mobileBlockDepth += 1;
-      if (css[mobileBlockEnd] === "}") mobileBlockDepth -= 1;
-      if (mobileBlockDepth === 0 && mobileBlockEnd > mobileBlockOpen) break;
-    }
-    const finalMobileBlock = css.slice(mobileBlockOpen + 1, mobileBlockEnd);
-
-    expect(css).toMatch(/\.discovery-preview-expanded\s*\{[^}]*overflow-y:\s*hidden/s);
-    expect(css).toMatch(/\.discovery-preview \.modal-close\s*\{[^}]*position:\s*absolute/s);
-    expect(css).toMatch(/\.discovery-preview-art\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;/s);
-    expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;/s);
-    expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*max-height:/s);
-    expect(css).toMatch(/\.discovery-preview-content\s*\{[^}]*overflow-y:\s*auto/s);
-    expect(css).toMatch(/\.discovery-preview-art\s*\{[^}]*max-height:/s);
-    expect(css).toMatch(/\.discovery-preview-expanded\s+\.discovery-preview-art\s*\{[^}]*position:\s*sticky/s);
-    expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded\s*\{[^}]*grid-template-rows:\s*max-content max-content/s);
-    expect(css).toMatch(/@media \(max-width:\s*560px\)[\s\S]*\.discovery-preview-expanded \.discovery-preview-art\s*\{[^}]*position:\s*relative/s);
-    expect(css).toMatch(/\.discovery-preview \.production-section > \.metadata-strip\s*\{[^}]*margin:\s*0 0 22px/s);
-    expect(css).toMatch(/\.discovery-preview-actions \.modal-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
-    expect(css).toMatch(/\.discovery-preview-actions \.modal-actions > \.text-action\s*\{[^}]*grid-column:\s*1 \/ -1/s);
-    expect(css).toMatch(/@media \(max-width:\s*359px\)[\s\S]*\.discovery-preview-actions \.modal-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
-    expect(finalMobileBlock).toMatch(/\.discovery-preview \.discovery-detail-section \.people-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
-    expect(finalMobileBlock).toMatch(/\.discovery-preview \.people-grid article\s*\{[^}]*width:\s*100%;[^}]*min-height:\s*48px/s);
-    expect(css).not.toMatch(/\.discovery-preview-expanded\s*\{[^}]*width:\s*calc\(100vw - 20px\)/s);
-    expect(css).not.toMatch(/\.discovery-preview-expanded\s*\{[^}]*max-height:\s*calc\(100vh - 20px\)/s);
+  it("uses a full page with a focused title and explicit Back navigation", () => {
+    const onClose = vi.fn();
+    render(<DiscoveryDetailPage onClose={onClose} preview={{ media_type: "movie", tmdb_id: 949, title: "Heat" }} />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Heat" })).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back to results" }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("prevents iOS form focus from carrying a zoomed viewport into media details", () => {
@@ -154,14 +132,14 @@ describe("MediaHub Web V1 surfaces", () => {
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ episodeId: 1 }));
   });
 
-  it("shows the calendar empty state before the month grid", async () => {
+  it("shows one calendar empty state without a grid of empty days", async () => {
     const apiClient = vi.fn().mockResolvedValue({ items: [], days: {}, range: { timezone: "UTC" } });
     const { container } = render(<CalendarSection apiClient={apiClient} />);
     const emptyState = await screen.findByText(/no releases are scheduled here yet/i);
     const grid = container.querySelector(".calendar-grid");
 
-    expect(grid).toBeInTheDocument();
-    expect(emptyState.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(emptyState).toBeVisible();
+    expect(grid).not.toBeInTheDocument();
   });
 
   it("renders database-backed stats", async () => {
@@ -288,13 +266,13 @@ describe("Discovery reliability", () => {
     const first = await screen.findByRole("button", { name: "Open First story details" });
     first.focus();
     fireEvent.click(first);
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to results" }));
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
     expect(first).toHaveFocus();
     expect(firstSignal.aborted).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Open Second story details" }));
     await act(async () => outcome === "success" ? old.resolve({ item: { ...discoverMovie, overview: "Wrong plot" } }) : old.reject(outcome === "expired" ? new SessionExpiredError() : new Error("Old failure")));
-    expect(screen.getByRole("dialog")).toHaveAccessibleName("Second story discovery preview");
+    expect(screen.getByRole("region")).toHaveAccessibleName("Second story discovery preview");
     expect(screen.getByText("Loading complete details...")).toBeInTheDocument();
     expect(screen.queryByText("Wrong plot")).not.toBeInTheDocument();
     expect(expired).not.toHaveBeenCalled();

@@ -18,7 +18,7 @@ export function ViewingStory({ range, onRange, data, apiClient = apiRequest, onS
     const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 800;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#11161c"; ctx.fillRect(0, 0, 1200, 800);
-    ctx.fillStyle = "#f5cf50"; ctx.font = "bold 30px sans-serif"; ctx.fillText("MEDIAHUB · MY VIEWING STORY", 70, 90);
+    ctx.fillStyle = "#75adff"; ctx.font = "bold 30px sans-serif"; ctx.fillText("MEDIAHUB · MY VIEWING STORY", 70, 90);
     ctx.fillStyle = "#ffffff"; ctx.font = "bold 55px sans-serif";
     ctx.fillText(range.from && range.to ? `${range.from} — ${range.to}` : "My all-time viewing story", 70, 200);
     ctx.font = "36px sans-serif";

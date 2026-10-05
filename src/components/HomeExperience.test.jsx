@@ -78,6 +78,8 @@ describe("HomeExperience", () => {
     await screen.findAllByText("8 of 19 episodes watched");
     fireEvent.click(screen.getByRole("button", { name: "Open episodes", exact: true }));
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: "show", showId: 8, initialTab: "episodes" }));
+    fireEvent.click(screen.getByRole("button", { name: "View show", exact: true }));
+    expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "show", showId: 8, initialTab: "overview" }));
     fireEvent.click(screen.getByRole("button", { name: "Browse your watchlist" }));
     expect(onNavigate).toHaveBeenCalledWith("watchlist");
   });
