@@ -6,6 +6,7 @@ import { LibraryTools } from "./components/v2/LibraryTools.jsx";
 import "./components/v2/v2.css";
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Bell,
   CheckCircle,
   Clock,
@@ -15,6 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import { getUnreadCount } from "./lib/dashboard.js";
 import { apiRequest, SessionExpiredError } from "./lib/api.js";
+import { EpisodeNavigation } from "./components/EpisodeNavigation.jsx";
 import { useAppRoute } from "./lib/navigation.js";
 import { discoveryHref } from "./lib/discovery.js";
 import { WatchDateForm } from "./components/WatchDateForm.jsx";
@@ -24,7 +26,7 @@ import { CinematicNavigation } from "./components/CinematicNavigation.jsx";
 import {
   AlertsSection,
   CalendarSection,
-  DiscoveryPreviewModal,
+  DiscoveryDetailPage,
   DiscoverSection,
   ListsSection,
   StatsSection,
@@ -430,7 +432,6 @@ function LibraryCard({ item, onOpen, showProviderStatus = false }) {
     ratingLabel(item.rating),
     item.hasNote ? "Private note" : null,
     showProviderStatus && item.providerLinked ? "Linked source" : null,
-    item.metadataStatus,
   ].filter(Boolean);
 
   return (
@@ -552,8 +553,8 @@ export function MovieLibrary({
     <section className="library-browser">
       <div className="section-heading">
         <div>
-          <h2>Movies</h2>
-          <p>Browse your permanent movie memory, independent from any provider.</p>
+          <span className="eyebrow">Your collection</span><h1>Movies</h1>
+          <p>All your films, favorites, and future movie nights.</p>
         </div>
         <span>{formatNumber(payload.pagination?.total || payload.items.length)} movies</span>
       </div>
@@ -678,8 +679,8 @@ export function ShowLibrary({
     <section className="library-browser">
       <div className="section-heading">
         <div>
-          <h2>Shows</h2>
-          <p>Browse followed series, watched progress, and canonical episodes.</p>
+          <span className="eyebrow">Your collection</span><h1>Shows</h1>
+          <p>Pick up where you left off. Every series, every episode.</p>
         </div>
         <span>{formatNumber(payload.pagination?.total || payload.items.length)} shows</span>
       </div>
@@ -824,8 +825,8 @@ export function HistorySection({
     <section className="library-browser history-browser">
       <div className="section-heading">
         <div>
-          <h2>Watch history</h2>
-          <p>Your permanent viewing record stays here even when providers change.</p>
+          <span className="eyebrow">Your viewing diary</span><h1>Watch history</h1>
+          <p>Every watch, rewatch, and memorable night in one place.</p>
         </div>
         <span>{formatNumber(payload.pagination?.total || payload.items.length)} watches</span>
       </div>
@@ -892,6 +893,7 @@ export function GlobalSearchPanel({
   apiClient = apiRequest,
   onLibraryChanged,
   onOpen,
+  onPreview,
   onSessionExpired,
   query = "",
 }) {
@@ -1024,6 +1026,7 @@ export function GlobalSearchPanel({
   }
 
   async function openDiscoveryPreview(item) {
+    if (onPreview) { onPreview(item); return; }
     setPreview(item);
     setPreviewLoading(true);
     setPreviewError("");
@@ -1041,6 +1044,7 @@ export function GlobalSearchPanel({
 
   return (
     <section className="global-search-panel">
+      <div hidden={Boolean(preview)} className="search-results-content">
       <div className="section-heading">
         <div>
           <span>{mode === "discover" ? "Discovery search" : "Canonical search"}</span>
@@ -1090,7 +1094,8 @@ export function GlobalSearchPanel({
       {!loading && !error && totalResults === 0 ? (
         <div className="empty-strip compact">{mode === "discover" ? "No discovery matches" : "No canonical matches yet"}</div>
       ) : null}
-      <DiscoveryPreviewModal actions={<div className="modal-actions">{preview?.already_in_library ? <button className="primary-action" onClick={() => openExisting(preview)} type="button">Open in My Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watchlist")} type="button">Add to Watchlist</button>{preview?.media_type === "movie" ? <button className="text-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watched")} type="button">Mark watched</button> : null}</>}</div>} error={previewError} loading={previewLoading} onClose={() => setPreview(null)} preview={preview} />
+      </div>
+      <DiscoveryDetailPage actions={<div className="modal-actions">{preview?.already_in_library ? <button className="primary-action" onClick={() => openExisting(preview)} type="button">Open in My Library</button> : <><button className="primary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "library")} type="button">Add to Library</button><button className="secondary-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watchlist")} type="button">Add to Watchlist</button>{preview?.media_type === "movie" ? <button className="text-action" disabled={Boolean(adding)} onClick={() => addDiscovered(preview, "watched")} type="button">Mark watched</button> : null}</>}</div>} error={previewError} loading={previewLoading} onClose={() => setPreview(null)} preview={preview} />
     </section>
   );
 }
@@ -1145,7 +1150,7 @@ export function TimelinePanel({ timeline }) {
   );
 }
 
-export function DetailModal({
+export function DetailPage({
   apiClient = apiRequest,
   onHistoryChanged,
   onSessionExpired,
@@ -1169,32 +1174,24 @@ export function DetailModal({
   onOpenEpisode,
   onMarkSeasonWatched,
   onMarkSeasonUnwatched,
+  onViewChange,
 }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedSeason, setSelectedSeason] = useState(null);
   const [noteBody, setNoteBody] = useState("");
-  const closeButtonRef = useRef(null);
+  const headingRef = useRef(null);
 
   useEffect(() => {
-    setActiveTab(item?.initialTab === "episodes" && detail?.kind === "show" ? "episodes" : "overview");
-    setSelectedSeason(item?.initialTab === "episodes" ? detail?.nextUnwatchedEpisode?.seasonNumber ?? detail?.seasons?.[0]?.seasonNumber ?? null : detail?.seasons?.[0]?.seasonNumber ?? null);
-    setNoteBody(detail?.notes?.[0]?.body || "");
-  }, [detail?.id, detail?.kind, item?.initialTab]);
+    const kind = detail?.kind || item?.kind;
+    const allowed = ["overview", "activity", "notes", kind === "show" ? "episodes" : "history", ...(playerEnabled ? ["provider"] : [])];
+    setActiveTab(allowed.includes(item?.initialTab) ? item.initialTab : "overview");
+    setSelectedSeason(item?.initialSeason ?? (item?.initialTab === "episodes" ? detail?.nextUnwatchedEpisode?.seasonNumber : null) ?? detail?.seasons?.[0]?.seasonNumber ?? null);
+  }, [detail?.id, detail?.kind, item?.initialTab, item?.initialSeason, playerEnabled]);
+  useEffect(() => { setNoteBody(detail?.notes?.[0]?.body || ""); }, [detail?.id, detail?.kind]);
 
   useEffect(() => {
-    closeButtonRef.current?.focus();
-  }, [item?.id]);
-
-  useEffect(() => {
-    function handleKeyDown(event) {
-      if (event.key === "Escape") {
-        onClose?.();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+    headingRef.current?.focus({ preventScroll: true });
+  }, [item?.id, item?.movieId, item?.showId, item?.episodeId]);
 
   if (!item) {
     return null;
@@ -1202,6 +1199,7 @@ export function DetailModal({
 
   const isAlert = "category" in item;
   const view = detail || item;
+  const displayTitle = view.title === "Untitled episode" && /^S\d+ E\d+$/.test(view.subtitle) ? view.subtitle.replace(/^S\d+ E/, "Episode ") : view.title;
   const cinematicBackdrop = usableArtwork(view?.backdrop);
   const primaryNote = detail?.notes?.[0] || null;
   const rating = detail?.rating?.rating || null;
@@ -1246,27 +1244,29 @@ export function DetailModal({
 
   if (isAlert) {
     return (
-      <div className="modal-layer" role="presentation" onMouseDown={onClose}>
-        <section className="detail-modal alert-detail-modal" role="dialog" aria-modal="true" aria-label={`${item.title} details`} onMouseDown={(event) => event.stopPropagation()}>
-          <button ref={closeButtonRef} className="modal-close" onClick={onClose} type="button" aria-label="Close"><X size={20} /></button>
+      <div className="title-page">
+        <section className="alert-detail-page" aria-label={`${item.title} details`}>
+          <button className="page-back" onClick={onClose} type="button"><ArrowLeft size={18} /> Back to alerts</button>
           <div className="modal-alert-art"><Bell size={48} weight="duotone" /></div>
-          <div className="modal-copy"><span className="eyebrow">{item.category}</span><h2>{item.title}</h2><p>{item.subtitle}</p><strong>{item.dueText}</strong></div>
+          <div className="modal-copy"><span className="eyebrow">{item.category}</span><h1 ref={headingRef} tabIndex={-1}>{item.title}</h1><p>{item.subtitle}</p><strong>{item.dueText}</strong></div>
         </section>
       </div>
     );
   }
 
   return (
-    <div className="modal-layer cinematic-layer" role="presentation" onMouseDown={onClose}>
-      <section className="cinematic-detail" role="dialog" aria-modal="true" aria-label={`${view.title} details`} onMouseDown={(event) => event.stopPropagation()}>
-        <button ref={closeButtonRef} className="modal-close cinematic-close" onClick={onClose} type="button" aria-label="Close"><X size={20} /></button>
+    <div className="title-page">
+      <section className="cinematic-detail" aria-label={`${displayTitle} details`}>
+        {view.kind !== "episode" || !detail?.showId ? <button className="page-back" onClick={onClose} type="button" aria-label="Back to previous page"><ArrowLeft size={18} /> Back</button> : null}
+        <EpisodeNavigation detail={detail || item} apiClient={apiClient} onOpen={onOpenEpisode} onSessionExpired={onSessionExpired} />
         <header className="cinematic-header">
           {cinematicBackdrop ? <img className="cinematic-backdrop" src={cinematicBackdrop} alt="" /> : <div className="cinematic-backdrop neutral" />}
           <div className="cinematic-shade" />
           <div className="cinematic-poster"><PosterArtwork item={view} /></div>
           <div className="cinematic-title">
             <span className="eyebrow">{view.kind || "media"}</span>
-            <h2>{view.title}</h2>
+            <h1 ref={headingRef} tabIndex={-1}>{displayTitle}</h1>
+            {view.kind === "episode" ? <p className="episode-context">{view.subtitle}</p> : null}
             {detail?.tagline ? <blockquote>{detail.tagline}</blockquote> : null}
             <div className="cinematic-meta">{publicTags.map((tag) => <span key={tag}>{tag}</span>)}</div>
             <div className="cinematic-actions cinematic-top-actions">
@@ -1279,7 +1279,7 @@ export function DetailModal({
                 </button>
               ) : null}
             </div>
-            <p>{view.overview || "This title is part of your permanent MediaHub library."}</p>
+            {view.overview ? <p>{view.overview}</p> : null}
             <div className="cinematic-actions cinematic-secondary-actions">
               {canManualWatch ? <WatchDateForm key={`${detail.kind}-${detail.id}`} detail={detail} pending={actionPending} onSave={onMarkWatched} /> : null}
               {canManualWatch && hasManualWatch ? (
@@ -1304,20 +1304,15 @@ export function DetailModal({
           <div className="cinematic-body">
             <nav className="detail-tabs" aria-label="Detail sections" role="tablist">
               {tabs.map(([id, label]) => (
-                <button aria-selected={activeTab === id} className={activeTab === id ? "active" : ""} key={id} onClick={() => setActiveTab(id)} role="tab" type="button">{label}</button>
+                <button aria-selected={activeTab === id} className={activeTab === id ? "active" : ""} key={id} onClick={() => { setActiveTab(id); onViewChange?.(id, selectedSeason); }} role="tab" type="button">{label}</button>
               ))}
             </nav>
 
             <div className="detail-tab-panel" role="tabpanel">
               {activeTab === "overview" ? (
                 <div className="overview-layout">
-                  <section className="detail-section overview-copy">
-                    <span className="eyebrow">Story</span>
-                    <h3>{detail.title}</h3>
-                    <p>{detail.overview || "No overview is available yet."}</p>
-                  </section>
                   <section className="detail-facts">
-                    <div><span>Watched</span><strong>{detail.kind === "show" ? (detail.watched ? `${detail.watchedEpisodes || 0} episodes` : "Not started") : (detail.watched ? `${detail.watchedCount || 1} ${(detail.watchedCount || 1) === 1 ? "time" : "times"}` : "Not yet")}</strong></div>
+                    <div><span>Watched</span><strong>{detail.kind === "show" ? (detail.watched ? `${detail.watchedEpisodes || 0} ${(detail.watchedEpisodes || 0) === 1 ? "episode" : "episodes"}` : "Not started") : (detail.watched ? `${detail.watchedCount || 1} ${(detail.watchedCount || 1) === 1 ? "time" : "times"}` : "Not yet")}</strong></div>
                     <div><span>Your rating</span><strong>{rating ? `${rating}/10` : "Not rated"}</strong></div>
                     {playerEnabled ? <div><span>Provider</span><strong>{detail.provider?.linked ? "Linked" : "Manual only"}</strong></div> : null}
                     {detail.kind === "show" ? <div><span>Progress</span><strong>{detail.meta}</strong></div> : null}
@@ -1364,13 +1359,13 @@ export function DetailModal({
                   {selectedSeasonData ? (
                     <>
                       <div className="season-controls">
-                        <label><span>Season</span><select aria-label="Season" onChange={(event) => setSelectedSeason(Number(event.target.value))} value={selectedSeasonData.seasonNumber}>
+                        <label><span>Season</span><select aria-label="Season" onChange={(event) => { setSelectedSeason(Number(event.target.value)); onViewChange?.("episodes", Number(event.target.value)); }} value={selectedSeasonData.seasonNumber}>
                           {seasons.map((season) => <option key={season.seasonNumber} value={season.seasonNumber}>{season.seasonNumber === 0 ? "Specials" : `Season ${season.seasonNumber}`}</option>)}
                         </select></label>
                         <span>{selectedSeasonData.watchedEpisodes}/{selectedSeasonData.totalEpisodes || selectedSeasonData.episodesCount} watched</span>
                         <div>
-                          <button className="text-action" onClick={() => onMarkSeasonWatched?.(detail, selectedSeasonData.seasonNumber)} type="button">Mark season watched</button>
-                          <button className="text-action danger" onClick={() => onMarkSeasonUnwatched?.(detail, selectedSeasonData.seasonNumber)} type="button">Mark season unwatched</button>
+                          <button className="text-action" disabled={actionPending} onClick={() => onMarkSeasonWatched?.(detail, selectedSeasonData.seasonNumber)} type="button">Mark season watched</button>
+                          <button className="text-action danger" disabled={actionPending} onClick={() => onMarkSeasonUnwatched?.(detail, selectedSeasonData.seasonNumber)} type="button">Mark season unwatched</button>
                         </div>
                       </div>
                       <div className="cinematic-episode-list">
@@ -1489,7 +1484,7 @@ function FocusSection({
   }
 
   if (activeSection === "discover") {
-    return <DiscoverSection apiClient={apiClient} filters={discoverIntent.filters} onFiltersChange={discoverIntent.onChange} onLibraryChanged={onRefreshDashboard} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
+    return <DiscoverSection apiClient={apiClient} filters={discoverIntent.filters} onFiltersChange={discoverIntent.onChange} previewTarget={discoverIntent.previewTarget} onPreview={discoverIntent.onPreview} onClosePreview={discoverIntent.onClosePreview} onLibraryChanged={onRefreshDashboard} onOpen={onOpen} onSessionExpired={onSessionExpired} />;
   }
 
   if (activeSection === "shows") {
@@ -1600,7 +1595,12 @@ export function App() {
   const settingsInitialSection = route.settingsTab;
   const [historyIntent, setHistoryIntent] = useState({ type: "all", key: 0 });
   const [movieIntent, setMovieIntent] = useState({ status: "all", sort: "latest_watched", key: 0 });
-  const discoverIntent = { filters: route.discovery, onChange: (filters, options) => navigate(discoveryHref(filters), options) };
+  const discoverIntent = {
+    filters: route.discovery, onChange: (filters, options) => navigate(discoveryHref(filters), options),
+    previewTarget: route.discoveryPreview,
+    onPreview: openDiscovery,
+    onClosePreview: () => window.history.state?.mediahubPreviewParent ? window.history.back() : navigate(discoveryHref(route.discovery), { replace: true }),
+  };
   const searchInputRef = useRef(null);
   const searchToggleRef = useRef(null);
   const detailSelectionRef = useRef(null);
@@ -1619,6 +1619,8 @@ export function App() {
     const path = mediaDetailPath(route.detail);
     if (path && detailSelectionRef.current?.path !== path) {
       showItem(route.detail);
+    } else if (path) {
+      setSelectedItem(current => current ? { ...current, initialTab: route.detail.initialTab, initialSeason: route.detail.initialSeason } : current);
     } else if (!path) {
       clearDetail();
     }
@@ -1875,13 +1877,24 @@ export function App() {
     setLoadState("guest");
   }
 
+  function openDiscovery(item, filters = route.discovery) {
+    clearDetail();
+    const queryString = discoveryHref(filters).split("?")[1];
+    navigate(`/discover/${item.media_type}/${item.tmdb_id}${queryString ? `?${queryString}` : ""}`, { state: { mediahubPreviewParent: route.href, mediahubPreviewItem: item } });
+    window.scrollTo?.(0, 0);
+  }
+
   function openItem(item) {
     const path = mediaDetailPath(item);
     if (path && !("category" in item)) {
-      navigate(path.replace("/api/v1/library", ""), {
+      const params = new URLSearchParams();
+      if (item.initialTab) params.set("tab", item.initialTab);
+      if (item.initialSeason !== undefined && item.initialSeason !== null) params.set("season", item.initialSeason);
+      navigate(path.replace("/api/v1/library", "") + (params.size ? `?${params}` : ""), {
         state: { mediahubSection: activeSection, mediahubDetailParent: route.href, mediahubDiscovery: route.discovery },
       });
     }
+    window.scrollTo?.(0, 0);
     return showItem(item);
   }
 
@@ -2077,9 +2090,9 @@ export function App() {
   const singleColumnSection = !homeSection;
 
   return (
-    <div className={`app-shell cinema-shell${homeSection ? " cinema-home-page" : ""}`}>
+    <div className={`app-shell cinema-shell${homeSection && !selectedItem ? " cinema-home-page" : ""}`}>
       <CinematicNavigation
-        activeSection={activeSection}
+        activeSection={route.detail ? (route.detail.kind === "movie" ? "movies" : "shows") : activeSection}
         alertsCount={unreadCount}
         features={dashboard.features}
         onSelect={selectSection}
@@ -2095,9 +2108,8 @@ export function App() {
         {isEmptyLibrary ? (
           <div className="data-warning">Your library is empty.</div>
         ) : null}
-        <div className={`dashboard-grid${singleColumnSection ? " content-dashboard-grid" : ""}${homeSection ? " home-dashboard-grid" : ""}${socialSection ? " social-dashboard-grid" : ""}${settingsSection ? " settings-dashboard-grid" : ""}`}>
+        <div hidden={Boolean(selectedItem)} className={`dashboard-grid${singleColumnSection ? " content-dashboard-grid" : ""}${homeSection ? " home-dashboard-grid" : ""}${socialSection ? " social-dashboard-grid" : ""}${settingsSection ? " settings-dashboard-grid" : ""}`}>
           <div className="primary-column">
-            {activeSection === "shows" && dashboard.recentShow ? <Hero item={dashboard.recentShow} onOpen={openItem} /> : null}
             {query.trim().length >= 2 && activeSection === "home" ? (
               <GlobalSearchPanel
                 apiClient={apiRequest}
@@ -2105,6 +2117,7 @@ export function App() {
                 onOpen={openItem}
                 onSessionExpired={expireSession}
                 query={query}
+                onPreview={item => openDiscovery(item, { ...route.discovery, query })}
               />
             ) : null}
             {activeSection === "home" ? (
@@ -2137,9 +2150,14 @@ export function App() {
             )}
           </div>
         </div>
-      </main>
-      <OfflineStatus />
-      <DetailModal
+      <DetailPage
+        onViewChange={(tab, season) => {
+          if (!route.detail) return;
+          const params = new URLSearchParams();
+          params.set("tab", tab);
+          if (season !== null && season !== undefined) params.set("season", season);
+          navigate(`${window.location.pathname}?${params}`, { replace: true, state: window.history.state || {} });
+        }}
         onHistoryChanged={async () => { await refreshMediaDetail(selectedDetail); await refreshDashboard(); }}
         onSessionExpired={expireSession}
         actionError={detailActionError}
@@ -2163,6 +2181,8 @@ export function App() {
         playback={detailPlayback}
         playerEnabled={Boolean(dashboard.features?.webPlayerEnabled)}
       />
+      </main>
+      <OfflineStatus />
     </div>
   );
 }

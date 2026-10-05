@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
-  DetailModal,
+  DetailPage,
   getDashboardUnreadCount,
   GlobalSearchPanel,
   HistorySection,
@@ -77,7 +77,7 @@ function renderDetail(overrides = {}) {
     ...overrides,
   };
 
-  const utils = render(<DetailModal {...props} />);
+  const utils = render(<DetailPage {...props} />);
 
   return { ...props, ...utils };
 }
@@ -236,7 +236,7 @@ describe("Home page navigation and page-specific hero rules", () => {
     expect(await screen.findByRole("heading", { name: "Release calendar" })).toBeInTheDocument();
   });
 
-  it("uses Continue Watching on Home, no hero on Discover, and a recent-show hero on Shows", async () => {
+  it("keeps the cinematic hero on Home and starts Discover and Shows with their page headings", async () => {
     stubAppApi();
     const { container } = render(<App />);
     await screen.findByText("Continue Watching");
@@ -249,17 +249,16 @@ describe("Home page navigation and page-specific hero rules", () => {
 
     selectNavigation("Shows");
     expect(await screen.findByRole("heading", { name: "Shows" })).toBeInTheDocument();
-    expect(screen.getByText("Recent show")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue watching" })).toBeInTheDocument();
-    expect(container.querySelectorAll(".hero-panel")).toHaveLength(1);
+    expect(screen.queryByText("Recent show")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".hero-panel")).toHaveLength(0);
   });
 });
 
-describe("DetailModal", () => {
+describe("DetailPage", () => {
   it("renders media detail, rating, notes, history, and provider status", () => {
     renderDetail({ playerEnabled: true });
 
-    expect(screen.getByRole("dialog", { name: /heat details/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /heat details/i })).toBeInTheDocument();
     expect(screen.getByText("9/10")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: /notes & rating/i }));
@@ -995,7 +994,7 @@ describe("Library browser", () => {
     expect(screen.getByText("9/10")).toBeInTheDocument();
     expect(screen.getByText("Private note")).toBeInTheDocument();
     expect(screen.queryByText("Linked source")).not.toBeInTheDocument();
-    expect(screen.getByText("enriched")).toBeInTheDocument();
+    expect(screen.queryByText("enriched")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/search movies/i), { target: { value: "arrival" } });
     fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
@@ -1154,7 +1153,7 @@ describe("GlobalSearchPanel", () => {
     expect(await screen.findByText("Discovery Film")).toBeInTheDocument();
     expect(screen.getByText("Discovery Show")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /open discovery film/i }));
-    const dialog = screen.getByRole("dialog", { name: /discovery film discovery preview/i });
+    const dialog = screen.getByRole("region", { name: /discovery film discovery preview/i });
     expect(dialog).toBeInTheDocument();
     expect(await screen.findByText("Discovery Actor")).toBeInTheDocument();
     expect(screen.getByText("Discovery Director")).toBeInTheDocument();
@@ -1304,10 +1303,10 @@ describe("Media detail request lifecycle", () => {
     }));
     const first = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Open First movie details" }));
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    await waitFor(() => expect(screen.getByRole("region")).toHaveAccessibleName("First movie details"));
     expect(screen.getByLabelText("Search movies and shows")).toHaveValue("story");
     expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to previous page", exact: true }));
     await waitFor(() => expect(window.location.pathname + window.location.search).toBe(href));
     first.unmount();
     render(<App />);
@@ -1321,14 +1320,64 @@ describe("Media detail request lifecycle", () => {
     await waitFor(() => expect(screen.getByText("Page 2 of 3")).toBeInTheDocument());
   });
 
+  it("opens discovery as a shareable page and restores search filters with Back and Forward", async () => {
+    const href = "/discover?query=story&type=movie&page=2";
+    window.history.replaceState({}, "", href);
+    stubAppApi();
+    const baseFetch = globalThis.fetch;
+    const item = { media_type: "movie", tmdb_id: 77, title: "New discovery", overview: "A complete story." };
+    vi.stubGlobal("fetch", vi.fn((path, options) => {
+      if (path === "/api/v1/discover/movie/77") return jsonResponse({ item });
+      if (path.startsWith("/api/v1/discover/search?")) return jsonResponse({ items: [item], pagination: { totalPages: 3 } });
+      return baseFetch(path, options);
+    }));
+    const first = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open New discovery details" }));
+    await screen.findByRole("heading", { level: 1, name: "New discovery" });
+    expect(window.location.pathname + window.location.search).toBe("/discover/movie/77?query=story&type=movie&page=2");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open New discovery details" })).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Back to results" }));
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(href));
+    expect(screen.getByRole("searchbox", { name: "Search movies and shows" })).toHaveValue("story");
+    await act(async () => window.history.forward());
+    await screen.findByRole("heading", { level: 1, name: "New discovery" });
+    first.unmount();
+    window.history.replaceState({}, "", "/discover/movie/77?query=story&type=movie&page=2");
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "New discovery" });
+    fireEvent.click(screen.getByRole("button", { name: "Back to results" }));
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(href));
+  });
+
+  it("restores the episode tab and season from a copied show URL", async () => {
+    window.history.replaceState({}, "", "/shows/8?tab=episodes&season=2");
+    stubAppApi();
+    const baseFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn((path, options) => path === "/api/v1/library/shows/8" ? jsonResponse({ item: {
+      id: 8, showId: 8, kind: "show", title: "A series", seasons: [
+        { seasonNumber: 1, episodes: [{ id: 11, title: "First season", code: "S01E01" }] },
+        { seasonNumber: 2, episodes: [{ id: 21, title: "Second season", code: "S02E01" }] },
+      ],
+    } }) : baseFetch(path, options)));
+    render(<App />);
+    await screen.findByRole("button", { name: "Open Second season" });
+    expect(screen.getByRole("tab", { name: "Episodes" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Season")).toHaveValue("2");
+    fireEvent.change(screen.getByLabelText("Season"), { target: { value: "1" } });
+    expect(window.location.search).toBe("?tab=episodes&season=1");
+    expect(screen.getByRole("button", { name: "Open First season" })).toBeInTheDocument();
+  });
+
   it("opens a copied title URL after authentication and closes to its library", async () => {
     window.history.replaceState({}, "", "/movies/101");
     setupDetailRequests((path, options, movies) => jsonResponse({ item: movies[0] }));
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
-    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    await waitFor(() => expect(screen.getByRole("region")).toHaveAccessibleName("First movie details"));
+    fireEvent.click(screen.getByRole("button", { name: "Back to previous page", exact: true }));
     expect(window.location.pathname).toBe("/movies");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
   });
 
   it("preserves a title link through the sign-in form", async () => {
@@ -1349,7 +1398,7 @@ describe("Media detail request lifecycle", () => {
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "member@example.test" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "test-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    await waitFor(() => expect(screen.getByRole("region")).toHaveAccessibleName("First movie details"));
     expect(window.location.pathname).toBe("/movies/101");
   });
 
@@ -1357,13 +1406,13 @@ describe("Media detail request lifecycle", () => {
     setupDetailRequests((path, options, movies) => jsonResponse({ item: movies[0] }));
     await openMovieLibrary();
     fireEvent.click(screen.getByRole("button", { name: "Open First movie", exact: true }));
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    await waitFor(() => expect(screen.getByRole("region")).toHaveAccessibleName("First movie details"));
     expect(window.location.pathname).toBe("/movies/101");
     await act(async () => window.history.back());
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("region")).not.toBeInTheDocument());
     expect(window.location.pathname).toBe("/movies");
     await act(async () => window.history.forward());
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("First movie details"));
+    await waitFor(() => expect(screen.getByRole("region")).toHaveAccessibleName("First movie details"));
   });
 
   it("saves a past watch using the selected local time and keeps the form on failure", async () => {
@@ -1402,12 +1451,12 @@ describe("Media detail request lifecycle", () => {
     });
     await openMovieLibrary();
     fireEvent.click(screen.getByRole("button", { name: "Open First movie", exact: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to previous page", exact: true }));
     expect(firstSignal.aborted).toBe(true);
     fireEvent.click(await screen.findByRole("button", { name: "Open Second movie", exact: true }));
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details"));
+    await waitFor(() => expect(screen.getByRole("region")).toHaveAccessibleName("Second movie details"));
     await act(async () => finishFirst(jsonResponse({ item: { id: 101, movieId: 101, kind: "movie", title: "First movie" }, message: "Old request failed" }, status)));
-    expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details");
+    expect(screen.getByRole("region")).toHaveAccessibleName("Second movie details");
     expect(screen.queryByText("Old request failed")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
   });
@@ -1433,11 +1482,11 @@ describe("Media detail request lifecycle", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open First movie", exact: true }));
     fireEvent.click(await screen.findByRole("button", { name: "Mark watched", exact: true }));
     await waitFor(() => expect(firstLoads).toBe(2));
-    fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to previous page", exact: true }));
     expect(refreshSignal.aborted).toBe(true);
     fireEvent.click(await screen.findByRole("button", { name: "Open Second movie", exact: true }));
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details"));
+    await waitFor(() => expect(screen.getByRole("region")).toHaveAccessibleName("Second movie details"));
     await act(async () => finishRefresh(jsonResponse({ item: { id: 101, movieId: 101, kind: "movie", title: "First movie", watched: true } })));
-    expect(screen.getByRole("dialog")).toHaveAccessibleName("Second movie details");
+    expect(screen.getByRole("region")).toHaveAccessibleName("Second movie details");
   });
 });

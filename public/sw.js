@@ -27,7 +27,7 @@ self.addEventListener('fetch', event => {
 });
 self.addEventListener('push', event => {
   let data = {}; try { data = event.data?.json() || {}; } catch {}
-  event.waitUntil(self.registration.showNotification('MediaHub', { body: data.body || 'Your alerts are ready.', icon: '/favicon.svg', tag: 'mediahub-alerts', data: { url: '/alerts' } }));
+  event.waitUntil(self.registration.showNotification('MediaHub', { body: data.body || 'Your alerts are ready.', icon: '/favicon.svg?v=75adff', tag: 'mediahub-alerts', data: { url: '/alerts' } }));
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();
