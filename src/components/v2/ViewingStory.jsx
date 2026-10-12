@@ -18,13 +18,13 @@ export function ViewingStory({ range, onRange, data, apiClient = apiRequest, onS
     const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 800;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#11161c"; ctx.fillRect(0, 0, 1200, 800);
-    ctx.fillStyle = "#75adff"; ctx.font = "bold 30px sans-serif"; ctx.fillText("MEDIAHUB · MY VIEWING STORY", 70, 90);
+    ctx.fillStyle = "#75adff"; ctx.font = "bold 30px sans-serif"; ctx.fillText("REELATLAS · MY VIEWING STORY", 70, 90);
     ctx.fillStyle = "#ffffff"; ctx.font = "bold 55px sans-serif";
     ctx.fillText(range.from && range.to ? `${range.from} — ${range.to}` : "My all-time viewing story", 70, 200);
     ctx.font = "36px sans-serif";
     const summary = data.summary || {};
     [`${summary.moviesWatched || 0} movie watches`, `${summary.episodesWatched || 0} episodes`, `${Math.round(summary.totalWatchHours || 0)} hours of stories`, `Favorite genres: ${(data.genres || []).slice(0, 3).map(g => g.genre).join(", ") || "Still discovering"}`].forEach((line, index) => ctx.fillText(line, 70, 320 + index * 90, 1060));
-    const link = document.createElement("a"); link.download = "mediahub-viewing-story.png"; link.href = canvas.toDataURL("image/png"); link.click();
+    const link = document.createElement("a"); link.download = "reelatlas-viewing-story.png"; link.href = canvas.toDataURL("image/png"); link.click();
   }
   return <section className="v2-panel"><h3>Your viewing story</h3><form className="v2-inline" onSubmit={e => { e.preventDefault(); onRange(draft); }}><label>From<input type="date" required value={draft.from} max={draft.to || undefined} onChange={e => setDraft({ ...draft, from: e.target.value })} /></label><label>To<input type="date" required value={draft.to} min={draft.from || undefined} onChange={e => setDraft({ ...draft, to: e.target.value })} /></label><button className="secondary-action">Apply dates</button><button className="text-action" type="button" onClick={() => { setDraft({ from: "", to: "" }); onRange({ from: "", to: "" }); }}>All time</button></form>
     <div className="v2-inline"><label>Year in review<select value={year} onChange={e => selectYear(Number(e.target.value))}>{Array.from({ length: 40 }, (_, i) => new Date().getFullYear() - i).map(value => <option key={value}>{value}</option>)}</select></label><button className="secondary-action" type="button" onClick={() => selectYear(year)}>Show year</button><button className="secondary-action" type="button" onClick={downloadRecap}>Download recap card</button></div>

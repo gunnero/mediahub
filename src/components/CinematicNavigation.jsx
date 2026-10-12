@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell, CalendarDots, CaretDown, ChartBar, Clock, Compass, DotsThree, FilmSlate, GearSix, House, ListBullets, MagnifyingGlass, Play, TelevisionSimple, X } from "@phosphor-icons/react";
+import { BrandMark } from "./BrandMark.jsx";
 import { AccountMenu } from "./ProfileSurfaces.jsx";
 
 const destinations = [
@@ -76,8 +77,8 @@ export function CinematicNavigation({ activeSection, alertsCount = 0, features =
   }
 
   return <header className="cinema-header" ref={rootRef}>
-    <a className="cinema-brand" href="/" aria-label="MediaHub home" onClick={event => { event.preventDefault(); choose("home"); }}>
-      <span className="brand-mark"><FilmSlate size={23} weight="fill" /></span><strong>MEDIAHUB</strong>
+    <a className="cinema-brand" href="/" aria-label="ReelAtlas home" onClick={event => { event.preventDefault(); choose("home"); }}>
+      <span className="brand-mark"><BrandMark /></span><strong>ReelAtlas</strong>
     </a>
     <nav aria-label="Main navigation" className="cinema-nav">
       {destinations.map(({ id, label, icon: Icon }) => {

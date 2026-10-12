@@ -1,6 +1,6 @@
-# MediaHub backend
+# ReelAtlas backend
 
-Laravel provides MediaHub's authenticated API, user-scoped domain model, administrative review surface, import/export boundaries, and background jobs.
+Laravel provides ReelAtlas's authenticated API, user-scoped domain model, administrative review surface, import/export boundaries, and background jobs.
 
 ## Local setup
 
@@ -31,6 +31,6 @@ php artisan route:cache
 - Canonical history survives optional provider removal.
 - Public profiles expose only allowlisted fields.
 - Raw locators, credentials, tokens, private notes, and exports are never public payloads.
-- TV Time references describe import compatibility, not MediaHub branding.
+- TV Time references describe import compatibility, not ReelAtlas branding.
 
 The public architecture and documentation map live in the [repository README](../README.md).

@@ -15,7 +15,7 @@ class ExportController extends Controller
 
         return response()->streamDownload(
             fn () => print json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
-            'mediahub-export-'.now()->format('Ymd-His').'.json',
+            'reelatlas-export-'.now()->format('Ymd-His').'.json',
             ['Content-Type' => 'application/json']
         );
     }

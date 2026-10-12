@@ -1,4 +1,5 @@
 import { MovieNights } from "./v2/MovieNights.jsx";
+import { BrandMark } from "./BrandMark.jsx";
 import { useEffect, useRef, useState } from "react";
 import {
   Camera,
@@ -177,7 +178,7 @@ export function AccountMenu({ onLogout, onNavigate, profile = {} }) {
       <CaretDown className={open ? "rotated" : ""} size={16} />
     </button>
     {open ? <div aria-label="Account" className="account-dropdown" id="account-dropdown" onKeyDown={keyboard} ref={menuRef} role="menu">
-      <header><strong>{profile.displayName || profile.name || "MediaHub member"}</strong><span>@{profile.username || "member"}</span></header>
+      <header><strong>{profile.displayName || profile.name || "ReelAtlas member"}</strong><span>@{profile.username || "member"}</span></header>
       {accountItems.map(([action, label, Icon]) => <button key={action} onClick={() => navigate(action)} role="menuitem" type="button"><Icon /><span>{label}</span></button>)}
       <div className="account-menu-divider" />
       <button className="danger" disabled={loggingOut} onClick={logout} role="menuitem" type="button"><SignOut /><span>{loggingOut ? "Signing out..." : "Logout"}</span></button>
@@ -332,7 +333,7 @@ export function OwnProfileSection({ apiClient = apiRequest, editInitially = fals
   async function shareProfileLink() {
     if (!state.profile?.shareUrl || typeof navigator.share !== "function") return;
     try {
-      await navigator.share({ title: `${profileName(state)} on MediaHub`, url: state.profile.shareUrl });
+      await navigator.share({ title: `${profileName(state)} on ReelAtlas`, url: state.profile.shareUrl });
       setShareFallback("");
       setStatus("Profile shared.");
     } catch (error) {
@@ -387,7 +388,7 @@ function AvatarEditor({ busy, current, error, file, onChoose, onRemove, onUpload
 
   return <section className="avatar-editor">
     <div className="avatar-preview"><Avatar profile={{ avatar: preview || current }} /></div>
-    <div className="avatar-editor-copy"><span className="eyebrow">Profile avatar</span><h3>Choose a square portrait</h3><p>JPG, PNG, or WEBP up to 5 MB. MediaHub crops and removes embedded metadata automatically.</p><label className="avatar-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); receive(event.dataTransfer.files); }}><Camera size={22} /><span>{file ? file.name : "Drop an image here or click to upload"}</span><input accept="image/jpeg,image/png,image/webp" aria-label="Choose avatar" disabled={busy} onChange={(event) => receive(event.target.files)} type="file" /></label>{error ? <div className="detail-error">{error}</div> : null}{busy || progress > 0 ? <div className="avatar-progress"><progress max="100" value={progress} /><span>{busy ? `${progress}%` : "Ready"}</span></div> : null}<div className="modal-actions">{file ? <button className="secondary-action" disabled={busy} onClick={onUpload} type="button">Upload avatar</button> : null}{current ? <button className="text-action danger" disabled={busy} onClick={onRemove} type="button"><X /> Remove avatar</button> : <span className="avatar-default-note">Default avatar is active</span>}</div></div>
+    <div className="avatar-editor-copy"><span className="eyebrow">Profile avatar</span><h3>Choose a square portrait</h3><p>JPG, PNG, or WEBP up to 5 MB. ReelAtlas crops and removes embedded metadata automatically.</p><label className="avatar-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); receive(event.dataTransfer.files); }}><Camera size={22} /><span>{file ? file.name : "Drop an image here or click to upload"}</span><input accept="image/jpeg,image/png,image/webp" aria-label="Choose avatar" disabled={busy} onChange={(event) => receive(event.target.files)} type="file" /></label>{error ? <div className="detail-error">{error}</div> : null}{busy || progress > 0 ? <div className="avatar-progress"><progress max="100" value={progress} /><span>{busy ? `${progress}%` : "Ready"}</span></div> : null}<div className="modal-actions">{file ? <button className="secondary-action" disabled={busy} onClick={onUpload} type="button">Upload avatar</button> : null}{current ? <button className="text-action danger" disabled={busy} onClick={onRemove} type="button"><X /> Remove avatar</button> : <span className="avatar-default-note">Default avatar is active</span>}</div></div>
   </section>;
 }
 
@@ -509,7 +510,7 @@ export function InviteFriendsSection({ apiClient = apiRequest, onSessionExpired 
     catch (error) { setState((value) => ({ ...value, error: loadFailure(error, "Invite could not be created."), status: "" })); }
   }
   async function copy() { if (!current?.url) return; await navigator.clipboard.writeText(current.url); setState((value) => ({ ...value, status: "Copied" })); }
-  async function share() { if (!current?.url || !navigator.share) return; await navigator.share({ title: "Join me on MediaHub", url: current.url }); }
+  async function share() { if (!current?.url || !navigator.share) return; await navigator.share({ title: "Join me on ReelAtlas", url: current.url }); }
   async function revoke(id) { await apiClient(`/api/v1/friend-invites/${id}`, { method: "DELETE" }); await load(); }
 
   return <section className="web-v1-screen social-screen invite-screen"><header className="screen-intro"><span className="eyebrow">Invite intentionally</span><h2>Invite Friends</h2><p>Create a short-lived, revocable link. It never contains your email and does not expose your library.</p></header>{state.error ? <div className="detail-error">{state.error}</div> : null}{state.status ? <div className="settings-status">{state.status}</div> : null}<div className="invite-composer"><UserPlus weight="duotone" /><div><h3>Private invitation link</h3><p>The recipient chooses whether to accept. No friendship is created before confirmation.</p></div><button className="primary-action" onClick={create} type="button">Create invite link</button></div>{current ? <div className="share-link"><span>{current.url}</span><button aria-label="Copy invite link" className="secondary-action" onClick={copy} type="button"><Copy /> Copy link</button>{navigator.share ? <button className="text-action" onClick={share} type="button"><ShareNetwork /> Share</button> : null}</div> : null}<section className="invite-history"><h3>Recent invites</h3>{state.loading ? <div className="empty-strip compact">Loading invites...</div> : invites.map((invite) => <article key={invite.id}><div><strong>{invite.status}</strong><span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span></div>{!["accepted", "revoked", "expired"].includes(invite.status) ? <button className="text-action danger" onClick={() => revoke(invite.id)} type="button">Revoke</button> : null}</article>)}{!state.loading && !invites.length ? <div className="empty-strip compact">No invitations yet</div> : null}</section></section>;
@@ -542,7 +543,7 @@ export function PublicProfilePage({ apiClient = apiRequest, preview = false, slu
   async function share() {
     if (!data?.shareUrl || typeof navigator.share !== "function") return;
     try {
-      await navigator.share({ title: `${profileName(data)} on MediaHub`, url: data.shareUrl });
+      await navigator.share({ title: `${profileName(data)} on ReelAtlas`, url: data.shareUrl });
       setShareFallback("");
       setState((value) => ({ ...value, status: "Profile shared" }));
     } catch (error) {
@@ -556,7 +557,7 @@ export function PublicProfilePage({ apiClient = apiRequest, preview = false, slu
   if (state.error && !data) return <PublicShell><div className="detail-error">{state.error}</div></PublicShell>;
   const profile = data?.profile || {};
   const content = data?.content || {};
-  return <PublicShell><main className="public-profile"><section className="public-profile-identity"><Avatar profile={profile} /><div><span className="eyebrow">MediaHub profile</span><h1>{profile.displayName}</h1><strong>@{profile.username}</strong>{!profile.isPrivate ? <><p>{profile.bio || "No public bio yet."}</p>{profile.memberSince ? <small>Member since {new Date(profile.memberSince).toLocaleDateString()}</small> : null}</> : null}</div><div className="profile-actions">{data.relationship?.canRequest ? <button className="primary-action" onClick={requestFriend} type="button">Add friend</button> : null}{data.relationship?.status === "pending_outgoing" || state.status === "Request sent" ? <span className="status-chip"><Check /> Request sent</span> : null}{profile.canShare && data.shareUrl ? <button className="secondary-action" onClick={copy} type="button"><Copy /> Copy profile link</button> : null}{profile.canShare && data.shareUrl && typeof navigator.share === "function" ? <button className="text-action" onClick={share} type="button"><ShareNetwork /> Share profile</button> : null}</div></section>{state.error ? <div className="detail-error">{state.error}</div> : null}{state.status && state.status !== "Request sent" ? <div className="settings-status">{state.status}</div> : null}<ShareFallback url={shareFallback} />{profile.isPrivate ? <section className="private-profile-state"><ShieldCheck weight="duotone" /><h2>This profile is private</h2><p>Only the member can choose what becomes visible.</p></section> : <PublicContent content={content} profile={profile} />}</main></PublicShell>;
+  return <PublicShell><main className="public-profile"><section className="public-profile-identity"><Avatar profile={profile} /><div><span className="eyebrow">ReelAtlas profile</span><h1>{profile.displayName}</h1><strong>@{profile.username}</strong>{!profile.isPrivate ? <><p>{profile.bio || "No public bio yet."}</p>{profile.memberSince ? <small>Member since {new Date(profile.memberSince).toLocaleDateString()}</small> : null}</> : null}</div><div className="profile-actions">{data.relationship?.canRequest ? <button className="primary-action" onClick={requestFriend} type="button">Add friend</button> : null}{data.relationship?.status === "pending_outgoing" || state.status === "Request sent" ? <span className="status-chip"><Check /> Request sent</span> : null}{profile.canShare && data.shareUrl ? <button className="secondary-action" onClick={copy} type="button"><Copy /> Copy profile link</button> : null}{profile.canShare && data.shareUrl && typeof navigator.share === "function" ? <button className="text-action" onClick={share} type="button"><ShareNetwork /> Share profile</button> : null}</div></section>{state.error ? <div className="detail-error">{state.error}</div> : null}{state.status && state.status !== "Request sent" ? <div className="settings-status">{state.status}</div> : null}<ShareFallback url={shareFallback} />{profile.isPrivate ? <section className="private-profile-state"><ShieldCheck weight="duotone" /><h2>This profile is private</h2><p>Only the member can choose what becomes visible.</p></section> : <PublicContent content={content} profile={profile} />}</main></PublicShell>;
 }
 
 function profileName(data) {
@@ -572,7 +573,7 @@ function PublicFavorites({ items, title }) {
 }
 
 function PublicShell({ children }) {
-  return <div className="public-social-shell"><header><a href="/">MediaHub</a><span>Entertainment Memory</span></header>{children}</div>;
+  return <div className="public-social-shell"><header><a className="public-brand" href="/" aria-label="ReelAtlas home"><BrandMark /><strong>ReelAtlas</strong></a><span>Every story, remembered.</span></header>{children}</div>;
 }
 
 export function FriendInviteLandingPage({ apiClient = apiRequest, token }) {
@@ -589,5 +590,5 @@ export function FriendInviteLandingPage({ apiClient = apiRequest, token }) {
   }, [apiClient, token]);
   async function accept() { try { await apiClient(`/api/v1/friend-invites/${encodeURIComponent(token)}/accept`, { method: "POST" }); setState((value) => ({ ...value, status: "Invitation accepted" })); } catch (error) { setState((value) => ({ ...value, error: loadFailure(error, "Invitation could not be accepted.") })); } }
 
-  return <PublicShell><main className="invite-landing">{state.loading ? <div className="empty-strip compact">Loading invitation...</div> : null}{state.error ? <div className="detail-error">{state.error}</div> : null}{invite ? <><UserPlus weight="duotone" /><span className="eyebrow">MediaHub invitation</span><h1>{invite.inviter.displayName} invited you</h1><p>Accepting creates a mutual friendship. It never shares private watch history, notes, or provider data.</p>{state.status ? <div className="settings-status">{state.status}</div> : authenticated ? <button className="primary-action" onClick={accept} type="button">Accept invitation</button> : <a className="primary-action" href={`/?friend-invite=${encodeURIComponent(token)}`}>Sign in to accept</a>}</> : null}</main></PublicShell>;
+  return <PublicShell><main className="invite-landing">{state.loading ? <div className="empty-strip compact">Loading invitation...</div> : null}{state.error ? <div className="detail-error">{state.error}</div> : null}{invite ? <><UserPlus weight="duotone" /><span className="eyebrow">ReelAtlas invitation</span><h1>{invite.inviter.displayName} invited you</h1><p>Accepting creates a mutual friendship. It never shares private watch history, notes, or provider data.</p>{state.status ? <div className="settings-status">{state.status}</div> : authenticated ? <button className="primary-action" onClick={accept} type="button">Accept invitation</button> : <a className="primary-action" href={`/?friend-invite=${encodeURIComponent(token)}`}>Sign in to accept</a>}</> : null}</main></PublicShell>;
 }

@@ -207,7 +207,7 @@ class MediaDataHealthService
     public function markdown(array $health): string
     {
         $lines = [
-            '# MediaHub Media Data Health Report',
+            '# ReelAtlas Media Data Health Report',
             '',
             'Generated: '.$health['generated_at'],
             '',

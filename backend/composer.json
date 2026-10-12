@@ -1,9 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "gunnero/mediahub-backend",
+    "name": "gunnero/reelatlas-backend",
     "type": "project",
-    "description": "Authenticated API and domain backend for MediaHub.",
-    "keywords": ["mediahub", "laravel", "media-tracker"],
+    "description": "Authenticated API and domain backend for ReelAtlas.",
+    "keywords": ["reelatlas", "laravel", "media-tracker"],
     "license": "proprietary",
     "require": {
         "php": "^8.3",

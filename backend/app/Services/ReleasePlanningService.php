@@ -75,7 +75,7 @@ class ReleasePlanningService
                 return;
             }
             // Keep personal title names off the device lock screen.
-            $report = $push->sendOneNotification(Subscription::create($subscription->subscription), json_encode(['title' => 'MediaHub', 'body' => 'New releases or reminders are ready in Alerts.', 'url' => '/alerts']));
+            $report = $push->sendOneNotification(Subscription::create($subscription->subscription), json_encode(['title' => 'ReelAtlas', 'body' => 'New releases or reminders are ready in Alerts.', 'url' => '/alerts']));
             if ($report->isSubscriptionExpired()) {
                 $subscription->delete();
             } elseif ($report->isSuccess()) {
@@ -89,7 +89,7 @@ class ReleasePlanningService
         $today = now($this->settings($user)->timezone);
         $data = app(CalendarService::class)->forUser($user, ['date_from' => $today->copy()->subDays(7)->toDateString(), 'date_to' => $today->copy()->addDays(80)->toDateString()]);
         $escape = fn ($text) => str_replace(['\\', "\r", "\n", ';', ','], ['\\\\', '', '\\n', '\\;', '\\,'], $text);
-        $lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MediaHub//Release Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+        $lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ReelAtlas//Release Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
         foreach ($data['items'] as $item) {
             $lines = [...$lines, 'BEGIN:VEVENT', 'UID:'.hash('sha256', $user->id.':'.$item['id']).'@mediahub', 'DTSTAMP:'.now()->utc()->format('Ymd\\THis\\Z'),
                 'DTSTART;VALUE=DATE:'.str_replace('-', '', $item['date']), 'SUMMARY:'.$escape($item['title']), 'DESCRIPTION:'.$escape($item['subtitle']), 'END:VEVENT'];

@@ -8,7 +8,7 @@ You can expect acknowledgement within five business days, an initial assessment 
 
 ## Supported versions
 
-MediaHub is in active pre-release development. Security fixes target the latest commit on the default branch and the most recent release candidate. Older development snapshots are not supported.
+ReelAtlas is in active pre-release development. Security fixes target the latest commit on the default branch and the most recent release candidate. Older development snapshots are not supported.
 
 ## Disclosure boundaries
 

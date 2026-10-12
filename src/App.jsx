@@ -20,6 +20,7 @@ import { EpisodeNavigation } from "./components/EpisodeNavigation.jsx";
 import { useAppRoute } from "./lib/navigation.js";
 import { discoveryHref } from "./lib/discovery.js";
 import { WatchDateForm } from "./components/WatchDateForm.jsx";
+import { BrandMark } from "./components/BrandMark.jsx";
 import { PlayerSection, SettingsSection } from "./components/MediaHubSurfaces.jsx";
 import { HomeExperience } from "./components/HomeExperience.jsx";
 import { CinematicNavigation } from "./components/CinematicNavigation.jsx";
@@ -85,7 +86,7 @@ const fallbackData = {
     backdrop: "",
     progress: 0,
     kind: "library",
-    eyebrow: "MediaHub",
+    eyebrow: "ReelAtlas",
   },
   alerts: [],
   recentlyWatched: [],
@@ -156,7 +157,7 @@ function sourceLabel(source) {
   };
 
   if (!source) {
-    return "MediaHub";
+    return "ReelAtlas";
   }
 
   return labels[source] || source.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -264,11 +265,11 @@ function Logo() {
   return (
     <div className="brand-lockup">
       <div className="brand-mark">
-        <FilmSlate size={24} weight="fill" />
+        <BrandMark />
       </div>
       <div>
-        <strong>MediaHub</strong>
-        <span>Entertainment Memory</span>
+        <strong>ReelAtlas</strong>
+        <span>Every story, remembered.</span>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible MediaHub defect without private data.
+description: Report a reproducible ReelAtlas defect without private data.
 title: "[Bug]: "
 labels: [bug]
 body:

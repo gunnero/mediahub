@@ -11,7 +11,7 @@ export function ReleasePlanner({ apiClient = apiRequest, onSessionExpired }) {
   const [date, setDate] = useState(""); const [url, setUrl] = useState(""); const [draft, setDraft] = useState(null);
   const prefs = draft || settings.data?.settings || {};
   async function push(enable) {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error("This browser does not support push. On iPhone, install MediaHub on your Home Screen first.");
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error("This browser does not support push. On iPhone, install ReelAtlas on your Home Screen first.");
     const registration = await registerServiceWorker();
     await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();

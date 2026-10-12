@@ -25,7 +25,7 @@ class BackupMediaHubUserCommand extends Command
 {
     protected $signature = 'mediahub:backup-user {user_id}';
 
-    protected $description = 'Create a private provider-safe MediaHub backup for one user.';
+    protected $description = 'Create a private provider-safe ReelAtlas backup for one user.';
 
     public function handle(AuditLogService $auditLogs, MediaEventService $mediaEvents): int
     {
@@ -58,7 +58,7 @@ class BackupMediaHubUserCommand extends Command
         ]);
         $mediaEvents->record($user, MediaEventType::BackupCreated, null, $summary, MediaEventSource::System);
 
-        $this->line('MediaHub backup created');
+        $this->line('ReelAtlas backup created');
         $this->printSummary($summary);
 
         return self::SUCCESS;

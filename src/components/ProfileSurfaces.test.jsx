@@ -138,7 +138,7 @@ describe("PublicProfilePage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Share profile" }));
 
     await waitFor(() => expect(share).toHaveBeenCalledWith({
-      title: "Public Member on MediaHub",
+      title: "Public Member on ReelAtlas",
       url: "https://example.test/u/public-member",
     }));
     expect(await screen.findByLabelText("Profile link fallback")).toHaveValue("https://example.test/u/public-member");
@@ -189,7 +189,7 @@ describe("OwnProfileSection", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Copy profile link" }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("https://example.test/u/gunner");
     fireEvent.click(screen.getByRole("button", { name: "Share profile" }));
-    expect(share).toHaveBeenCalledWith({ title: "Gunner on MediaHub", url: "https://example.test/u/gunner" });
+    expect(share).toHaveBeenCalledWith({ title: "Gunner on ReelAtlas", url: "https://example.test/u/gunner" });
     fireEvent.click(screen.getByRole("button", { name: "Privacy" }));
     expect(onOpenPrivacy).toHaveBeenCalledTimes(1);
   });

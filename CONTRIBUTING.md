@@ -1,6 +1,6 @@
 # Contributing
 
-MediaHub is currently maintained as a source-visible personal product project. Unsolicited feature pull requests are not assumed to be accepted. Focused bug reports and security reports are welcome through the channels below.
+ReelAtlas is currently maintained as a source-visible personal product project. Unsolicited feature pull requests are not assumed to be accepted. Focused bug reports and security reports are welcome through the channels below.
 
 ## Before proposing a change
 

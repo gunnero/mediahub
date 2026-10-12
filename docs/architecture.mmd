@@ -1,5 +1,5 @@
 flowchart LR
-    Person["MediaHub user"] --> Web["React web application"]
+    Person["ReelAtlas user"] --> Web["React web application"]
     Web -->|"same-origin session API"| API["Laravel API"]
     Admin["Authorized administrator"] --> Review["Filament review tools"]
     Review --> API

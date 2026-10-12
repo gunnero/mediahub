@@ -43,7 +43,7 @@ class UserBackupRestoreTest extends TestCase
         ]);
 
         $this->artisan("mediahub:backup-user {$user->id}")
-            ->expectsOutputToContain('MediaHub backup created')
+            ->expectsOutputToContain('ReelAtlas backup created')
             ->expectsOutputToContain('movies: 1')
             ->expectsOutputToContain('ratings: 1')
             ->assertExitCode(0);
@@ -80,7 +80,7 @@ class UserBackupRestoreTest extends TestCase
         $user->movies()->delete();
 
         $this->artisan("mediahub:restore-user {$user->id} {$backupFile}")
-            ->expectsOutputToContain('MediaHub restore completed')
+            ->expectsOutputToContain('ReelAtlas restore completed')
             ->expectsOutputToContain('movies: 1')
             ->expectsOutputToContain('notes: 1')
             ->assertExitCode(0);
@@ -100,7 +100,7 @@ class UserBackupRestoreTest extends TestCase
         File::put($outsideFile, '{}');
 
         $this->artisan("mediahub:restore-user {$user->id} {$outsideFile}")
-            ->expectsOutputToContain('Backup file must be inside private MediaHub backup storage.')
+            ->expectsOutputToContain('Backup file must be inside private ReelAtlas backup storage.')
             ->assertExitCode(1);
 
         File::delete($outsideFile);
