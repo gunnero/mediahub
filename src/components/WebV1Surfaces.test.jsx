@@ -8,7 +8,7 @@ import { SessionExpiredError } from "../lib/api.js";
 
 afterEach(() => cleanup());
 
-describe("MediaHub Web V1 surfaces", () => {
+describe("ReelAtlas Web V1 surfaces", () => {
   it("shows synchronized actions near the preview title and after its details", () => {
     const actions = <div className="modal-actions"><button className="primary-action" type="button">Add to Library</button><button className="secondary-action" type="button">Add to Watchlist</button></div>;
     render(<DiscoveryDetailPage actions={actions} onClose={vi.fn()} preview={{ media_type: "movie", title: "Heat", overview: "Crime saga.", production: { companies: ["Forward Pass"] } }} />);

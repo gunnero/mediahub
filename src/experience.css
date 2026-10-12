@@ -261,3 +261,12 @@ button:disabled { cursor: default; opacity: .5; }
 @media (min-width: 1280px) { .cinema-shell .library-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 /* Route headings receive focus for screen readers; interactive controls keep their ring. */
 .title-page h1:focus, .discovery-detail-page h1:focus { outline: none; }
+
+/* Shared ReelAtlas identity across the cinematic and public surfaces. */
+.reelatlas-mark { display: block; flex-shrink: 0; width: 100%; height: 100%; object-fit: contain; }
+.brand-mark { flex-shrink: 0; background: transparent; }
+.brand-lockup { text-transform: none; }
+.brand-lockup strong { font-size: 20px; letter-spacing: -.5px; }
+.brand-lockup span { text-transform: none; }
+.public-social-shell .public-brand { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.public-brand .reelatlas-mark { width: 34px; height: 34px; }

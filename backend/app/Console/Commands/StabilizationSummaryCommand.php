@@ -9,7 +9,7 @@ class StabilizationSummaryCommand extends Command
 {
     protected $signature = 'mediahub:stabilization-summary {--days=7 : Summary window in days}';
 
-    protected $description = 'Summarize privacy-safe MediaHub operational monitoring events.';
+    protected $description = 'Summarize privacy-safe ReelAtlas operational monitoring events.';
 
     public function handle(StabilizationSummaryService $summaries): int
     {

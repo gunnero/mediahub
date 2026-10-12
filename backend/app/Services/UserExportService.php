@@ -59,7 +59,7 @@ class UserExportService
         $headers = $rows !== [] ? array_keys($rows[0]) : $this->emptyHeaders($dataset);
 
         return [
-            'filename' => 'mediahub-'.$dataset.'-'.now()->format('Ymd-His').'.csv',
+            'filename' => 'reelatlas-'.$dataset.'-'.now()->format('Ymd-His').'.csv',
             'headers' => $headers,
             'rows' => array_map(fn (array $row): array => array_map($this->safeCsvCell(...), array_values($row)), $rows),
         ];

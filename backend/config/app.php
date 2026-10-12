@@ -1,5 +1,8 @@
 <?php
 
+// Present the new brand without changing legacy environment-derived session/cache keys.
+$appName = env('APP_NAME', 'ReelAtlas');
+
 return [
 
     /*
@@ -13,7 +16,7 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => in_array($appName, ['MediaHub', 'Laravel'], true) ? 'ReelAtlas' : $appName,
 
     /*
     |--------------------------------------------------------------------------

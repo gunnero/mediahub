@@ -55,7 +55,7 @@ class DashboardPayloadService
                 'cover' => '',
             ],
             'source' => [
-                'kind' => 'MediaHub library',
+                'kind' => 'ReelAtlas library',
                 'generatedAt' => now()->toIso8601String(),
             ],
             'stats' => [

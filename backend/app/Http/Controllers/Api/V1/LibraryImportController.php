@@ -21,7 +21,7 @@ class LibraryImportController extends Controller
         $request->validate(['file' => 'required|file|max:10240']);
         $file = $request->file('file');
         $extension = strtolower($file->getClientOriginalExtension());
-        abort_unless(in_array($extension, ['json', 'sqlite', 'db'], true), 422, 'Choose a MediaHub JSON export or a supported TV Time JSON/SQLite archive.');
+        abort_unless(in_array($extension, ['json', 'sqlite', 'db'], true), 422, 'Choose a ReelAtlas or legacy MediaHub JSON export or a supported TV Time JSON/SQLite archive.');
         try {
             $data = $imports->read($file->getRealPath(), $extension);
         } catch (ValidationException $exception) {

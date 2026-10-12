@@ -30,7 +30,7 @@ class RestoreMediaHubUserCommand extends Command
 {
     protected $signature = 'mediahub:restore-user {user_id} {backup_file}';
 
-    protected $description = 'Restore a private provider-safe MediaHub backup into one user account.';
+    protected $description = 'Restore a private provider-safe ReelAtlas backup into one user account.';
 
     public function handle(AuditLogService $auditLogs, MediaEventService $mediaEvents): int
     {
@@ -68,7 +68,7 @@ class RestoreMediaHubUserCommand extends Command
         ]);
         $mediaEvents->record($user, MediaEventType::RestoreCompleted, null, $summary, MediaEventSource::System);
 
-        $this->line('MediaHub restore completed');
+        $this->line('ReelAtlas restore completed');
         $this->printSummary($summary);
 
         return self::SUCCESS;
@@ -89,7 +89,7 @@ class RestoreMediaHubUserCommand extends Command
         $realDirectory = realpath($directory);
 
         if (! $realPath || ! $realDirectory || ! str_starts_with($realPath, $realDirectory.DIRECTORY_SEPARATOR)) {
-            $this->error('Backup file must be inside private MediaHub backup storage.');
+            $this->error('Backup file must be inside private ReelAtlas backup storage.');
 
             return null;
         }

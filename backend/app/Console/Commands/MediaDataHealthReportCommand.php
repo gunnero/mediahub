@@ -11,7 +11,7 @@ class MediaDataHealthReportCommand extends Command
 {
     protected $signature = 'mediahub:data-health {user_id}';
 
-    protected $description = 'Generate the aggregate MediaHub canonical data health report.';
+    protected $description = 'Generate the aggregate ReelAtlas canonical data health report.';
 
     public function handle(MediaDataHealthService $health): int
     {
