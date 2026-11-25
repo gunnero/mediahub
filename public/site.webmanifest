@@ -1,6 +1,6 @@
 {
-  "name": "ReelAtlas",
-  "short_name": "ReelAtlas",
+  "name": "MovieDesk",
+  "short_name": "MovieDesk",
   "description": "Every story, remembered. Your movies, shows, and viewing history.",
   "start_url": "/",
   "display": "standalone",
@@ -8,25 +8,25 @@
   "theme_color": "#0c0e10",
   "icons": [
     {
-      "src": "/assets/brand/reelatlas-mark-v1.svg",
+      "src": "/assets/brand/moviedesk-mark-v1.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/assets/brand/reelatlas-192-v1.png",
+      "src": "/assets/brand/moviedesk-192-v1.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/brand/reelatlas-512-v1.png",
+      "src": "/assets/brand/moviedesk-512-v1.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/brand/reelatlas-maskable-512-v1.png",
+      "src": "/assets/brand/moviedesk-maskable-512-v1.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

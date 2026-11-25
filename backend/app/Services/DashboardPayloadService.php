@@ -55,7 +55,7 @@ class DashboardPayloadService
                 'cover' => '',
             ],
             'source' => [
-                'kind' => 'ReelAtlas library',
+                'kind' => 'MovieDesk library',
                 'generatedAt' => now()->toIso8601String(),
             ],
             'stats' => [

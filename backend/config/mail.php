@@ -1,6 +1,6 @@
 <?php
 
-$senderName = env('MAIL_FROM_NAME', env('APP_NAME', 'ReelAtlas'));
+$senderName = env('MAIL_FROM_NAME', env('APP_NAME', 'MovieDesk'));
 
 return [
 
@@ -114,7 +114,7 @@ return [
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => in_array($senderName, ['MediaHub', 'Laravel'], true) ? 'ReelAtlas' : $senderName,
+        'name' => in_array($senderName, ['MediaHub', 'ReelAtlas', 'Laravel'], true) ? 'MovieDesk' : $senderName,
     ],
 
 ];

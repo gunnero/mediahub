@@ -1,9 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "gunnero/reelatlas-backend",
+    "name": "gunnero/moviedesk-backend",
     "type": "project",
-    "description": "Authenticated API and domain backend for ReelAtlas.",
-    "keywords": ["reelatlas", "laravel", "media-tracker"],
+    "description": "Authenticated API and domain backend for MovieDesk.",
+    "keywords": ["moviedesk", "laravel", "media-tracker"],
     "license": "proprietary",
     "require": {
         "php": "^8.3",

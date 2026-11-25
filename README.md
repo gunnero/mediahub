@@ -1,18 +1,18 @@
-# ReelAtlas
+# MovieDesk
 
 [![CI](https://github.com/gunnero/mediahub/actions/workflows/ci.yml/badge.svg)](https://github.com/gunnero/mediahub/actions/workflows/ci.yml)
 
 **Every story, remembered.**
 
-**Brand domain:** `reelatlas.app` · **Status:** Active development · source-visible · pre-public-launch
+**Brand domain:** `moviedesk.aleksandardimovski.me` · **Status:** Active development · source-visible · pre-public-launch
 
-Formerly MediaHub. The rebrand preserves existing libraries, exports and integrations; the repository remains at `gunnero/mediahub`. See the [rebrand and domain rollout notes](docs/reelatlas-rebrand.md).
+Formerly ReelAtlas and MediaHub. The rebrand preserves existing libraries, exports and integrations; the repository remains at `gunnero/mediahub`. See the [rebrand and domain rollout notes](docs/moviedesk-rebrand.md).
 
-ReelAtlas is a movie and television tracking platform built around user-owned history. It combines a React product interface with a Laravel API for discovery, diary entries, collections, recommendations, statistics, and privacy-aware social features.
+MovieDesk is a movie and television tracking platform built around user-owned history. It combines a React product interface with a Laravel API for discovery, diary entries, collections, recommendations, statistics, and privacy-aware social features.
 
-## Why ReelAtlas exists
+## Why MovieDesk exists
 
-Media tracking should not depend on one provider or trap a person's viewing history inside one service. ReelAtlas keeps canonical titles, watch history, ratings, notes, lists, and profile choices separate from optional metadata and playback providers.
+Media tracking should not depend on one provider or trap a person's viewing history inside one service. MovieDesk keeps canonical titles, watch history, ratings, notes, lists, and profile choices separate from optional metadata and playback providers.
 
 ## What I built personally
 
@@ -31,7 +31,7 @@ I designed and implemented the public repository: the Laravel API, React product
 
 ## Product boundaries
 
-ReelAtlas is under active development. It is not presented as a public service, does not claim users, customers, or revenue, and does not provide a shared stream catalog. Third-party imports are compatibility features rather than the product identity.
+MovieDesk is under active development. It is not presented as a public service, does not claim users, customers, or revenue, and does not provide a shared stream catalog. Third-party imports are compatibility features rather than the product identity.
 
 - **Implemented:** user-owned library and diary, ratings, notes, collections, discovery, statistics, imports and exports, opt-in profiles, friendship controls, and administrative review tools.
 - **In development:** product coherence, deterministic demo fixtures, accessibility coverage, and operational readiness.
@@ -58,11 +58,11 @@ These historical screenshots show the earlier MediaHub identity. They use synthe
 
 | Dashboard | Diary |
 | --- | --- |
-| ![ReelAtlas dashboard populated with synthetic viewing data](docs/assets/screenshots/mediahub-dashboard.png) | ![ReelAtlas diary showing synthetic watch-history entries](docs/assets/screenshots/mediahub-diary.png) |
+| ![MovieDesk dashboard populated with synthetic viewing data](docs/assets/screenshots/mediahub-dashboard.png) | ![MovieDesk diary showing synthetic watch-history entries](docs/assets/screenshots/mediahub-diary.png) |
 
 | Statistics | Mobile |
 | --- | --- |
-| ![ReelAtlas statistics dashboard using synthetic aggregate data](docs/assets/screenshots/mediahub-statistics.png) | ![Responsive ReelAtlas dashboard using synthetic data](docs/assets/screenshots/mediahub-mobile.png) |
+| ![MovieDesk statistics dashboard using synthetic aggregate data](docs/assets/screenshots/mediahub-statistics.png) | ![Responsive MovieDesk dashboard using synthetic data](docs/assets/screenshots/mediahub-mobile.png) |
 
 ## Local setup
 
@@ -134,4 +134,4 @@ No public license has been granted. The current recommendation is **proprietary 
 
 ## Disclaimer
 
-ReelAtlas is an independent project and is not affiliated with TV Time or its owners. References to TV Time describe supported import compatibility only. Movie and television metadata or artwork remains subject to the terms of its respective provider.
+MovieDesk is an independent project and is not affiliated with TV Time or its owners. References to TV Time describe supported import compatibility only. Movie and television metadata or artwork remains subject to the terms of its respective provider.

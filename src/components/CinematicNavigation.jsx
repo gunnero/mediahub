@@ -77,8 +77,8 @@ export function CinematicNavigation({ activeSection, alertsCount = 0, features =
   }
 
   return <header className="cinema-header" ref={rootRef}>
-    <a className="cinema-brand" href="/" aria-label="ReelAtlas home" onClick={event => { event.preventDefault(); choose("home"); }}>
-      <span className="brand-mark"><BrandMark /></span><strong>ReelAtlas</strong>
+    <a className="cinema-brand" href="/" aria-label="MovieDesk home" onClick={event => { event.preventDefault(); choose("home"); }}>
+      <span className="brand-mark"><BrandMark /></span><strong>MovieDesk</strong>
     </a>
     <nav aria-label="Main navigation" className="cinema-nav">
       {destinations.map(({ id, label, icon: Icon }) => {

@@ -28,8 +28,8 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            ->brandName('ReelAtlas')
-            ->favicon('/assets/brand/reelatlas-mark-v1.svg')
+            ->brandName('MovieDesk')
+            ->favicon('/assets/brand/moviedesk-mark-v1.svg')
             ->colors([
                 'primary' => Color::Blue,
             ])

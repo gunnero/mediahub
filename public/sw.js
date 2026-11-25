@@ -27,7 +27,7 @@ self.addEventListener('fetch', event => {
 });
 self.addEventListener('push', event => {
   let data = {}; try { data = event.data?.json() || {}; } catch {}
-  event.waitUntil(self.registration.showNotification('ReelAtlas', { body: data.body || 'Your alerts are ready.', icon: '/assets/brand/reelatlas-192-v1.png', tag: 'mediahub-alerts', data: { url: '/alerts' } }));
+  event.waitUntil(self.registration.showNotification('MovieDesk', { body: data.body || 'Your alerts are ready.', icon: '/assets/brand/moviedesk-192-v1.png', tag: 'mediahub-alerts', data: { url: '/alerts' } }));
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();
