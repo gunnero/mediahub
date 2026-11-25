@@ -86,7 +86,7 @@ const fallbackData = {
     backdrop: "",
     progress: 0,
     kind: "library",
-    eyebrow: "ReelAtlas",
+    eyebrow: "MovieDesk",
   },
   alerts: [],
   recentlyWatched: [],
@@ -157,7 +157,7 @@ function sourceLabel(source) {
   };
 
   if (!source) {
-    return "ReelAtlas";
+    return "MovieDesk";
   }
 
   return labels[source] || source.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -268,7 +268,7 @@ function Logo() {
         <BrandMark />
       </div>
       <div>
-        <strong>ReelAtlas</strong>
+        <strong>MovieDesk</strong>
         <span>Every story, remembered.</span>
       </div>
     </div>

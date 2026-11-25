@@ -1,10 +1,10 @@
-# ReelAtlas architecture
+# MovieDesk architecture
 
-ReelAtlas separates a browser product surface from an authenticated Laravel domain backend. Personal media records remain user-scoped; imports and external metadata enter through explicit boundaries rather than becoming shared global identity.
+MovieDesk separates a browser product surface from an authenticated Laravel domain backend. Personal media records remain user-scoped; imports and external metadata enter through explicit boundaries rather than becoming shared global identity.
 
 ```mermaid
 flowchart LR
-    Person["ReelAtlas user"] --> Web["React web application"]
+    Person["MovieDesk user"] --> Web["React web application"]
     Web -->|"same-origin session API"| API["Laravel API"]
     Admin["Authorized administrator"] --> Review["Filament review tools"]
     Review --> API
@@ -22,7 +22,7 @@ flowchart LR
     API --> PrivateFiles["Private avatars and exports"]
 ```
 
-![ReelAtlas architecture diagram](assets/architecture.svg)
+![MovieDesk architecture diagram](assets/architecture.svg)
 
 ## Frontend and backend boundaries
 
@@ -38,7 +38,7 @@ Canonical movies, shows, episodes, watch diary entries, ratings, notes, lists, p
 
 ## Import pipeline
 
-Compatibility imports are user-requested, validated, and written into the owning user's canonical library. Import sources remain private and ignored. The pipeline records provenance without making a third-party service ReelAtlas's identity.
+Compatibility imports are user-requested, validated, and written into the owning user's canonical library. Import sources remain private and ignored. The pipeline records provenance without making a third-party service MovieDesk's identity.
 
 ## Diary and history
 
@@ -50,7 +50,7 @@ Discovery requests public metadata through a server-side provider boundary. Resu
 
 ## Social boundaries
 
-Social behavior is opt-in and privacy-aware. ReelAtlas does not expose private notes, raw history, provider details, credentials, account roles, internal identifiers, or private exports through public profiles.
+Social behavior is opt-in and privacy-aware. MovieDesk does not expose private notes, raw history, provider details, credentials, account roles, internal identifiers, or private exports through public profiles.
 
 ## Background jobs and notifications
 
